@@ -1,0 +1,13 @@
+[package]
+name = "parking_lot"
+version = "0.1.0"
+authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
+description = "Compact and efficient synchronization primitives. Also provides an API for creating custom synchronization primitives."
+documentation = "https://amanieu.github.io/parking_lot/parking_lot/index.html"
+license = "Apache-2.0/MIT"
+repository = "https://github.com/Amanieu/parking_lot"
+readme = "README.md"
+keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
+
+[dev-dependencies]
+rand = "0.3"
