@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 use parking_lot::{self, UnparkResult};
 use mutex::{MutexGuard, guard_lock};
@@ -66,7 +66,7 @@ impl WaitTimeoutResult {
 /// }
 /// ```
 pub struct Condvar {
-    state: AtomicU8,
+    state: AtomicBool,
 }
 
 impl Condvar {
@@ -74,7 +74,7 @@ impl Condvar {
     /// notified.
     #[inline]
     pub const fn new() -> Condvar {
-        Condvar { state: AtomicU8::new(0) }
+        Condvar { state: AtomicBool::new(false) }
     }
 
     /// Wakes up one blocked thread on this condvar.
@@ -87,7 +87,7 @@ impl Condvar {
     #[inline]
     pub fn notify_one(&self) {
         // Nothing to do if there are no waiting threads
-        if self.state.load(Ordering::Relaxed) == 0 {
+        if !self.state.load(Ordering::Relaxed) {
             return;
         }
 
@@ -97,7 +97,7 @@ impl Condvar {
             let callback = &mut |result| {
                 // Clear our state if there are no more waiting threads
                 if result != UnparkResult::UnparkedNotLast {
-                    self.state.store(0, Ordering::Relaxed);
+                    self.state.store(false, Ordering::Relaxed);
                 }
             };
             parking_lot::unpark_one(addr, callback);
@@ -114,12 +114,12 @@ impl Condvar {
     #[inline]
     pub fn notify_all(&self) {
         // Nothing to do if there are no waiting threads
-        if self.state.load(Ordering::Relaxed) == 0 {
+        if !self.state.load(Ordering::Relaxed) {
             return;
         }
 
         // Clear our state since we are going to wake all threads up anyways
-        self.state.store(0, Ordering::Relaxed);
+        self.state.store(false, Ordering::Relaxed);
 
         unsafe {
             // Unpark all threads
@@ -142,7 +142,7 @@ impl Condvar {
             let addr = self as *const _ as usize;
             let validate = &mut || {
                 // This is done while locked to avoid races with notify_one
-                self.state.store(1, Ordering::Relaxed);
+                self.state.store(true, Ordering::Relaxed);
                 true
             };
             let before_sleep = &mut || {
@@ -186,7 +186,7 @@ impl Condvar {
                 let addr = self as *const _ as usize;
                 let validate = &mut || {
                     // This is done while locked to avoid races with notify_one
-                    self.state.store(1, Ordering::Relaxed);
+                    self.state.store(true, Ordering::Relaxed);
                     true
                 };
                 let before_sleep = &mut || {
