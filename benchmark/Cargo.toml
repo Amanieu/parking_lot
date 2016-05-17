@@ -1,0 +1,16 @@
+[package]
+name = "parking_lot-benchmark"
+version = "0.0.0"
+authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
+
+[dependencies]
+parking_lot = {path = ".."}
+libc = "0.2"
+
+[[bin]]
+name = "mutex"
+path = "src/mutex.rs"
+
+[[bin]]
+name = "rwlock"
+path = "src/rwlock.rs"
