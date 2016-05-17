@@ -72,8 +72,17 @@ pub struct Condvar {
 impl Condvar {
     /// Creates a new condition variable which is ready to be waited on and
     /// notified.
+    #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> Condvar {
+        Condvar { state: AtomicBool::new(false) }
+    }
+
+    /// Creates a new condition variable which is ready to be waited on and
+    /// notified.
+    #[cfg(not(feature = "nightly"))]
+    #[inline]
+    pub fn new() -> Condvar {
         Condvar { state: AtomicBool::new(false) }
     }
 
@@ -249,8 +258,10 @@ mod tests {
 
     #[test]
     fn notify_one() {
-        static C: Condvar = Condvar::new();
-        static M: Mutex<()> = Mutex::new(());
+        lazy_static! {
+            static ref C: Condvar = Condvar::new();
+            static ref M: Mutex<()> = Mutex::new(());
+        }
 
         let mut g = M.lock();
         let _t = thread::spawn(move || {
@@ -298,8 +309,10 @@ mod tests {
 
     #[test]
     fn wait_for() {
-        static C: Condvar = Condvar::new();
-        static M: Mutex<()> = Mutex::new(());
+        lazy_static! {
+            static ref C: Condvar = Condvar::new();
+            static ref M: Mutex<()> = Mutex::new(());
+        }
 
         let mut g = M.lock();
         let no_timeout = C.wait_for(&mut g, Duration::from_millis(1));
@@ -315,8 +328,10 @@ mod tests {
 
     #[test]
     fn wait_until() {
-        static C: Condvar = Condvar::new();
-        static M: Mutex<()> = Mutex::new(());
+        lazy_static! {
+            static ref C: Condvar = Condvar::new();
+            static ref M: Mutex<()> = Mutex::new(());
+        }
 
         let mut g = M.lock();
         let no_timeout = C.wait_until(&mut g, Instant::now() + Duration::from_millis(1));

@@ -5,7 +5,10 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
+#[cfg(feature = "nightly")]
+use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+#[cfg(not(feature = "nightly"))]
+use stable::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use std::time::Instant;
 use std::cell::Cell;
 use std::ptr;
@@ -13,8 +16,8 @@ use std::mem;
 use thread_parker::ThreadParker;
 use word_lock::WordLock;
 
-static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
-static HASHTABLE: AtomicPtr<HashTable> = AtomicPtr::new(ptr::null_mut());
+static NUM_THREADS: AtomicUsize = ATOMIC_USIZE_INIT;
+static HASHTABLE: AtomicUsize = ATOMIC_USIZE_INIT;
 thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
 
 // Even with 3x more buckets than threads, the memory overhead per thread is
@@ -109,15 +112,12 @@ impl Drop for ThreadData {
 // created, which only happens once per thread.
 unsafe fn grow_hashtable(num_threads: usize) {
     // If there is no table, create one
-    if HASHTABLE.load(Ordering::Relaxed).is_null() {
+    if HASHTABLE.load(Ordering::Relaxed) == 0 {
         let new_table = Box::into_raw(HashTable::new(num_threads, ptr::null()));
 
         // If this fails then it means some other thread created the hash
         // table first.
-        if HASHTABLE.compare_exchange(ptr::null_mut(),
-                              new_table,
-                              Ordering::Release,
-                              Ordering::Relaxed)
+        if HASHTABLE.compare_exchange(0, new_table as usize, Ordering::Release, Ordering::Relaxed)
             .is_ok() {
             return;
         }
@@ -128,7 +128,7 @@ unsafe fn grow_hashtable(num_threads: usize) {
 
     let mut old_table;
     loop {
-        old_table = HASHTABLE.load(Ordering::Acquire);
+        old_table = HASHTABLE.load(Ordering::Acquire) as *mut HashTable;
 
         // Check if we need to resize the existing table
         if (*old_table).entries.len() >= LOAD_FACTOR * num_threads {
@@ -143,7 +143,7 @@ unsafe fn grow_hashtable(num_threads: usize) {
         // Now check if our table is still the latest one. Another thread could
         // have grown the hash table between us reading HASHTABLE and locking
         // the buckets.
-        if HASHTABLE.load(Ordering::Relaxed) == old_table {
+        if HASHTABLE.load(Ordering::Relaxed) == old_table as usize {
             break;
         }
 
@@ -176,7 +176,7 @@ unsafe fn grow_hashtable(num_threads: usize) {
     // Publish the new table. No races are possible at this point because
     // any other thread trying to grow the hash table is blocked on the bucket
     // locks in the old table.
-    HASHTABLE.store(Box::into_raw(new_table), Ordering::Release);
+    HASHTABLE.store(Box::into_raw(new_table) as usize, Ordering::Release);
 
     // Unlock all buckets in the old table
     for b in &(*old_table).entries[..] {
@@ -198,7 +198,7 @@ fn hash(key: usize, bits: u32) -> usize {
 unsafe fn lock_bucket<'a>(key: usize) -> Option<&'a Bucket> {
     let mut bucket;
     loop {
-        let hashtable = HASHTABLE.load(Ordering::Acquire);
+        let hashtable = HASHTABLE.load(Ordering::Acquire) as *mut HashTable;
 
         // If there is no hash table then there is no bucket to lock
         if hashtable.is_null() {
@@ -213,7 +213,7 @@ unsafe fn lock_bucket<'a>(key: usize) -> Option<&'a Bucket> {
 
         // If no other thread has rehashed the table before we grabbed the lock
         // then we are good to go! The lock we grabbed prevents any rehashes.
-        if HASHTABLE.load(Ordering::Relaxed) == hashtable {
+        if HASHTABLE.load(Ordering::Relaxed) == hashtable as usize {
             return Some(bucket);
         }
 

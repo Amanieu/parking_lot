@@ -98,11 +98,19 @@
 //! atomic reference count and the two mutex bits in the same atomic word.
 
 #![warn(missing_docs)]
-#![feature(extended_compare_and_swap, const_fn, integer_atomics)]
+#![cfg_attr(feature = "nightly", feature(extended_compare_and_swap))]
+#![cfg_attr(feature = "nightly", feature(const_fn))]
+#![cfg_attr(feature = "nightly", feature(integer_atomics))]
+
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
 
 // Spin limit from JikesRVM & Webkit experiments
 const SPIN_LIMIT: usize = 40;
 
+#[cfg(not(feature = "nightly"))]
+mod stable;
 mod thread_parker;
 mod word_lock;
 mod parking_lot;
@@ -113,7 +121,7 @@ mod mutex;
 mod rwlock;
 mod once;
 
-pub use once::{Once, OnceState};
+pub use once::{Once, ONCE_INIT, OnceState};
 pub use parking_lot::{UnparkResult, park, unpark_one, unpark_all};
 pub use mutex::{Mutex, MutexGuard};
 pub use condvar::{Condvar, WaitTimeoutResult};

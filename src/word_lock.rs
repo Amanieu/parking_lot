@@ -5,7 +5,10 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+#[cfg(feature = "nightly")]
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(not(feature = "nightly"))]
+use stable::{AtomicUsize, Ordering};
 use std::thread;
 use std::ptr;
 use std::mem;
@@ -46,7 +49,7 @@ pub struct WordLock {
 
 impl WordLock {
     #[inline]
-    pub const fn new() -> WordLock {
+    pub fn new() -> WordLock {
         WordLock { state: AtomicUsize::new(0) }
     }
 

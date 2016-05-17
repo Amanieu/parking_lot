@@ -97,9 +97,17 @@ data type. Since a mutex only requires 2 bits, it can share space with other
 data. For example, one could create an `ArcMutex` type that combines the
 atomic reference count and the two mutex bits in the same atomic word.
 
-## Usage
+## Nightly vs stable
 
-This crate currently requires a nightly Rust compiler.
+There are a few restrictions when using this library on stable Rust:
+
+- `Mutex`, `Condvar` and `Once` will be 1 word instead of 1 byte.
+- You will have to use `lazy_static!` to statically initialize `Mutex`,
+  `Condvar` and `RwLock` types instead of `const fn`.
+- Slightly less efficient code may be generated for `compare_exchange`
+  operations. This should not affect architectures like x86 though.
+
+## Usage
 
 Add this to your `Cargo.toml`:
 
@@ -112,6 +120,13 @@ and this to your crate root:
 
 ```rust
 extern crate parking_lot;
+```
+
+To enable nightly-only features, add this to your `Cargo.toml` instead:
+
+```toml
+[dependencies]
+parking_lot = {version = "0.1", features = ["nightly"]}
 ```
 
 ## License

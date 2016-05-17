@@ -5,7 +5,10 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+#[cfg(feature = "nightly")]
 use std::sync::atomic::{AtomicUsize, Ordering};
+#[cfg(not(feature = "nightly"))]
+use stable::{AtomicUsize, Ordering};
 use std::thread;
 use parking_lot::{self, UnparkResult};
 use SPIN_LIMIT;
@@ -21,8 +24,14 @@ pub struct RawRwLock {
 }
 
 impl RawRwLock {
+    #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> RawRwLock {
+        RawRwLock { state: AtomicUsize::new(0) }
+    }
+    #[cfg(not(feature = "nightly"))]
+    #[inline]
+    pub fn new() -> RawRwLock {
         RawRwLock { state: AtomicUsize::new(0) }
     }
 

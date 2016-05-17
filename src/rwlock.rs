@@ -96,7 +96,25 @@ impl<T> RwLock<T> {
     ///
     /// let lock = RwLock::new(5);
     /// ```
+    #[cfg(feature = "nightly")]
     pub const fn new(val: T) -> RwLock<T> {
+        RwLock {
+            data: UnsafeCell::new(val),
+            rwlock: RawRwLock::new(),
+        }
+    }
+
+    /// Creates a new instance of an `RwLock<T>` which is unlocked.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use parking_lot::RwLock;
+    ///
+    /// let lock = RwLock::new(5);
+    /// ```
+    #[cfg(not(feature = "nightly"))]
+    pub fn new(val: T) -> RwLock<T> {
         RwLock {
             data: UnsafeCell::new(val),
             rwlock: RawRwLock::new(),
@@ -267,7 +285,9 @@ mod tests {
 
     #[test]
     fn frob() {
-        static R: RwLock<()> = RwLock::new(());
+        lazy_static! {
+            static ref R: RwLock<()> = RwLock::new(());
+        }
         const N: u32 = 10;
         const M: u32 = 1000;
 

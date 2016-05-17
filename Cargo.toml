@@ -11,3 +11,7 @@ keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 
 [dev-dependencies]
 rand = "0.3"
+lazy_static = "0.2"
+
+[features]
+nightly = []

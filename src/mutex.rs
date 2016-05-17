@@ -86,7 +86,17 @@ pub struct MutexGuard<'a, T: ?Sized + 'a> {
 
 impl<T> Mutex<T> {
     /// Creates a new mutex in an unlocked state ready for use.
+    #[cfg(feature = "nightly")]
     pub const fn new(val: T) -> Mutex<T> {
+        Mutex {
+            data: UnsafeCell::new(val),
+            mutex: RawMutex::new(),
+        }
+    }
+
+    /// Creates a new mutex in an unlocked state ready for use.
+    #[cfg(not(feature = "nightly"))]
+    pub fn new(val: T) -> Mutex<T> {
         Mutex {
             data: UnsafeCell::new(val),
             mutex: RawMutex::new(),
@@ -208,7 +218,9 @@ mod tests {
 
     #[test]
     fn lots_and_lots() {
-        static M: Mutex<()> = Mutex::new(());
+        lazy_static! {
+            static ref M: Mutex<()> = Mutex::new(());
+        }
         static mut CNT: u32 = 0;
         const J: u32 = 1000;
         const K: u32 = 3;

@@ -5,16 +5,23 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::atomic::{AtomicU8, Ordering, fence};
+#[cfg(feature = "nightly")]
+use std::sync::atomic::{AtomicU8, ATOMIC_U8_INIT, Ordering, fence};
+#[cfg(feature = "nightly")]
+type U8 = u8;
+#[cfg(not(feature = "nightly"))]
+use stable::{AtomicU8, ATOMIC_U8_INIT, Ordering, fence};
+#[cfg(not(feature = "nightly"))]
+type U8 = usize;
 use std::thread;
 use std::mem;
 use parking_lot;
 use SPIN_LIMIT;
 
-const DONE_BIT: u8 = 1;
-const POISON_BIT: u8 = 2;
-const LOCKED_BIT: u8 = 4;
-const PARKED_BIT: u8 = 8;
+const DONE_BIT: U8 = 1;
+const POISON_BIT: U8 = 2;
+const LOCKED_BIT: U8 = 4;
+const PARKED_BIT: U8 = 8;
 
 /// State yielded to the `call_once_force` method which can be used to query
 /// whether the `Once` was previously poisoned or not.
@@ -45,10 +52,9 @@ impl OnceState {
 /// # Examples
 ///
 /// ```
-/// # #![feature(const_fn)]
-/// use parking_lot::Once;
+/// use parking_lot::{Once, ONCE_INIT};
 ///
-/// static START: Once = Once::new();
+/// static START: Once = ONCE_INIT;
 ///
 /// START.call_once(|| {
 ///     // run initialization here
@@ -56,10 +62,21 @@ impl OnceState {
 /// ```
 pub struct Once(AtomicU8);
 
+/// Initialization value for static `Once` values.
+pub const ONCE_INIT: Once = Once(ATOMIC_U8_INIT);
+
 impl Once {
     /// Creates a new `Once` value.
+    #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> Once {
+        Once(AtomicU8::new(0))
+    }
+
+    /// Creates a new `Once` value.
+    #[cfg(not(feature = "nightly"))]
+    #[inline]
+    pub fn new() -> Once {
         Once(AtomicU8::new(0))
     }
 
@@ -80,11 +97,10 @@ impl Once {
     /// # Examples
     ///
     /// ```
-    /// # #![feature(const_fn)]
-    /// use parking_lot::Once;
+    /// use parking_lot::{Once, ONCE_INIT};
     ///
     /// static mut VAL: usize = 0;
-    /// static INIT: Once = Once::new();
+    /// static INIT: Once = ONCE_INIT;
     ///
     /// // Accessing a `static mut` is unsafe much of the time, but if we do so
     /// // in a synchronized fashion (e.g. write once or read all) then we're
@@ -263,14 +279,15 @@ impl Default for Once {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "nightly")]
     use std::panic;
     use std::sync::mpsc::channel;
     use std::thread;
-    use Once;
+    use {Once, ONCE_INIT};
 
     #[test]
     fn smoke_once() {
-        static O: Once = Once::new();
+        static O: Once = ONCE_INIT;
         let mut a = 0;
         O.call_once(|| a += 1);
         assert_eq!(a, 1);
@@ -280,7 +297,7 @@ mod tests {
 
     #[test]
     fn stampede_once() {
-        static O: Once = Once::new();
+        static O: Once = ONCE_INIT;
         static mut run: bool = false;
 
         let (tx, rx) = channel();
@@ -314,9 +331,10 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "nightly")]
     #[test]
     fn poison_bad() {
-        static O: Once = Once::new();
+        static O: Once = ONCE_INIT;
 
         // poison the once
         let t = panic::catch_unwind(|| {
@@ -342,9 +360,10 @@ mod tests {
         O.call_once(|| {});
     }
 
+    #[cfg(feature = "nightly")]
     #[test]
     fn wait_for_force_to_finish() {
-        static O: Once = Once::new();
+        static O: Once = ONCE_INIT;
 
         // poison the once
         let t = panic::catch_unwind(|| {

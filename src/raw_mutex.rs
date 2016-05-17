@@ -5,21 +5,34 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+#[cfg(feature = "nightly")]
 use std::sync::atomic::{AtomicU8, Ordering};
+#[cfg(feature = "nightly")]
+type U8 = u8;
+#[cfg(not(feature = "nightly"))]
+use stable::{AtomicU8, Ordering};
+#[cfg(not(feature = "nightly"))]
+type U8 = usize;
 use std::thread;
 use parking_lot::{self, UnparkResult};
 use SPIN_LIMIT;
 
-const LOCKED_BIT: u8 = 1;
-const PARKED_BIT: u8 = 2;
+const LOCKED_BIT: U8 = 1;
+const PARKED_BIT: U8 = 2;
 
 pub struct RawMutex {
     state: AtomicU8,
 }
 
 impl RawMutex {
+    #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> RawMutex {
+        RawMutex { state: AtomicU8::new(0) }
+    }
+    #[cfg(not(feature = "nightly"))]
+    #[inline]
+    pub fn new() -> RawMutex {
         RawMutex { state: AtomicU8::new(0) }
     }
 
