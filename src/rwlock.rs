@@ -131,7 +131,7 @@ impl<T: ?Sized> RwLock<T> {
 
     /// Attempts to acquire this rwlock with shared read access.
     ///
-    /// If the access could not be granted at this time, then `Err` is returned.
+    /// If the access could not be granted at this time, then `None` is returned.
     /// Otherwise, an RAII guard is returned which will release the shared access
     /// when it is dropped.
     ///
@@ -168,7 +168,7 @@ impl<T: ?Sized> RwLock<T> {
 
     /// Attempts to lock this rwlock with exclusive write access.
     ///
-    /// If the lock could not be acquired at this time, then `Err` is returned.
+    /// If the lock could not be acquired at this time, then `None` is returned.
     /// Otherwise, an RAII guard is returned which will release the lock when
     /// it is dropped.
     ///
