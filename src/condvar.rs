@@ -17,6 +17,7 @@ pub struct WaitTimeoutResult(bool);
 
 impl WaitTimeoutResult {
     /// Returns whether the wait was known to have timed out.
+    #[inline]
     pub fn timed_out(&self) -> bool {
         self.0
     }
@@ -236,6 +237,7 @@ impl Condvar {
 }
 
 impl Default for Condvar {
+    #[inline]
     fn default() -> Condvar {
         Condvar::new()
     }

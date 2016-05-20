@@ -97,6 +97,7 @@ impl<T> RwLock<T> {
     /// let lock = RwLock::new(5);
     /// ```
     #[cfg(feature = "nightly")]
+    #[inline]
     pub const fn new(val: T) -> RwLock<T> {
         RwLock {
             data: UnsafeCell::new(val),
@@ -114,6 +115,7 @@ impl<T> RwLock<T> {
     /// let lock = RwLock::new(5);
     /// ```
     #[cfg(not(feature = "nightly"))]
+    #[inline]
     pub fn new(val: T) -> RwLock<T> {
         RwLock {
             data: UnsafeCell::new(val),
@@ -122,6 +124,7 @@ impl<T> RwLock<T> {
     }
 
     /// Consumes this `RwLock`, returning the underlying data.
+    #[inline]
     pub fn into_inner(self) -> T {
         unsafe { self.data.into_inner() }
     }
@@ -139,6 +142,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// Returns an RAII guard which will release this thread's shared access
     /// once it is dropped.
+    #[inline]
     pub fn read(&self) -> RwLockReadGuard<T> {
         self.rwlock.lock_shared();
         RwLockReadGuard {
@@ -157,6 +161,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// This function does not provide any guarantees with respect to the ordering
     /// of whether contentious readers or writers will acquire the lock first.
+    #[inline]
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
         if self.rwlock.try_lock_shared() {
             Some(RwLockReadGuard {
@@ -176,6 +181,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// Returns an RAII guard which will drop the write access of this rwlock
     /// when dropped.
+    #[inline]
     pub fn write(&self) -> RwLockWriteGuard<T> {
         self.rwlock.lock_exclusive();
         RwLockWriteGuard {
@@ -194,6 +200,7 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// This function does not provide any guarantees with respect to the ordering
     /// of whether contentious readers or writers will acquire the lock first.
+    #[inline]
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
         if self.rwlock.try_lock_exclusive() {
             Some(RwLockWriteGuard {
@@ -209,12 +216,14 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// Since this call borrows the `RwLock` mutably, no actual locking needs to
     /// take place---the mutable borrow statically guarantees no locks exist.
+    #[inline]
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
 }
 
 impl<T: ?Sized + Default> Default for RwLock<T> {
+    #[inline]
     fn default() -> RwLock<T> {
         RwLock::new(Default::default())
     }
@@ -231,12 +240,14 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
 
 impl<'a, T: ?Sized + 'a> Deref for RwLockReadGuard<'a, T> {
     type Target = T;
+    #[inline]
     fn deref(&self) -> &T {
         self.data
     }
 }
 
 impl<'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, T> {
+    #[inline]
     fn drop(&mut self) {
         self.rwlock.unlock_shared();
     }
@@ -244,18 +255,21 @@ impl<'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, T> {
 
 impl<'a, T: ?Sized + 'a> Deref for RwLockWriteGuard<'a, T> {
     type Target = T;
+    #[inline]
     fn deref(&self) -> &T {
         self.data
     }
 }
 
 impl<'a, T: ?Sized + 'a> DerefMut for RwLockWriteGuard<'a, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }
 }
 
 impl<'a, T: ?Sized + 'a> Drop for RwLockWriteGuard<'a, T> {
+    #[inline]
     fn drop(&mut self) {
         self.rwlock.unlock_exclusive();
     }

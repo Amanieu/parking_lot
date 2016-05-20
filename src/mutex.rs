@@ -87,6 +87,7 @@ pub struct MutexGuard<'a, T: ?Sized + 'a> {
 impl<T> Mutex<T> {
     /// Creates a new mutex in an unlocked state ready for use.
     #[cfg(feature = "nightly")]
+    #[inline]
     pub const fn new(val: T) -> Mutex<T> {
         Mutex {
             data: UnsafeCell::new(val),
@@ -96,6 +97,7 @@ impl<T> Mutex<T> {
 
     /// Creates a new mutex in an unlocked state ready for use.
     #[cfg(not(feature = "nightly"))]
+    #[inline]
     pub fn new(val: T) -> Mutex<T> {
         Mutex {
             data: UnsafeCell::new(val),
@@ -104,6 +106,7 @@ impl<T> Mutex<T> {
     }
 
     /// Consumes this mutex, returning the underlying data.
+    #[inline]
     pub fn into_inner(self) -> T {
         unsafe { self.data.into_inner() }
     }
@@ -119,6 +122,7 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// Attempts to lock a mutex in the thread which already holds the lock will
     /// result is a deadlock.
+    #[inline]
     pub fn lock(&self) -> MutexGuard<T> {
         self.mutex.lock();
         MutexGuard {
@@ -134,6 +138,7 @@ impl<T: ?Sized> Mutex<T> {
     /// guard is dropped.
     ///
     /// This function does not block.
+    #[inline]
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         if self.mutex.try_lock() {
             Some(MutexGuard {
@@ -149,12 +154,14 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// Since this call borrows the `Mutex` mutably, no actual locking needs to
     /// take place---the mutable borrow statically guarantees no locks exist.
+    #[inline]
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
 }
 
 impl<T: ?Sized + Default> Default for Mutex<T> {
+    #[inline]
     fn default() -> Mutex<T> {
         Mutex::new(Default::default())
     }
@@ -171,24 +178,28 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
 
 impl<'a, T: ?Sized + 'a> Deref for MutexGuard<'a, T> {
     type Target = T;
+    #[inline]
     fn deref(&self) -> &T {
         self.data
     }
 }
 
 impl<'a, T: ?Sized + 'a> DerefMut for MutexGuard<'a, T> {
+    #[inline]
     fn deref_mut(&mut self) -> &mut T {
         self.data
     }
 }
 
 impl<'a, T: ?Sized + 'a> Drop for MutexGuard<'a, T> {
+    #[inline]
     fn drop(&mut self) {
         self.mutex.unlock();
     }
 }
 
-// Helper function used by Condvar
+// Helper function used by Condvar, not publicly exported
+#[inline]
 pub fn guard_lock<'a, T: ?Sized>(guard: &MutexGuard<'a, T>) -> &'a RawMutex {
     &guard.mutex
 }

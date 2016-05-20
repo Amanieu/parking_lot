@@ -73,6 +73,7 @@ impl WordLock {
         self.unlock_slow();
     }
 
+    #[cold]
     #[inline(never)]
     unsafe fn lock_slow(&self) {
         let mut spin_count = 0;
@@ -140,6 +141,7 @@ impl WordLock {
         }
     }
 
+    #[cold]
     #[inline(never)]
     unsafe fn unlock_slow(&self) {
         let queue_head;

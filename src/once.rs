@@ -32,6 +32,7 @@ impl OnceState {
     ///
     /// Once an initalization routine for a `Once` has panicked it will forever
     /// indicate to future forced initialization routines that it is poisoned.
+    #[inline]
     pub fn poisoned(&self) -> bool {
         self.0
     }
@@ -272,6 +273,7 @@ impl Once {
 }
 
 impl Default for Once {
+    #[inline]
     fn default() -> Once {
         Once::new()
     }
