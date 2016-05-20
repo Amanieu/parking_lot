@@ -187,6 +187,7 @@ impl WordLock {
         self.state.store(new_queue_head as usize, Ordering::Release);
 
         // Then wake up the thread we removed from the queue
-        (*queue_head).parker.unpark();
+        let lock = (*queue_head).parker.unpark_lock();
+        (*queue_head).parker.unpark(lock);
     }
 }

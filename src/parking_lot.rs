@@ -13,6 +13,7 @@ use std::time::Instant;
 use std::cell::Cell;
 use std::ptr;
 use std::mem;
+use smallvec::SmallVec8;
 use thread_parker::ThreadParker;
 use word_lock::WordLock;
 
@@ -398,11 +399,15 @@ pub unsafe fn unpark_one(key: usize, callback: &mut FnMut(UnparkResult)) -> Unpa
             // Invoke the callback before waking up the thread
             callback(result);
 
-            // Unpark the thread while holding the bucket lock to avoid race
-            // conditions with timeouts. Once unparked, the thread will act as
-            // if it was woken up by an unpark even if it reached its timeout.
-            (*current).parker.unpark();
+            // This is a bit tricky: we first lock the ThreadParker to prevent
+            // the thread from exiting and freeing its ThreadData if its wait
+            // times out. Then we unlock the queue since we don't want to keep
+            // the queue locked while we perform a system call. Finally we wake
+            // up the parked thread.
+            let lock = (*current).parker.unpark_lock();
             bucket.mutex.unlock();
+            (*current).parker.unpark(lock);
+
             return result;
         } else {
             link = &(*current).next_in_queue;
@@ -438,7 +443,7 @@ pub unsafe fn unpark_all(key: usize) -> usize {
     let mut link = &bucket.queue_head;
     let mut current = bucket.queue_head.get();
     let mut previous = ptr::null();
-    let mut num_threads = 0;
+    let mut threads = SmallVec8::new();
     while !current.is_null() {
         if (*current).key.get() == key {
             // Remove the thread from the queue
@@ -448,12 +453,10 @@ pub unsafe fn unpark_all(key: usize) -> usize {
                 bucket.queue_tail.set(previous);
             }
 
-            // Unpark the thread while holding the bucket lock to avoid race
-            // conditions with timeouts. Once unparked, the thread will act as
-            // if it was woken up by an unpark even if it reached its timeout.
-            (*current).parker.unpark();
-
-            num_threads += 1;
+            // Don't wake up threads while holding the queue lock. See comment
+            // in unpark_one. For now just record which threads we need to wake
+            // up.
+            threads.push((current, (*current).parker.unpark_lock()));
             current = next;
         } else {
             link = &(*current).next_in_queue;
@@ -464,6 +467,13 @@ pub unsafe fn unpark_all(key: usize) -> usize {
 
     // Unlock the bucket
     bucket.mutex.unlock();
+
+    // Now that we are outside the lock, wake up all the threads that we removed
+    // from the queue.
+    let num_threads = threads.len();
+    for t in threads.into_iter() {
+        (*t.0).parker.unpark(t.1);
+    }
 
     num_threads
 }

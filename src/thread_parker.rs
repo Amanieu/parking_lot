@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::{Mutex, Condvar};
+use std::sync::{Mutex, MutexGuard, Condvar};
 use std::cell::Cell;
 use std::time::Instant;
 
@@ -61,9 +61,16 @@ impl ThreadParker {
         true
     }
 
-    // Wakes up the parker. This should be called while holding the queue lock.
-    pub fn unpark(&self) {
-        let _lock = self.mutex.lock().unwrap();
+    // Lock the parker to prevent the target thread from exiting. This is
+    // necessary to ensure that thread-local ThreadData objects remain valid.
+    // This should be called while holding the queue lock.
+    pub fn unpark_lock(&self) -> MutexGuard<()> {
+        self.mutex.lock().unwrap()
+    }
+
+    // Wakes up the parked thread. This should be called after the queue lock is
+    // released to avoid blocking the queue for too long.
+    pub fn unpark(&self, _lock: MutexGuard<()>) {
         self.should_park.set(false);
 
         // We notify while holding the lock here to avoid races with the target

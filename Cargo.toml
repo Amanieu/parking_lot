@@ -9,6 +9,9 @@ repository = "https://github.com/Amanieu/parking_lot"
 readme = "README.md"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 
+[dependencies]
+smallvec = "0.1"
+
 [dev-dependencies]
 rand = "0.3"
 lazy_static = "0.2"

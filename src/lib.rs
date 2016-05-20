@@ -102,6 +102,8 @@
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
 
+extern crate smallvec;
+
 #[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
