@@ -15,8 +15,8 @@ efficient synchronization primitives.
 The primitives provided by this library have several advantages over those
 in the Rust standard library:
 
-1. `Mutex`, `Condvar` and `Once` only require 1 byte of storage space, and
-   `RwLock` only requires 1 word of storage space. On the other hand the
+1. `Mutex` and `Once` only require 1 byte of storage space, while `Condvar` and
+   `RwLock` only require 1 word of storage space. On the other hand the
    standard library primitives require a dynamically allocated `Box` to hold
    OS-specific synchronization primitives. The small size of `Mutex` in
    particular encourages the use of fine-grained locks to increase
@@ -67,7 +67,8 @@ This function performs the following steps:
 4. Unlock the queue.
 5. Call `before_sleep`.
 6. Sleep until we are unparked or `timeout` is reached.
-7. Return `true` if we were unparked by another thread, `false` otherwise.
+7. If the park timed out, call `timed_out`.
+8. Return `true` if we were unparked by another thread, `false` otherwise.
 
 ```rust,ignore
 unsafe fn unpark_one(key: usize,
@@ -88,6 +89,22 @@ unsafe fn unpark_all(key: usize) -> usize
 This function will unpark all threads in the queue associated with `key`. It
 returns the number of threads that were unparked.
 
+```rust,ignore
+unsafe fn unpark_requeue(key_from: usize,
+                         key_to: usize,
+                         validate: &mut FnMut() -> RequeueOp,
+                         callback: &mut FnMut(RequeueOp, usize))
+                         -> usize
+```
+
+This function will remove all threads from the queue associated with
+`key_from`, optionally unpark the first one and move the rest to the queue
+associated with `key_to`. The `validate` function is invoked while holding
+both queue locks and can choose whether to abort the operation and whether
+to unpark one thread from the queue. The `callback` function is then called
+with the result of `validate` and the number of threads that were in the
+original queue.
+
 ## Building custom synchronization primitives
 
 Building custom synchronization primitives is very simple since
@@ -101,7 +118,7 @@ atomic reference count and the two mutex bits in the same atomic word.
 
 There are a few restrictions when using this library on stable Rust:
 
-- `Mutex`, `Condvar` and `Once` will be 1 word instead of 1 byte.
+- `Mutex` and `Once` will use 1 word of space instead of 1 byte.
 - You will have to use `lazy_static!` to statically initialize `Mutex`,
   `Condvar` and `RwLock` types instead of `const fn`.
 - Slightly less efficient code may be generated for `compare_exchange`

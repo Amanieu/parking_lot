@@ -234,7 +234,9 @@ impl Once {
             unsafe {
                 let addr = self as *const _ as usize;
                 let validate = &mut || self.0.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
-                parking_lot::park(addr, validate, &mut || {}, None);
+                let before_sleep = &mut || {};
+                let timed_out = &mut |_, _| unreachable!();
+                parking_lot::park(addr, validate, before_sleep, timed_out, None);
             }
 
             // Loop back and check if the done bit was set

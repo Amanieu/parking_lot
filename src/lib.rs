@@ -49,12 +49,13 @@
 //! *Parking* refers to suspending the thread while simultaneously enqueuing it
 //! on a queue keyed by some address. *Unparking* refers to dequeuing a thread
 //! from a queue keyed by some address and resuming it. The parking lot API
-//! consists of just 3 functions:
+//! consists of just 4 functions:
 //!
 //! ```rust,ignore
 //! unsafe fn park(key: usize,
 //!                validate: &mut FnMut() -> bool,
 //!                before_sleep: &mut FnMut(),
+//!                timed_out: &mut FnMut(usize, UnparkResult),
 //!                timeout: Option<Instant>)
 //!                -> bool
 //! ```
@@ -67,7 +68,8 @@
 //! 4. Unlock the queue.
 //! 5. Call `before_sleep`.
 //! 6. Sleep until we are unparked or `timeout` is reached.
-//! 7. Return `true` if we were unparked by another thread, `false` otherwise.
+//! 7. If the park timed out, call `timed_out`.
+//! 8. Return `true` if we were unparked by another thread, `false` otherwise.
 //!
 //! ```rust,ignore
 //! unsafe fn unpark_one(key: usize,
@@ -87,6 +89,22 @@
 //!
 //! This function will unpark all threads in the queue associated with `key`. It
 //! returns the number of threads that were unparked.
+//!
+//! ```rust,ignore
+//! unsafe fn unpark_requeue(key_from: usize,
+//!                          key_to: usize,
+//!                          validate: &mut FnMut() -> RequeueOp,
+//!                          callback: &mut FnMut(RequeueOp, usize))
+//!                          -> usize
+//! ```
+//!
+//! This function will remove all threads from the queue associated with
+//! `key_from`, optionally unpark the first one and move the rest to the queue
+//! associated with `key_to`. The `validate` function is invoked while holding
+//! both queue locks and can choose whether to abort the operation and whether
+//! to unpark one thread from the queue. The `callback` function is then called
+//! with the result of `validate` and the number of threads that were in the
+//! original queue.
 //!
 //! # Building custom synchronization primitives
 //!
@@ -141,7 +159,7 @@ mod rwlock;
 mod once;
 
 pub use once::{Once, ONCE_INIT, OnceState};
-pub use parking_lot::{UnparkResult, park, unpark_one, unpark_all};
+pub use parking_lot::{UnparkResult, RequeueOp, park, unpark_one, unpark_all, unpark_requeue};
 pub use mutex::{Mutex, MutexGuard};
 pub use condvar::{Condvar, WaitTimeoutResult};
 pub use rwlock::{RwLock, RwLockReadGuard, RwLockWriteGuard};

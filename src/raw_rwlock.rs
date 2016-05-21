@@ -175,7 +175,9 @@ impl RawRwLock {
                     (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) ==
                     EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT
                 };
-                if parking_lot::park(addr, validate, &mut || {}, None) {
+                let before_sleep = &mut || {};
+                let timed_out = &mut |_, _| unreachable!();
+                if parking_lot::park(addr, validate, before_sleep, timed_out, None) {
                     // If we successfully parked then the lock will be handed
                     // off to us.
                     return;
@@ -293,7 +295,9 @@ impl RawRwLock {
                     (EXCLUSIVE_LOCKED_BIT | SHARED_PARKED_BIT) ==
                     EXCLUSIVE_LOCKED_BIT | SHARED_PARKED_BIT
                 };
-                parking_lot::park(addr + 1, validate, &mut || {}, None);
+                let before_sleep = &mut || {};
+                let timed_out = &mut |_, _| unreachable!();
+                parking_lot::park(addr + 1, validate, before_sleep, timed_out, None);
             }
 
             // Loop back and try locking again

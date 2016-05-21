@@ -73,6 +73,32 @@ impl RawMutex {
         self.unlock_slow();
     }
 
+    // Used by Condvar when requeuing threads to us, must be called while
+    // holding the queue lock.
+    #[inline]
+    pub fn mark_parked_if_locked(&self) -> bool {
+        let mut state = self.state.load(Ordering::Relaxed);
+        loop {
+            if state & LOCKED_BIT == 0 {
+                return false;
+            }
+            match self.state.compare_exchange_weak(state,
+                                                   state | PARKED_BIT,
+                                                   Ordering::Relaxed,
+                                                   Ordering::Relaxed) {
+                Ok(_) => return true,
+                Err(x) => state = x,
+            }
+        }
+    }
+
+    // Used by Condvar when requeuing threads to us, must be called while
+    // holding the queue lock.
+    #[inline]
+    pub fn mark_parked(&self) {
+        self.state.fetch_or(PARKED_BIT, Ordering::Relaxed);
+    }
+
     #[cold]
     #[inline(never)]
     fn lock_slow(&self) {
@@ -117,7 +143,9 @@ impl RawMutex {
                 let validate = &mut || {
                     self.state.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT
                 };
-                parking_lot::park(addr, validate, &mut || {}, None);
+                let before_sleep = &mut || {};
+                let timed_out = &mut |_, _| unreachable!();
+                parking_lot::park(addr, validate, before_sleep, timed_out, None);
             }
 
             // Loop back and try locking again

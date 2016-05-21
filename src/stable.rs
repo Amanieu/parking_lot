@@ -49,6 +49,10 @@ impl AtomicUsize {
         self.0.fetch_and(val, order)
     }
     #[inline]
+    pub fn fetch_or(&self, val: usize, order: Ordering) -> usize {
+        self.0.fetch_or(val, order)
+    }
+    #[inline]
     pub fn compare_exchange(&self,
                             old: usize,
                             new: usize,
