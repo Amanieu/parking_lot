@@ -107,6 +107,14 @@ impl WordLock {
                 continue;
             }
 
+            // Get our thread data. We do this before locking the queue because
+            // the ThreadData constructor may panic and we don't want to leave
+            // the queue in a locked state.
+            let thread_data = &*THREAD_DATA.with(|x| x as *const ThreadData);
+            assert!(mem::align_of_val(thread_data) > !QUEUE_MASK);
+            thread_data.next_in_queue.set(ptr::null());
+            thread_data.parker.prepare_park();
+
             // Try locking the queue
             if let Err(x) = self.state
                 .compare_exchange_weak(state,
@@ -117,26 +125,18 @@ impl WordLock {
                 continue;
             }
 
-            // Get our thread data
-            THREAD_DATA.with(|thread_data| {
-                assert!(mem::align_of_val(thread_data) > !QUEUE_MASK);
+            // Add our thread to the queue and unlock the queue
+            let mut queue_head = (state & QUEUE_MASK) as *const ThreadData;
+            if !queue_head.is_null() {
+                (*(*queue_head).queue_tail.get()).next_in_queue.set(thread_data);
+            } else {
+                queue_head = thread_data;
+            }
+            (*queue_head).queue_tail.set(thread_data);
+            self.state.store((queue_head as usize) | LOCKED_BIT, Ordering::Release);
 
-                // Add our thread to the queue and unlock the queue
-                thread_data.next_in_queue.set(ptr::null());
-                thread_data.parker.prepare_park();
-                let mut queue_head = (state & QUEUE_MASK) as *const ThreadData;
-                if !queue_head.is_null() {
-                    (*(*queue_head).queue_tail.get()).next_in_queue.set(thread_data);
-                } else {
-                    queue_head = thread_data;
-                }
-                (*queue_head).queue_tail.set(thread_data);
-                self.state.store((queue_head as usize) | LOCKED_BIT, Ordering::Release);
-
-                // Sleep until we are woken up by an unlock
-                thread_data.parker.park();
-            });
-
+            // Sleep until we are woken up by an unlock
+            thread_data.parker.park();
             self.state.load(Ordering::Relaxed);
         }
     }

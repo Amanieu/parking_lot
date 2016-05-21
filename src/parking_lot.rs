@@ -268,81 +268,81 @@ pub unsafe fn park(key: usize,
                    timeout: Option<Instant>)
                    -> bool {
     // Grab our thread data, this also ensures that the hash table exists
-    THREAD_DATA.with(|thread_data| {
-        // Lock the bucket for the given key
-        let bucket = lock_bucket(key).unwrap();
+    let thread_data = &*THREAD_DATA.with(|x| x as *const ThreadData);
 
-        // If the validation function fails, just return
-        if !validate() {
-            bucket.mutex.unlock();
-            return false;
+    // Lock the bucket for the given key
+    let bucket = lock_bucket(key).unwrap();
+
+    // If the validation function fails, just return
+    if !validate() {
+        bucket.mutex.unlock();
+        return false;
+    }
+
+    // Append our thread data to the queue and unlock the bucket
+    thread_data.next_in_queue.set(ptr::null());
+    thread_data.key.set(key);
+    thread_data.parker.prepare_park();
+    if !bucket.queue_head.get().is_null() {
+        (*bucket.queue_tail.get()).next_in_queue.set(thread_data);
+    } else {
+        bucket.queue_head.set(thread_data);
+    }
+    bucket.queue_tail.set(thread_data);
+    bucket.mutex.unlock();
+
+    // Invoke the pre-sleep callback
+    before_sleep();
+
+    // Park our thread and determine whether we were woken up by an unpark or by
+    // our timeout. Note that this isn't precise: we can still be unparked
+    // since we are still in the queue.
+    let unparked = match timeout {
+        Some(timeout) => thread_data.parker.park_until(timeout),
+        None => {
+            thread_data.parker.park();
+            true
         }
+    };
 
-        // Append our thread data to the queue and unlock the bucket
-        thread_data.next_in_queue.set(ptr::null());
-        thread_data.key.set(key);
-        thread_data.parker.prepare_park();
-        if !bucket.queue_head.get().is_null() {
-            (*bucket.queue_tail.get()).next_in_queue.set(thread_data);
+    // If we were unparked, return now
+    if unparked {
+        return true;
+    }
+
+    // Lock our bucket again. Note that the hashtable may have been rehashed in
+    // the meantime.
+    let bucket = lock_bucket(key).unwrap();
+
+    // Now we need to check again if we were unparked or timed out. Unlike the
+    // last check this is precise because we hold the bucket lock.
+    if !thread_data.parker.timed_out() {
+        bucket.mutex.unlock();
+        return true;
+    }
+
+    // We timed out, so we now need to remove our thread from the queue
+    let mut link = &bucket.queue_head;
+    let mut current = bucket.queue_head.get();
+    let mut previous = ptr::null();
+    while !current.is_null() {
+        if current == thread_data {
+            let next = (*current).next_in_queue.get();
+            link.set(next);
+            if bucket.queue_tail.get() == current {
+                bucket.queue_tail.set(previous);
+            }
+            break;
         } else {
-            bucket.queue_head.set(thread_data);
+            link = &(*current).next_in_queue;
+            previous = current;
+            current = link.get();
         }
-        bucket.queue_tail.set(thread_data);
-        bucket.mutex.unlock();
+    }
 
-        // Invoke the pre-sleep callback
-        before_sleep();
-
-        // Park our thread and determine whether we were woken up by an unpark
-        // or by our timeout. Note that this isn't precise: we can still be
-        // unparked since we are still in the queue.
-        let unparked = match timeout {
-            Some(timeout) => thread_data.parker.park_until(timeout),
-            None => {
-                thread_data.parker.park();
-                true
-            }
-        };
-
-        // If we were unparked, return now
-        if unparked {
-            return true;
-        }
-
-        // Lock our bucket again. Note that the hashtable may have been rehashed
-        // in the meantime.
-        let bucket = lock_bucket(key).unwrap();
-
-        // Now we need to check again if we were unparked or timed out. Unlike
-        // the last check this is precise because we hold the bucket lock.
-        if !thread_data.parker.timed_out() {
-            bucket.mutex.unlock();
-            return true;
-        }
-
-        // We timed out, so we now need to remove our thread from the queue
-        let mut link = &bucket.queue_head;
-        let mut current = bucket.queue_head.get();
-        let mut previous = ptr::null();
-        while !current.is_null() {
-            if current == thread_data {
-                let next = (*current).next_in_queue.get();
-                link.set(next);
-                if bucket.queue_tail.get() == current {
-                    bucket.queue_tail.set(previous);
-                }
-                break;
-            } else {
-                link = &(*current).next_in_queue;
-                previous = current;
-                current = link.get();
-            }
-        }
-
-        // Unlock the bucket, we are done
-        bucket.mutex.unlock();
-        false
-    })
+    // Unlock the bucket, we are done
+    bucket.mutex.unlock();
+    false
 }
 
 /// Unparks one thread from the queue associated with the given key.

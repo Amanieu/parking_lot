@@ -111,13 +111,21 @@ extern crate lazy_static;
 #[cfg(all(feature = "nightly", target_os = "linux"))]
 extern crate libc;
 
+#[cfg(windows)]
+extern crate winapi;
+#[cfg(windows)]
+extern crate kernel32;
+
 // Spin limit from JikesRVM & Webkit experiments
 const SPIN_LIMIT: usize = 40;
 
 #[cfg(all(feature = "nightly", target_os = "linux"))]
 #[path = "thread_parker/linux.rs"]
 mod thread_parker;
-#[cfg(not(all(feature = "nightly", target_os = "linux")))]
+#[cfg(windows)]
+#[path = "thread_parker/windows.rs"]
+mod thread_parker;
+#[cfg(not(any(windows, all(feature = "nightly", target_os = "linux"))))]
 #[path = "thread_parker/generic.rs"]
 mod thread_parker;
 
