@@ -238,6 +238,7 @@ impl Once {
             }
 
             // Loop back and check if the done bit was set
+            state = self.0.load(Ordering::Relaxed);
         }
 
         struct PanicGuard<'a>(&'a Once);

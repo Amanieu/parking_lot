@@ -147,7 +147,8 @@ impl RawRwLock {
                 continue;
             }
 
-            // If there are no parked exclusive threads, try spinning a few times
+            // If there are no parked exclusive threads, try spinning a few
+            // times
             if state & EXCLUSIVE_PARKED_BIT == 0 && spin_count < SPIN_LIMIT {
                 spin_count += 1;
                 thread::yield_now();
@@ -211,14 +212,15 @@ impl RawRwLock {
                 unsafe {
                     let addr = self as *const _ as usize;
                     let callback = &mut |result| {
-                        // Clear the exclusive parked bit if this was the last thread
+                        // Clear the exclusive parked bit if this was the last
+                        // thread
                         if result != UnparkResult::UnparkedNotLast {
                             self.state.fetch_and(!EXCLUSIVE_PARKED_BIT, Ordering::Relaxed);
                         }
                     };
                     if parking_lot::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
-                        // We successfully self.state an exclusive thread and the lock
-                        // has been handed off to it.
+                        // We successfully unparked an exclusive thread and the
+                        // lock has been handed off to it.
                         return;
                     }
                 }
@@ -263,7 +265,8 @@ impl RawRwLock {
                 continue;
             }
 
-            // If there are no parked exclusive threads, try spinning a few times
+            // If there are no parked exclusive threads, try spinning a few
+            // times
             if state & EXCLUSIVE_PARKED_BIT == 0 && spin_count < SPIN_LIMIT {
                 spin_count += 1;
                 thread::yield_now();
@@ -322,13 +325,14 @@ impl RawRwLock {
             unsafe {
                 let addr = self as *const _ as usize;
                 let callback = &mut |result| {
-                    // Clear the exclusive parked bit if this was the last thread
+                    // Clear the exclusive parked bit if this was the last
+                    // thread
                     if result != UnparkResult::UnparkedNotLast {
                         self.state.fetch_and(!EXCLUSIVE_PARKED_BIT, Ordering::Relaxed);
                     }
                 };
                 if parking_lot::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
-                    // We successfully self.state an exclusive thread and the lock
+                    // We successfully unparked an exclusive thread and the lock
                     // has been handed off to it.
                     return;
                 }
