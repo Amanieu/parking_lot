@@ -130,7 +130,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-parking_lot = "0.1"
+parking_lot = "0.2"
 ```
 
 and this to your crate root:
@@ -143,7 +143,7 @@ To enable nightly-only features, add this to your `Cargo.toml` instead:
 
 ```toml
 [dependencies]
-parking_lot = {version = "0.1", features = ["nightly"]}
+parking_lot = {version = "0.2", features = ["nightly"]}
 ```
 
 ## License
