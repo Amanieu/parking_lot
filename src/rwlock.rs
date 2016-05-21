@@ -20,7 +20,8 @@ use raw_rwlock::RawRwLock;
 /// This lock will always prioritize writers over readers to avoid writer
 /// starvation. This means that readers trying to acquire the lock will block
 /// even if the lock is unlocked when there are writers waiting to acquire the
-/// lock.
+/// lock. Because of this, attempts to recursively acquire a read lock within a
+/// single thread may result in a deadlock.
 ///
 /// The type parameter `T` represents the data that this lock protects. It is
 /// required that `T` satisfies `Send` to be shared across threads and `Sync` to
@@ -136,9 +137,11 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// The calling thread will be blocked until there are no more writers which
     /// hold the lock. There may be other readers currently inside the lock when
-    /// this method returns. This method does not provide any guarantees with
-    /// respect to the ordering of whether contentious readers or writers will
-    /// acquire the lock first.
+    /// this method returns.
+    ///
+    /// Because `RwLock` prefers writers over readers, attempts to recursively
+    /// acquire a read lock when the current already owns one may result in a
+    /// deadlock.
     ///
     /// Returns an RAII guard which will release this thread's shared access
     /// once it is dropped.
@@ -158,9 +161,6 @@ impl<T: ?Sized> RwLock<T> {
     /// when it is dropped.
     ///
     /// This function does not block.
-    ///
-    /// This function does not provide any guarantees with respect to the ordering
-    /// of whether contentious readers or writers will acquire the lock first.
     #[inline]
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
         if self.rwlock.try_lock_shared() {
@@ -197,9 +197,6 @@ impl<T: ?Sized> RwLock<T> {
     /// it is dropped.
     ///
     /// This function does not block.
-    ///
-    /// This function does not provide any guarantees with respect to the ordering
-    /// of whether contentious readers or writers will acquire the lock first.
     #[inline]
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
         if self.rwlock.try_lock_exclusive() {
