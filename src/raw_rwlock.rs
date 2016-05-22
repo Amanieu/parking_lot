@@ -129,7 +129,7 @@ impl RawRwLock {
 
     #[cold]
     #[inline(never)]
-    pub fn lock_exclusive_slow(&self) {
+    fn lock_exclusive_slow(&self) {
         let mut spin_count = 0;
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -191,7 +191,7 @@ impl RawRwLock {
 
     #[cold]
     #[inline(never)]
-    pub fn unlock_exclusive_slow(&self) {
+    fn unlock_exclusive_slow(&self) {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // Unlock directly if there are no parked threads
@@ -249,7 +249,7 @@ impl RawRwLock {
 
     #[cold]
     #[inline(never)]
-    pub fn lock_shared_slow(&self) {
+    fn lock_shared_slow(&self) {
         let mut spin_count = 0;
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -307,7 +307,7 @@ impl RawRwLock {
 
     #[cold]
     #[inline(never)]
-    pub fn unlock_shared_slow(&self) {
+    fn unlock_shared_slow(&self) {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // Unlock directly if there are no parked threads or if there are

@@ -201,7 +201,7 @@ impl<'a, T: ?Sized + 'a> Drop for MutexGuard<'a, T> {
 // Helper function used by Condvar, not publicly exported
 #[inline]
 pub fn guard_lock<'a, T: ?Sized>(guard: &MutexGuard<'a, T>) -> &'a RawMutex {
-    &guard.mutex
+    guard.mutex
 }
 
 #[cfg(test)]
