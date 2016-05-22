@@ -11,6 +11,7 @@ use std::ptr;
 use parking_lot::{self, UnparkResult, RequeueOp};
 use mutex::{MutexGuard, guard_lock};
 use raw_mutex::RawMutex;
+use poison::{Poison, LockResult};
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.
@@ -63,16 +64,16 @@ impl WaitTimeoutResult {
 /// // Inside of our lock, spawn a new thread, and then wait for it to start
 /// thread::spawn(move|| {
 ///     let &(ref lock, ref cvar) = &*pair2;
-///     let mut started = lock.lock();
+///     let mut started = lock.lock().unwrap();
 ///     *started = true;
 ///     cvar.notify_one();
 /// });
 ///
 /// // wait for the thread to start up
 /// let &(ref lock, ref cvar) = &*pair;
-/// let mut started = lock.lock();
+/// let mut started = lock.lock().unwrap();
 /// while !*started {
-///     cvar.wait(&mut started);
+///     started = cvar.wait(started).unwrap();
 /// }
 /// ```
 pub struct Condvar {
@@ -200,18 +201,26 @@ impl Condvar {
     /// candidates to wake this thread up. When this function call returns, the
     /// lock specified will have been re-acquired.
     ///
+    /// # Errors
+    ///
+    /// This function will return an error if the mutex being waited on is
+    /// poisoned when this thread re-acquires the lock. For more information,
+    /// see information about poisoning on the Mutex type.
+    ///
     /// # Panics
     ///
     /// This function will panic if another thread is waiting on the `Condvar`
     /// with a different `Mutex` object.
     #[inline]
-    pub fn wait<T: ?Sized>(&self, mutex_guard: &mut MutexGuard<T>) {
-        self.wait_internal(guard_lock(mutex_guard));
+    pub fn wait<'a, T: ?Sized>(&self,
+                               mutex_guard: MutexGuard<'a, T>)
+                               -> LockResult<MutexGuard<'a, T>> {
+        self.wait_internal(guard_lock(&mutex_guard)).map_lock_result(mutex_guard)
     }
 
     // This is a non-generic function to reduce the monomorphization cost of
     // using `wait`.
-    fn wait_internal(&self, mutex: &RawMutex) {
+    fn wait_internal(&self, mutex: &RawMutex) -> Poison {
         unsafe {
             let mut bad_mutex = false;
             {
@@ -232,7 +241,7 @@ impl Condvar {
                 };
                 let before_sleep = &mut || {
                     // Unlock the mutex before sleeping...
-                    mutex.unlock();
+                    mutex.unlock(Poison(false));
                 };
                 let timed_out = &mut |_, _| unreachable!();
                 parking_lot::park(addr, validate, before_sleep, timed_out, None);
@@ -246,7 +255,7 @@ impl Condvar {
             }
 
             // ... and re-lock it once we are done sleeping
-            mutex.lock();
+            mutex.lock()
         }
     }
 
@@ -265,20 +274,30 @@ impl Condvar {
     /// Like `wait`, the lock specified will be re-acquired when this function
     /// returns, regardless of whether the timeout elapsed or not.
     ///
+    /// # Errors
+    ///
+    /// This function will return an error if the mutex being waited on is
+    /// poisoned when this thread re-acquires the lock. For more information,
+    /// see information about poisoning on the Mutex type.
+    ///
     /// # Panics
     ///
     /// This function will panic if another thread is waiting on the `Condvar`
     /// with a different `Mutex` object.
-    pub fn wait_until<T: ?Sized>(&self,
-                                 mutex_guard: &mut MutexGuard<T>,
-                                 timeout: Instant)
-                                 -> WaitTimeoutResult {
-        self.wait_until_internal(guard_lock(mutex_guard), timeout)
+    pub fn wait_until<'a, T: ?Sized>(&self,
+                                     mutex_guard: MutexGuard<'a, T>,
+                                     timeout: Instant)
+                                     -> LockResult<(MutexGuard<'a, T>, WaitTimeoutResult)> {
+        let (poison, timeout) = self.wait_until_internal(guard_lock(&mutex_guard), timeout);
+        poison.map_lock_result((mutex_guard, timeout))
     }
 
     // This is a non-generic function to reduce the monomorphization cost of
     // using `wait_until`.
-    fn wait_until_internal(&self, mutex: &RawMutex, timeout: Instant) -> WaitTimeoutResult {
+    fn wait_until_internal(&self,
+                           mutex: &RawMutex,
+                           timeout: Instant)
+                           -> (Poison, WaitTimeoutResult) {
         unsafe {
             let result;
             let mut bad_mutex = false;
@@ -286,7 +305,7 @@ impl Condvar {
             if timeout <= Instant::now() {
                 // If the timeout is in the past, we still need to release and
                 // re-acquire the mutex.
-                mutex.unlock();
+                mutex.unlock(Poison(false));
                 result = false;
             } else {
                 let addr = self as *const _ as usize;
@@ -306,7 +325,7 @@ impl Condvar {
                 };
                 let before_sleep = &mut || {
                     // Unlock the mutex before sleeping...
-                    mutex.unlock();
+                    mutex.unlock(Poison(false));
                 };
                 let timed_out = &mut |k, r| {
                     // If we were requeued to a mutex, then we did not time out.
@@ -332,9 +351,7 @@ impl Condvar {
             }
 
             // ... and re-lock it once we are done sleeping
-            mutex.lock();
-
-            WaitTimeoutResult(!(result || requeued))
+            (mutex.lock(), WaitTimeoutResult(!(result || requeued)))
         }
     }
 
@@ -353,10 +370,10 @@ impl Condvar {
     /// Like `wait`, the lock specified will be re-acquired when this function
     /// returns, regardless of whether the timeout elapsed or not.
     #[inline]
-    pub fn wait_for<T: ?Sized>(&self,
-                               guard: &mut MutexGuard<T>,
-                               timeout: Duration)
-                               -> WaitTimeoutResult {
+    pub fn wait_for<'a, T: ?Sized>(&self,
+                                   guard: MutexGuard<'a, T>,
+                                   timeout: Duration)
+                                   -> LockResult<(MutexGuard<'a, T>, WaitTimeoutResult)> {
         self.wait_until(guard, Instant::now() + timeout)
     }
 }
@@ -390,12 +407,13 @@ mod tests {
             static ref M: Mutex<()> = Mutex::new(());
         }
 
-        let mut g = M.lock();
+        let g = M.lock().unwrap();
         let _t = thread::spawn(move || {
-            let _g = M.lock();
+            let _g = M.lock().unwrap();
             C.notify_one();
         });
-        C.wait(&mut g);
+        let g = C.wait(g).unwrap();
+        drop(g);
     }
 
     #[test]
@@ -409,13 +427,13 @@ mod tests {
             let tx = tx.clone();
             thread::spawn(move || {
                 let &(ref lock, ref cond) = &*data;
-                let mut cnt = lock.lock();
+                let mut cnt = lock.lock().unwrap();
                 *cnt += 1;
                 if *cnt == N {
                     tx.send(()).unwrap();
                 }
                 while *cnt != 0 {
-                    cond.wait(&mut cnt);
+                    cnt = cond.wait(cnt).unwrap();
                 }
                 tx.send(()).unwrap();
             });
@@ -424,7 +442,7 @@ mod tests {
 
         let &(ref lock, ref cond) = &*data;
         rx.recv().unwrap();
-        let mut cnt = lock.lock();
+        let mut cnt = lock.lock().unwrap();
         *cnt = 0;
         cond.notify_all();
         drop(cnt);
@@ -441,14 +459,15 @@ mod tests {
             static ref M: Mutex<()> = Mutex::new(());
         }
 
-        let mut g = M.lock();
-        let no_timeout = C.wait_for(&mut g, Duration::from_millis(1));
+        let g = M.lock().unwrap();
+        let (g, no_timeout) = C.wait_for(g, Duration::from_millis(1)).unwrap();
         assert!(no_timeout.timed_out());
         let _t = thread::spawn(move || {
-            let _g = M.lock();
+            let _g = M.lock().unwrap();
             C.notify_one();
         });
-        let timeout_res = C.wait_for(&mut g, Duration::from_millis(u32::max_value() as u64));
+        let (g, timeout_res) = C.wait_for(g, Duration::from_millis(u32::max_value() as u64))
+            .unwrap();
         assert!(!timeout_res.timed_out());
         drop(g);
     }
@@ -460,16 +479,16 @@ mod tests {
             static ref M: Mutex<()> = Mutex::new(());
         }
 
-        let mut g = M.lock();
-        let no_timeout = C.wait_until(&mut g, Instant::now() + Duration::from_millis(1));
+        let g = M.lock().unwrap();
+        let (g, no_timeout) = C.wait_until(g, Instant::now() + Duration::from_millis(1)).unwrap();
         assert!(no_timeout.timed_out());
         let _t = thread::spawn(move || {
-            let _g = M.lock();
+            let _g = M.lock().unwrap();
             C.notify_one();
         });
-        let timeout_res = C.wait_until(&mut g,
-                                       Instant::now() +
-                                       Duration::from_millis(u32::max_value() as u64));
+        let (g, timeout_res) = C.wait_until(g,
+                        Instant::now() + Duration::from_millis(u32::max_value() as u64))
+            .unwrap();
         assert!(!timeout_res.timed_out());
         drop(g);
     }
@@ -492,17 +511,17 @@ mod tests {
         }
 
         let (tx, rx) = channel();
-        let g = M1.lock();
+        let g = M1.lock().unwrap();
         let _t = thread::spawn(move || {
-            let mut g = M1.lock();
+            let g = M1.lock().unwrap();
             tx.send(()).unwrap();
-            C.wait(&mut g);
+            let _ = C.wait(g).unwrap();
         });
         drop(g);
         rx.recv().unwrap();
-        let _g = M1.lock();
+        let _g = M1.lock().unwrap();
         let _guard = PanicGuard;
-        let _ = C.wait(&mut M2.lock());
+        let _ = C.wait(M2.lock().unwrap()).unwrap();
     }
 
     #[test]
@@ -513,14 +532,14 @@ mod tests {
             static ref M2: Mutex<()> = Mutex::new(());
         }
 
-        let mut g = M1.lock();
+        let mut g = M1.lock().unwrap();
         let _t = thread::spawn(move || {
-            let _g = M1.lock();
+            let _g = M1.lock().unwrap();
             C.notify_one();
         });
-        C.wait(&mut g);
+        g = C.wait(g).unwrap();
         drop(g);
 
-        let _ = C.wait_for(&mut M2.lock(), Duration::from_millis(1));
+        let _ = C.wait_for(M2.lock().unwrap(), Duration::from_millis(1)).unwrap();
     }
 }

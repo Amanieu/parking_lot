@@ -8,7 +8,10 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::fmt;
+#[cfg(feature = "nightly")]
+use std::panic::UnwindSafe;
 use raw_mutex::RawMutex;
+use poison::{Poison, PoisonGuard, LockResult, TryLockResult, TryLockError};
 
 /// A mutual exclusion primitive useful for protecting shared data
 ///
@@ -19,9 +22,26 @@ use raw_mutex::RawMutex;
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
 /// ever accessed when the mutex is locked.
 ///
+/// # Poisoning
+///
+/// The mutexes in this module implement a strategy called "poisoning" where a
+/// mutex is considered poisoned whenever a thread panics while holding the
+/// lock. Once a mutex is poisoned, all other threads are unable to access the
+/// data by default as it is likely tainted (some invariant is not being
+/// upheld).
+///
+/// For a mutex, this means that the `lock` and `try_lock` methods return a
+/// `Result` which indicates whether a mutex has been poisoned or not. Most
+/// usage of a mutex will simply `unwrap()` these results, propagating panics
+/// among threads to ensure that a possibly invalid invariant is not witnessed.
+///
+/// A poisoned mutex, however, does not prevent all access to the underlying
+/// data. The `PoisonError` type has an `into_inner` method which will return
+/// the guard that would have otherwise been returned on a successful lock. This
+/// allows access to the data, despite the lock being poisoned.
+///
 /// # Differences from the standard library `Mutex`
 ///
-/// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 byte of space, whereas the standard library boxes the
 ///   `Mutex` due to platform limitations.
 /// - A `MutexGuard` can be sent to another thread and unlocked there.
@@ -54,7 +74,7 @@ use raw_mutex::RawMutex;
 ///         // The shared state can only be accessed once the lock is held.
 ///         // Our non-atomic increment is safe because we're the only thread
 ///         // which can access the shared state when the lock is held.
-///         let mut data = data.lock();
+///         let mut data = data.lock().unwrap();
 ///         *data += 1;
 ///         if *data == N {
 ///             tx.send(()).unwrap();
@@ -64,6 +84,36 @@ use raw_mutex::RawMutex;
 /// }
 ///
 /// rx.recv().unwrap();
+/// ```
+///
+/// To recover from a poisoned mutex:
+///
+/// ```
+/// use std::sync::Arc;
+/// use parking_lot::Mutex;
+/// use std::thread;
+///
+/// let lock = Arc::new(Mutex::new(0_u32));
+/// let lock2 = lock.clone();
+///
+/// let _ = thread::spawn(move || -> () {
+///     // This thread will acquire the mutex first, unwrapping the result of
+///     // `lock` because the lock has not been poisoned.
+///     let _guard = lock2.lock().unwrap();
+///
+///     // This panic while holding the lock (`_guard` is in scope) will poison
+///     // the mutex.
+///     panic!();
+/// }).join();
+///
+/// // The lock is poisoned by this point, but the returned result can be
+/// // pattern matched on to return the underlying guard on both branches.
+/// let mut guard = match lock.lock() {
+///     Ok(guard) => guard,
+///     Err(poisoned) => poisoned.into_inner(),
+/// };
+///
+/// *guard += 1;
 /// ```
 pub struct Mutex<T: ?Sized> {
     mutex: RawMutex,
@@ -82,6 +132,7 @@ unsafe impl<T: Send> Sync for Mutex<T> {}
 pub struct MutexGuard<'a, T: ?Sized + 'a> {
     mutex: &'a RawMutex,
     data: &'a mut T,
+    poison: PoisonGuard,
 }
 
 impl<T> Mutex<T> {
@@ -106,9 +157,15 @@ impl<T> Mutex<T> {
     }
 
     /// Consumes this mutex, returning the underlying data.
+    ///
+    /// # Errors
+    ///
+    /// If another user of this mutex panicked while holding the mutex, then
+    /// this call will return an error instead.
     #[inline]
-    pub fn into_inner(self) -> T {
-        unsafe { self.data.into_inner() }
+    pub fn into_inner(self) -> LockResult<T> {
+        let data = unsafe { self.data.into_inner() };
+        self.mutex.is_poisoned().map_lock_result(data)
     }
 }
 
@@ -122,13 +179,15 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// Attempts to lock a mutex in the thread which already holds the lock will
     /// result is a deadlock.
+    ///
+    /// # Errors
+    ///
+    /// If another user of this mutex panicked while holding the mutex, then
+    /// this call will return an error once the mutex is acquired.
     #[inline]
-    pub fn lock(&self) -> MutexGuard<T> {
-        self.mutex.lock();
-        MutexGuard {
-            mutex: &self.mutex,
-            data: unsafe { &mut *self.data.get() },
-        }
+    pub fn lock(&self) -> LockResult<MutexGuard<T>> {
+        let poison = self.mutex.lock();
+        MutexGuard::new(self, poison)
     }
 
     /// Attempts to acquire this lock.
@@ -138,15 +197,18 @@ impl<T: ?Sized> Mutex<T> {
     /// guard is dropped.
     ///
     /// This function does not block.
+    ///
+    /// # Errors
+    ///
+    /// If another user of this mutex panicked while holding the mutex, then
+    /// this call will return failure if the mutex would otherwise be
+    /// acquired.
     #[inline]
-    pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-        if self.mutex.try_lock() {
-            Some(MutexGuard {
-                mutex: &self.mutex,
-                data: unsafe { &mut *self.data.get() },
-            })
+    pub fn try_lock(&self) -> TryLockResult<MutexGuard<T>> {
+        if let Some(poison) = self.mutex.try_lock() {
+            Ok(try!(MutexGuard::new(self, poison)))
         } else {
-            None
+            Err(TryLockError::WouldBlock)
         }
     }
 
@@ -154,9 +216,25 @@ impl<T: ?Sized> Mutex<T> {
     ///
     /// Since this call borrows the `Mutex` mutably, no actual locking needs to
     /// take place---the mutable borrow statically guarantees no locks exist.
+    ///
+    /// # Errors
+    ///
+    /// If another user of this mutex panicked while holding the mutex, then
+    /// this call will return an error instead.
     #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.get() }
+    pub fn get_mut(&mut self) -> LockResult<&mut T> {
+        let data = unsafe { &mut *self.data.get() };
+        self.mutex.is_poisoned().map_lock_result(data)
+    }
+
+    /// Determines whether the lock is poisoned.
+    ///
+    /// If another thread is active, the lock can still become poisoned at any
+    /// time.  You should not trust a `false` value for program correctness
+    /// without additional synchronization.
+    #[inline]
+    pub fn is_poisoned(&self) -> bool {
+        self.mutex.is_poisoned().0
     }
 }
 
@@ -170,9 +248,26 @@ impl<T: ?Sized + Default> Default for Mutex<T> {
 impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_lock() {
-            Some(guard) => write!(f, "Mutex {{ data: {:?} }}", &*guard),
-            None => write!(f, "Mutex {{ <locked> }}"),
+            Ok(guard) => write!(f, "Mutex {{ data: {:?} }}", &*guard),
+            Err(TryLockError::Poisoned(err)) => {
+                write!(f, "Mutex {{ data: Poisoned({:?}) }}", &**err.get_ref())
+            }
+            Err(TryLockError::WouldBlock) => write!(f, "Mutex {{ <locked> }}"),
         }
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<T: ?Sized> UnwindSafe for Mutex<T> {}
+
+impl<'a, T: ?Sized> MutexGuard<'a, T> {
+    fn new(mutex: &'a Mutex<T>, poison: Poison) -> LockResult<MutexGuard<'a, T>> {
+        let guard = MutexGuard {
+            mutex: &mutex.mutex,
+            data: unsafe { &mut *mutex.data.get() },
+            poison: PoisonGuard::new(),
+        };
+        poison.map_lock_result(guard)
     }
 }
 
@@ -194,7 +289,7 @@ impl<'a, T: ?Sized + 'a> DerefMut for MutexGuard<'a, T> {
 impl<'a, T: ?Sized + 'a> Drop for MutexGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.mutex.unlock();
+        self.mutex.unlock(self.poison.done());
     }
 }
 
@@ -239,7 +334,7 @@ mod tests {
         fn inc() {
             for _ in 0..J {
                 unsafe {
-                    let _g = M.lock();
+                    let _g = M.lock().unwrap();
                     CNT += 1;
                 }
             }
@@ -275,7 +370,7 @@ mod tests {
     #[test]
     fn test_into_inner() {
         let m = Mutex::new(NonCopy(10));
-        assert_eq!(m.into_inner(), NonCopy(10));
+        assert_eq!(m.into_inner().unwrap(), NonCopy(10));
     }
 
     #[test]
@@ -290,17 +385,51 @@ mod tests {
         let m = Mutex::new(Foo(num_drops.clone()));
         assert_eq!(num_drops.load(Ordering::SeqCst), 0);
         {
-            let _inner = m.into_inner();
+            let _inner = m.into_inner().unwrap();
             assert_eq!(num_drops.load(Ordering::SeqCst), 0);
         }
         assert_eq!(num_drops.load(Ordering::SeqCst), 1);
     }
 
     #[test]
+    fn test_into_inner_poison() {
+        let m = Arc::new(Mutex::new(NonCopy(10)));
+        let m2 = m.clone();
+        let _ = thread::spawn(move || {
+                let _lock = m2.lock().unwrap();
+                panic!("test panic in inner thread to poison mutex");
+            })
+            .join();
+
+        assert!(m.is_poisoned());
+        match Arc::try_unwrap(m).unwrap().into_inner() {
+            Err(e) => assert_eq!(e.into_inner(), NonCopy(10)),
+            Ok(x) => panic!("into_inner of poisoned Mutex is Ok: {:?}", x),
+        }
+    }
+
+    #[test]
     fn test_get_mut() {
         let mut m = Mutex::new(NonCopy(10));
-        *m.get_mut() = NonCopy(20);
-        assert_eq!(m.into_inner(), NonCopy(20));
+        *m.get_mut().unwrap() = NonCopy(20);
+        assert_eq!(m.into_inner().unwrap(), NonCopy(20));
+    }
+
+    #[test]
+    fn test_get_mut_poison() {
+        let m = Arc::new(Mutex::new(NonCopy(10)));
+        let m2 = m.clone();
+        let _ = thread::spawn(move || {
+                let _lock = m2.lock().unwrap();
+                panic!("test panic in inner thread to poison mutex");
+            })
+            .join();
+
+        assert!(m.is_poisoned());
+        match Arc::try_unwrap(m).unwrap().get_mut() {
+            Err(e) => assert_eq!(*e.into_inner(), NonCopy(10)),
+            Ok(x) => panic!("get_mut of poisoned Mutex is Ok: {:?}", x),
+        }
     }
 
     #[test]
@@ -312,18 +441,61 @@ mod tests {
             // wait until parent gets in
             rx.recv().unwrap();
             let &(ref lock, ref cvar) = &*packet2.0;
-            let mut lock = lock.lock();
+            let mut lock = lock.lock().unwrap();
             *lock = true;
             cvar.notify_one();
         });
 
         let &(ref lock, ref cvar) = &*packet.0;
-        let mut lock = lock.lock();
+        let mut lock = lock.lock().unwrap();
         tx.send(()).unwrap();
         assert!(!*lock);
         while !*lock {
-            cvar.wait(&mut lock);
+            lock = cvar.wait(lock).unwrap();
         }
+    }
+
+    #[test]
+    fn test_arc_condvar_poison() {
+        let packet = Packet(Arc::new((Mutex::new(1), Condvar::new())));
+        let packet2 = Packet(packet.0.clone());
+        let (tx, rx) = channel();
+
+        let _t = thread::spawn(move || -> () {
+            rx.recv().unwrap();
+            let &(ref lock, ref cvar) = &*packet2.0;
+            let _g = lock.lock().unwrap();
+            cvar.notify_one();
+            // Parent should fail when it wakes up.
+            panic!();
+        });
+
+        let &(ref lock, ref cvar) = &*packet.0;
+        let mut lock = lock.lock().unwrap();
+        tx.send(()).unwrap();
+        while *lock == 1 {
+            match cvar.wait(lock) {
+                Ok(l) => {
+                    lock = l;
+                    assert_eq!(*lock, 1);
+                }
+                Err(..) => break,
+            }
+        }
+    }
+
+    #[test]
+    fn test_mutex_arc_poison() {
+        let arc = Arc::new(Mutex::new(1));
+        assert!(!arc.is_poisoned());
+        let arc2 = arc.clone();
+        let _ = thread::spawn(move || {
+                let lock = arc2.lock().unwrap();
+                assert_eq!(*lock, 2);
+            })
+            .join();
+        assert!(arc.lock().is_err());
+        assert!(arc.is_poisoned());
     }
 
     #[test]
@@ -334,8 +506,8 @@ mod tests {
         let arc2 = Arc::new(Mutex::new(arc));
         let (tx, rx) = channel();
         let _t = thread::spawn(move || {
-            let lock = arc2.lock();
-            let lock2 = lock.lock();
+            let lock = arc2.lock().unwrap();
+            let lock2 = lock.lock().unwrap();
             assert_eq!(*lock2, 1);
             tx.send(()).unwrap();
         });
@@ -352,14 +524,14 @@ mod tests {
                 }
                 impl Drop for Unwinder {
                     fn drop(&mut self) {
-                        *self.i.lock() += 1;
+                        *self.i.lock().unwrap() += 1;
                     }
                 }
                 let _u = Unwinder { i: arc2 };
                 panic!();
             })
             .join();
-        let lock = arc.lock();
+        let lock = arc.lock().unwrap();
         assert_eq!(*lock, 2);
     }
 
@@ -367,12 +539,12 @@ mod tests {
     fn test_mutex_unsized() {
         let mutex: &Mutex<[i32]> = &Mutex::new([1, 2, 3]);
         {
-            let b = &mut *mutex.lock();
+            let b = &mut *mutex.lock().unwrap();
             b[0] = 4;
             b[2] = 5;
         }
         let comp: &[i32] = &[4, 2, 5];
-        assert_eq!(&*mutex.lock(), comp);
+        assert_eq!(&*mutex.lock().unwrap(), comp);
     }
 
     #[test]

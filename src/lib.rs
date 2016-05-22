@@ -170,9 +170,11 @@ mod condvar;
 mod mutex;
 mod rwlock;
 mod once;
+mod poison;
 
 pub use once::{Once, ONCE_INIT, OnceState};
 pub use parking_lot::{UnparkResult, RequeueOp, park, unpark_one, unpark_all, unpark_requeue};
 pub use mutex::{Mutex, MutexGuard};
 pub use condvar::{Condvar, WaitTimeoutResult};
 pub use rwlock::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+pub use poison::{PoisonError, TryLockError, TryLockResult, LockResult};

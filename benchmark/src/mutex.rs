@@ -45,7 +45,7 @@ impl<T> Mutex<T> for parking_lot::Mutex<T> {
     fn lock<F, R>(&self, f: F) -> R
         where F: FnOnce(&mut T) -> R
     {
-        f(&mut *self.lock())
+        f(&mut *self.lock().unwrap())
     }
     fn name() -> &'static str {
         "parking_lot::Mutex"
