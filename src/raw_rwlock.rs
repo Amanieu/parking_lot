@@ -12,12 +12,14 @@ use stable::{AtomicUsize, Ordering};
 use spinwait::SpinWait;
 use parking_lot::{self, UnparkResult};
 use elision::{have_elision, AtomicElisionExt};
+use poison::Poison;
 
-const SHARED_PARKED_BIT: usize = 1;
-const EXCLUSIVE_PARKED_BIT: usize = 2;
-const EXCLUSIVE_LOCKED_BIT: usize = 4;
-const SHARED_COUNT_MASK: usize = !7;
-const SHARED_COUNT_INC: usize = 8;
+const POISON_BIT: usize = 1;
+const SHARED_PARKED_BIT: usize = 2;
+const EXCLUSIVE_PARKED_BIT: usize = 4;
+const EXCLUSIVE_LOCKED_BIT: usize = 8;
+const SHARED_COUNT_MASK: usize = !15;
+const SHARED_COUNT_INC: usize = 16;
 
 pub struct RawRwLock {
     state: AtomicUsize,
@@ -36,38 +38,39 @@ impl RawRwLock {
     }
 
     #[inline]
-    pub fn lock_exclusive(&self) {
+    pub fn lock_exclusive(&self) -> Poison {
         if self.state
             .compare_exchange_weak(0,
                                    EXCLUSIVE_LOCKED_BIT,
                                    Ordering::Acquire,
                                    Ordering::Relaxed)
             .is_ok() {
-            return;
+            return Poison(false);
         }
-        self.lock_exclusive_slow();
+        self.lock_exclusive_slow()
     }
 
     #[inline]
-    pub fn try_lock_exclusive(&self) -> bool {
+    pub fn try_lock_exclusive(&self) -> Option<Poison> {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             if state & (EXCLUSIVE_LOCKED_BIT | SHARED_COUNT_MASK) != 0 {
-                return false;
+                return None;
             }
             match self.state.compare_exchange_weak(state,
                                                    state | EXCLUSIVE_LOCKED_BIT,
                                                    Ordering::Acquire,
                                                    Ordering::Relaxed) {
-                Ok(_) => return true,
+                Ok(_) => return Some(Poison(state & POISON_BIT != 0)),
                 Err(x) => state = x,
             }
         }
     }
 
     #[inline]
-    pub fn unlock_exclusive(&self) {
-        if self.state
+    pub fn unlock_exclusive(&self, poison: Poison) {
+        if !poison.0 &&
+           self.state
             .compare_exchange_weak(EXCLUSIVE_LOCKED_BIT,
                                    0,
                                    Ordering::Release,
@@ -75,49 +78,49 @@ impl RawRwLock {
             .is_ok() {
             return;
         }
-        self.unlock_exclusive_slow();
+        self.unlock_exclusive_slow(poison);
     }
 
     #[inline]
-    pub fn lock_shared(&self) {
+    pub fn lock_shared(&self) -> Poison {
         let state = self.state.load(Ordering::Relaxed);
         // Use hardware lock elision to avoid cache conflicts when multiple
         // readers try to acquire the lock. We only do this if the lock is
         // completely empty since elision handles conflicts poorly.
         if have_elision() && state == 0 {
             if self.state.elision_acquire(0, SHARED_COUNT_INC).is_ok() {
-                return;
+                return Poison(false);
             }
         } else if let Some(new_state) = state.checked_add(SHARED_COUNT_INC) {
-            if state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) == 0 &&
+            if state & (POISON_BIT | EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) == 0 &&
                self.state
                 .compare_exchange_weak(state, new_state, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok() {
-                return;
+                return Poison(false);
             }
         }
-        self.lock_shared_slow();
+        self.lock_shared_slow()
     }
 
     #[inline]
-    pub fn try_lock_shared(&self) -> bool {
+    pub fn try_lock_shared(&self) -> Option<Poison> {
         let state = self.state.load(Ordering::Relaxed);
         if state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) != 0 {
-            return false;
+            return None;
         }
         // Use hardware lock elision to avoid cache conflicts when multiple
         // readers try to acquire the lock. We only do this if the lock is
         // completely empty since elision handles conflicts poorly.
         if have_elision() && state == 0 {
             if self.state.elision_acquire(0, SHARED_COUNT_INC).is_ok() {
-                return true;
+                return Some(Poison(false));
             }
         } else if let Some(new_state) = state.checked_add(SHARED_COUNT_INC) {
-            if state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) == 0 &&
+            if state & (POISON_BIT | EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) == 0 &&
                self.state
                 .compare_exchange_weak(state, new_state, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok() {
-                return true;
+                return Some(Poison(false));
             }
         }
         self.try_lock_shared_slow()
@@ -148,9 +151,14 @@ impl RawRwLock {
         self.unlock_shared_slow();
     }
 
+    #[inline]
+    pub fn is_poisoned(&self) -> Poison {
+        Poison(self.state.load(Ordering::Relaxed) & POISON_BIT != 0)
+    }
+
     #[cold]
     #[inline(never)]
-    fn lock_exclusive_slow(&self) {
+    fn lock_exclusive_slow(&self) -> Poison {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -162,7 +170,7 @@ impl RawRwLock {
                                            state | EXCLUSIVE_LOCKED_BIT,
                                            Ordering::Acquire,
                                            Ordering::Relaxed) {
-                    Ok(_) => return,
+                    Ok(_) => return Poison(state & POISON_BIT != 0),
                     Err(x) => state = x,
                 }
                 continue;
@@ -209,14 +217,20 @@ impl RawRwLock {
 
     #[cold]
     #[inline(never)]
-    fn unlock_exclusive_slow(&self) {
+    fn unlock_exclusive_slow(&self, poison: Poison) {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
+            let poison_bit = if poison.0 {
+                POISON_BIT
+            } else {
+                state & POISON_BIT
+            };
+
             // Unlock directly if there are no parked threads
             if state & (EXCLUSIVE_PARKED_BIT | SHARED_PARKED_BIT) == 0 {
                 match self.state
-                    .compare_exchange_weak(EXCLUSIVE_LOCKED_BIT,
-                                           0,
+                    .compare_exchange_weak(state,
+                                           poison_bit,
                                            Ordering::Release,
                                            Ordering::Relaxed) {
                     Ok(_) => return,
@@ -230,6 +244,11 @@ impl RawRwLock {
                 unsafe {
                     let addr = self as *const _ as usize;
                     let callback = &mut |result| {
+                        // Set the poison bit before unlocking
+                        if poison.0 && result != UnparkResult::NoParkedThreads {
+                            self.state.fetch_or(POISON_BIT, Ordering::Relaxed);
+                        }
+
                         // Clear the exclusive parked bit if this was the last
                         // exclusive thread. Also clear the locked bit if we
                         // successfully unparked a thread.
@@ -240,7 +259,7 @@ impl RawRwLock {
                             }
                             UnparkResult::NoParkedThreads => !EXCLUSIVE_PARKED_BIT,
                         };
-                        self.state.fetch_and(mask, Ordering::Release);
+                        state = self.state.fetch_and(mask, Ordering::Release);
                     };
                     if parking_lot::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
                         // If we successfully unparked an exclusive thread,
@@ -252,8 +271,8 @@ impl RawRwLock {
 
             // Release the exclusive lock and clear the shared parked bit
             if let Err(x) = self.state
-                .compare_exchange_weak(EXCLUSIVE_LOCKED_BIT | SHARED_PARKED_BIT,
-                                       0,
+                .compare_exchange_weak(state & !EXCLUSIVE_PARKED_BIT,
+                                       poison_bit,
                                        Ordering::Release,
                                        Ordering::Relaxed) {
                 state = x;
@@ -271,7 +290,7 @@ impl RawRwLock {
 
     #[cold]
     #[inline(never)]
-    fn lock_shared_slow(&self) {
+    fn lock_shared_slow(&self) -> Poison {
         let mut spinwait = SpinWait::new();
         let mut spinwait_shared = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
@@ -280,15 +299,17 @@ impl RawRwLock {
             if state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) == 0 {
                 if have_elision() && state == 0 {
                     if self.state.elision_acquire(0, SHARED_COUNT_INC).is_ok() {
-                        return;
+                        return Poison(state & POISON_BIT != 0);
                     }
                 } else {
-                    if self.state.compare_exchange_weak(state,
-                                                      state.checked_add(SHARED_COUNT_INC)
-                                                          .expect("RwLock shared count overflow"),
-                                                      Ordering::Acquire,
-                                                      Ordering::Relaxed).is_ok() {
-                        return;
+                    if self.state
+                        .compare_exchange_weak(state,
+                                               state.checked_add(SHARED_COUNT_INC)
+                                                   .expect("RwLock shared count overflow"),
+                                               Ordering::Acquire,
+                                               Ordering::Relaxed)
+                        .is_ok() {
+                        return Poison(state & POISON_BIT != 0);
                     }
                 }
 
@@ -340,24 +361,25 @@ impl RawRwLock {
 
     #[cold]
     #[inline(never)]
-    pub fn try_lock_shared_slow(&self) -> bool {
+    pub fn try_lock_shared_slow(&self) -> Option<Poison> {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             if state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) != 0 {
-                return false;
+                return None;
             }
             if have_elision() && state == 0 {
                 match self.state.elision_acquire(0, SHARED_COUNT_INC) {
-                    Ok(_) => return true,
+                    Ok(_) => return Some(Poison(state & POISON_BIT != 0)),
                     Err(x) => state = x,
                 }
             } else {
                 match self.state.compare_exchange_weak(state,
-                                                  state.checked_add(SHARED_COUNT_INC)
-                                                      .expect("RwLock shared count overflow"),
-                                                  Ordering::Acquire,
-                                                  Ordering::Relaxed) {
-                    Ok(_) => return true,
+                                                       state.checked_add(SHARED_COUNT_INC)
+                                                           .expect("RwLock shared count \
+                                                                    overflow"),
+                                                       Ordering::Acquire,
+                                                       Ordering::Relaxed) {
+                    Ok(_) => return Some(Poison(state & POISON_BIT != 0)),
                     Err(x) => state = x,
                 }
             }

@@ -8,7 +8,10 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::fmt;
+#[cfg(feature = "nightly")]
+use std::panic::UnwindSafe;
 use raw_rwlock::RawRwLock;
+use poison::{Poison, PoisonGuard, LockResult, TryLockResult, TryLockError};
 
 /// A reader-writer lock
 ///
@@ -29,10 +32,16 @@ use raw_rwlock::RawRwLock;
 /// locking methods implement `Deref` (and `DerefMut` for the `write` methods)
 /// to allow access to the contained of the lock.
 ///
+/// # Poisoning
+///
+/// An `RwLock`, like `Mutex`, will become poisoned on a panic. Note, however,
+/// that an `RwLock` may only be poisoned if a panic occurs while it is locked
+/// exclusively (write mode). If a panic occurs in any reader, then the lock
+/// will not be poisoned.
+///
 /// # Differences from the standard library `RwLock`
 ///
 /// - Writer-preferred policy instead of an unspecified platform default.
-/// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 word of space, whereas the standard library boxes the
 ///   `RwLock` due to platform limitations.
 /// - A lock guard can be sent to another thread and unlocked there.
@@ -50,15 +59,15 @@ use raw_rwlock::RawRwLock;
 ///
 /// // many reader locks can be held at once
 /// {
-///     let r1 = lock.read();
-///     let r2 = lock.read();
+///     let r1 = lock.read().unwrap();
+///     let r2 = lock.read().unwrap();
 ///     assert_eq!(*r1, 5);
 ///     assert_eq!(*r2, 5);
 /// } // read locks are dropped at this point
 ///
 /// // only one write lock may be held, however
 /// {
-///     let mut w = lock.write();
+///     let mut w = lock.write().unwrap();
 ///     *w += 1;
 ///     assert_eq!(*w, 6);
 /// } // write lock is dropped here
@@ -85,6 +94,7 @@ pub struct RwLockReadGuard<'a, T: ?Sized + 'a> {
 pub struct RwLockWriteGuard<'a, T: ?Sized + 'a> {
     rwlock: &'a RawRwLock,
     data: &'a mut T,
+    poison: PoisonGuard,
 }
 
 impl<T> RwLock<T> {
@@ -125,9 +135,17 @@ impl<T> RwLock<T> {
     }
 
     /// Consumes this `RwLock`, returning the underlying data.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the RwLock is poisoned. An RwLock
+    /// is poisoned whenever a writer panics while holding an exclusive lock. An
+    /// error will only be returned if the lock would have otherwise been
+    /// acquired.
     #[inline]
-    pub fn into_inner(self) -> T {
-        unsafe { self.data.into_inner() }
+    pub fn into_inner(self) -> LockResult<T> {
+        let data = unsafe { self.data.into_inner() };
+        self.rwlock.is_poisoned().map_lock_result(data)
     }
 }
 
@@ -145,13 +163,16 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// Returns an RAII guard which will release this thread's shared access
     /// once it is dropped.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the RwLock is poisoned. An RwLock
+    /// is poisoned whenever a writer panics while holding an exclusive lock.
+    /// The failure will occur immediately after the lock has been acquired.
     #[inline]
-    pub fn read(&self) -> RwLockReadGuard<T> {
-        self.rwlock.lock_shared();
-        RwLockReadGuard {
-            rwlock: &self.rwlock,
-            data: unsafe { &*self.data.get() },
-        }
+    pub fn read(&self) -> LockResult<RwLockReadGuard<T>> {
+        let poison = self.rwlock.lock_shared();
+        RwLockReadGuard::new(self, poison)
     }
 
     /// Attempts to acquire this rwlock with shared read access.
@@ -161,15 +182,19 @@ impl<T: ?Sized> RwLock<T> {
     /// when it is dropped.
     ///
     /// This function does not block.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the RwLock is poisoned. An RwLock
+    /// is poisoned whenever a writer panics while holding an exclusive lock. An
+    /// error will only be returned if the lock would have otherwise been
+    /// acquired.
     #[inline]
-    pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
-        if self.rwlock.try_lock_shared() {
-            Some(RwLockReadGuard {
-                rwlock: &self.rwlock,
-                data: unsafe { &*self.data.get() },
-            })
+    pub fn try_read(&self) -> TryLockResult<RwLockReadGuard<T>> {
+        if let Some(poison) = self.rwlock.try_lock_shared() {
+            Ok(try!(RwLockReadGuard::new(self, poison)))
         } else {
-            None
+            Err(TryLockError::WouldBlock)
         }
     }
 
@@ -181,13 +206,16 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// Returns an RAII guard which will drop the write access of this rwlock
     /// when dropped.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the RwLock is poisoned. An RwLock
+    /// is poisoned whenever a writer panics while holding an exclusive lock.
+    /// An error will be returned when the lock is acquired.
     #[inline]
-    pub fn write(&self) -> RwLockWriteGuard<T> {
-        self.rwlock.lock_exclusive();
-        RwLockWriteGuard {
-            rwlock: &self.rwlock,
-            data: unsafe { &mut *self.data.get() },
-        }
+    pub fn write(&self) -> LockResult<RwLockWriteGuard<T>> {
+        let poison = self.rwlock.lock_exclusive();
+        RwLockWriteGuard::new(self, poison)
     }
 
     /// Attempts to lock this rwlock with exclusive write access.
@@ -197,15 +225,19 @@ impl<T: ?Sized> RwLock<T> {
     /// it is dropped.
     ///
     /// This function does not block.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the RwLock is poisoned. An RwLock
+    /// is poisoned whenever a writer panics while holding an exclusive lock. An
+    /// error will only be returned if the lock would have otherwise been
+    /// acquired.
     #[inline]
-    pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
-        if self.rwlock.try_lock_exclusive() {
-            Some(RwLockWriteGuard {
-                rwlock: &self.rwlock,
-                data: unsafe { &mut *self.data.get() },
-            })
+    pub fn try_write(&self) -> TryLockResult<RwLockWriteGuard<T>> {
+        if let Some(poison) = self.rwlock.try_lock_exclusive() {
+            Ok(try!(RwLockWriteGuard::new(self, poison)))
         } else {
-            None
+            Err(TryLockError::WouldBlock)
         }
     }
 
@@ -213,9 +245,27 @@ impl<T: ?Sized> RwLock<T> {
     ///
     /// Since this call borrows the `RwLock` mutably, no actual locking needs to
     /// take place---the mutable borrow statically guarantees no locks exist.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error if the RwLock is poisoned. An RwLock
+    /// is poisoned whenever a writer panics while holding an exclusive lock. An
+    /// error will only be returned if the lock would have otherwise been
+    /// acquired.
     #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.get() }
+    pub fn get_mut(&mut self) -> LockResult<&mut T> {
+        let data = unsafe { &mut *self.data.get() };
+        self.rwlock.is_poisoned().map_lock_result(data)
+    }
+
+    /// Determines whether the lock is poisoned.
+    ///
+    /// If another thread is active, the lock can still become poisoned at any
+    /// time.  You should not trust a `false` value for program correctness
+    /// without additional synchronization.
+    #[inline]
+    pub fn is_poisoned(&self) -> bool {
+        self.rwlock.is_poisoned().0
     }
 }
 
@@ -229,9 +279,25 @@ impl<T: ?Sized + Default> Default for RwLock<T> {
 impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_read() {
-            Some(guard) => write!(f, "RwLock {{ data: {:?} }}", &*guard),
-            None => write!(f, "RwLock {{ <locked> }}"),
+            Ok(guard) => write!(f, "RwLock {{ data: {:?} }}", &*guard),
+            Err(TryLockError::Poisoned(err)) => {
+                write!(f, "RwLock {{ data: Poisoned({:?}) }}", &**err.get_ref())
+            }
+            Err(TryLockError::WouldBlock) => write!(f, "RwLock {{ <locked> }}"),
         }
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<T: ?Sized> UnwindSafe for RwLock<T> {}
+
+impl<'a, T: ?Sized> RwLockReadGuard<'a, T> {
+    fn new(rwlock: &'a RwLock<T>, poison: Poison) -> LockResult<RwLockReadGuard<'a, T>> {
+        let guard = RwLockReadGuard {
+            rwlock: &rwlock.rwlock,
+            data: unsafe { &mut *rwlock.data.get() },
+        };
+        poison.map_lock_result(guard)
     }
 }
 
@@ -247,6 +313,17 @@ impl<'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
         self.rwlock.unlock_shared();
+    }
+}
+
+impl<'a, T: ?Sized> RwLockWriteGuard<'a, T> {
+    fn new(rwlock: &'a RwLock<T>, poison: Poison) -> LockResult<RwLockWriteGuard<'a, T>> {
+        let guard = RwLockWriteGuard {
+            rwlock: &rwlock.rwlock,
+            data: unsafe { &mut *rwlock.data.get() },
+            poison: PoisonGuard::new(),
+        };
+        poison.map_lock_result(guard)
     }
 }
 
@@ -268,7 +345,7 @@ impl<'a, T: ?Sized + 'a> DerefMut for RwLockWriteGuard<'a, T> {
 impl<'a, T: ?Sized + 'a> Drop for RwLockWriteGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.unlock_exclusive();
+        self.rwlock.unlock_exclusive(self.poison.done());
     }
 }
 
@@ -280,7 +357,7 @@ mod tests {
     use std::thread;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use RwLock;
+    use {RwLock, TryLockError};
 
     #[derive(Eq, PartialEq, Debug)]
     struct NonCopy(i32);
@@ -288,10 +365,10 @@ mod tests {
     #[test]
     fn smoke() {
         let l = RwLock::new(());
-        drop(l.read());
-        drop(l.write());
-        drop((l.read(), l.read()));
-        drop(l.write());
+        drop(l.read().unwrap());
+        drop(l.write().unwrap());
+        drop((l.read().unwrap(), l.read().unwrap()));
+        drop(l.write().unwrap());
     }
 
     #[test]
@@ -309,9 +386,9 @@ mod tests {
                 let mut rng = rand::thread_rng();
                 for _ in 0..M {
                     if rng.gen_weighted_bool(N) {
-                        drop(R.write());
+                        drop(R.write().unwrap());
                     } else {
-                        drop(R.read());
+                        drop(R.read().unwrap());
                     }
                 }
                 drop(tx);
@@ -322,29 +399,29 @@ mod tests {
     }
 
     #[test]
-    fn test_rw_arc_no_poison_wr() {
+    fn test_rw_arc_poison_wr() {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
         let _: Result<(), _> = thread::spawn(move || {
-                let _lock = arc2.write();
+                let _lock = arc2.write().unwrap();
                 panic!();
             })
             .join();
-        let lock = arc.read();
-        assert_eq!(*lock, 1);
+        assert!(arc.read().is_err());
     }
 
     #[test]
-    fn test_rw_arc_no_poison_ww() {
+    fn test_rw_arc_poison_ww() {
         let arc = Arc::new(RwLock::new(1));
+        assert!(!arc.is_poisoned());
         let arc2 = arc.clone();
         let _: Result<(), _> = thread::spawn(move || {
-                let _lock = arc2.write();
+                let _lock = arc2.write().unwrap();
                 panic!();
             })
             .join();
-        let lock = arc.write();
-        assert_eq!(*lock, 1);
+        assert!(arc.write().is_err());
+        assert!(arc.is_poisoned());
     }
 
     #[test]
@@ -352,11 +429,11 @@ mod tests {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
         let _: Result<(), _> = thread::spawn(move || {
-                let _lock = arc2.read();
+                let _lock = arc2.read().unwrap();
                 panic!();
             })
             .join();
-        let lock = arc.read();
+        let lock = arc.read().unwrap();
         assert_eq!(*lock, 1);
     }
     #[test]
@@ -364,11 +441,11 @@ mod tests {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
         let _: Result<(), _> = thread::spawn(move || {
-                let _lock = arc2.read();
+                let _lock = arc2.read().unwrap();
                 panic!()
             })
             .join();
-        let lock = arc.write();
+        let lock = arc.write().unwrap();
         assert_eq!(*lock, 1);
     }
 
@@ -379,7 +456,7 @@ mod tests {
         let (tx, rx) = channel();
 
         thread::spawn(move || {
-            let mut lock = arc2.write();
+            let mut lock = arc2.write().unwrap();
             for _ in 0..10 {
                 let tmp = *lock;
                 *lock = -1;
@@ -394,7 +471,7 @@ mod tests {
         for _ in 0..5 {
             let arc3 = arc.clone();
             children.push(thread::spawn(move || {
-                let lock = arc3.read();
+                let lock = arc3.read().unwrap();
                 assert!(*lock >= 0);
             }));
         }
@@ -406,7 +483,7 @@ mod tests {
 
         // Wait for writer to finish
         rx.recv().unwrap();
-        let lock = arc.read();
+        let lock = arc.read().unwrap();
         assert_eq!(*lock, 10);
     }
 
@@ -420,7 +497,7 @@ mod tests {
                 }
                 impl Drop for Unwinder {
                     fn drop(&mut self) {
-                        let mut lock = self.i.write();
+                        let mut lock = self.i.write().unwrap();
                         *lock += 1;
                     }
                 }
@@ -428,7 +505,7 @@ mod tests {
                 panic!();
             })
             .join();
-        let lock = arc.read();
+        let lock = arc.read().unwrap();
         assert_eq!(*lock, 2);
     }
 
@@ -436,26 +513,27 @@ mod tests {
     fn test_rwlock_unsized() {
         let rw: &RwLock<[i32]> = &RwLock::new([1, 2, 3]);
         {
-            let b = &mut *rw.write();
+            let b = &mut *rw.write().unwrap();
             b[0] = 4;
             b[2] = 5;
         }
         let comp: &[i32] = &[4, 2, 5];
-        assert_eq!(&*rw.read(), comp);
+        assert_eq!(&*rw.read().unwrap(), comp);
     }
 
     #[test]
     fn test_rwlock_try_write() {
         let lock = RwLock::new(0isize);
-        let read_guard = lock.read();
+        let read_guard = lock.read().unwrap();
 
         let write_result = lock.try_write();
         match write_result {
-            None => (),
-            Some(_) => {
+            Err(TryLockError::WouldBlock) => (),
+            Ok(_) => {
                 assert!(false,
                         "try_write should not succeed while read_guard is in scope")
             }
+            Err(_) => assert!(false, "unexpected error"),
         }
 
         drop(read_guard);
@@ -464,7 +542,7 @@ mod tests {
     #[test]
     fn test_into_inner() {
         let m = RwLock::new(NonCopy(10));
-        assert_eq!(m.into_inner(), NonCopy(10));
+        assert_eq!(m.into_inner().unwrap(), NonCopy(10));
     }
 
     #[test]
@@ -479,17 +557,51 @@ mod tests {
         let m = RwLock::new(Foo(num_drops.clone()));
         assert_eq!(num_drops.load(Ordering::SeqCst), 0);
         {
-            let _inner = m.into_inner();
+            let _inner = m.into_inner().unwrap();
             assert_eq!(num_drops.load(Ordering::SeqCst), 0);
         }
         assert_eq!(num_drops.load(Ordering::SeqCst), 1);
     }
 
     #[test]
+    fn test_into_inner_poison() {
+        let m = Arc::new(RwLock::new(NonCopy(10)));
+        let m2 = m.clone();
+        let _ = thread::spawn(move || {
+                let _lock = m2.write().unwrap();
+                panic!("test panic in inner thread to poison RwLock");
+            })
+            .join();
+
+        assert!(m.is_poisoned());
+        match Arc::try_unwrap(m).unwrap().into_inner() {
+            Err(e) => assert_eq!(e.into_inner(), NonCopy(10)),
+            Ok(x) => panic!("into_inner of poisoned RwLock is Ok: {:?}", x),
+        }
+    }
+
+    #[test]
     fn test_get_mut() {
         let mut m = RwLock::new(NonCopy(10));
-        *m.get_mut() = NonCopy(20);
-        assert_eq!(m.into_inner(), NonCopy(20));
+        *m.get_mut().unwrap() = NonCopy(20);
+        assert_eq!(m.into_inner().unwrap(), NonCopy(20));
+    }
+
+    #[test]
+    fn test_get_mut_poison() {
+        let m = Arc::new(RwLock::new(NonCopy(10)));
+        let m2 = m.clone();
+        let _ = thread::spawn(move || {
+                let _lock = m2.write().unwrap();
+                panic!("test panic in inner thread to poison RwLock");
+            })
+            .join();
+
+        assert!(m.is_poisoned());
+        match Arc::try_unwrap(m).unwrap().get_mut() {
+            Err(e) => assert_eq!(*e.into_inner(), NonCopy(10)),
+            Ok(x) => panic!("get_mut of poisoned RwLock is Ok: {:?}", x),
+        }
     }
 
     #[test]

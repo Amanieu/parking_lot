@@ -51,12 +51,12 @@ impl<T> RwLock<T> for parking_lot::RwLock<T> {
     fn read<F, R>(&self, f: F) -> R
         where F: FnOnce(&T) -> R
     {
-        f(&*self.read())
+        f(&*self.read().unwrap())
     }
     fn write<F, R>(&self, f: F) -> R
         where F: FnOnce(&mut T) -> R
     {
-        f(&mut *self.write())
+        f(&mut *self.write().unwrap())
     }
     fn name() -> &'static str {
         "parking_lot::RwLock"
