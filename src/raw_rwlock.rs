@@ -147,9 +147,12 @@ impl RawRwLock {
                 continue;
             }
 
-            // If there are no parked exclusive threads, try spinning a few
-            // times
-            if state & EXCLUSIVE_PARKED_BIT == 0 && spin_count < SPIN_LIMIT {
+            // If there are no parked exclusive threads and only one reader or
+            // writer, try spinning a few times.
+            if state & EXCLUSIVE_PARKED_BIT == 0 &&
+               (state & EXCLUSIVE_LOCKED_BIT != 0 ||
+                state & SHARED_COUNT_MASK == SHARED_COUNT_INC) &&
+               spin_count < SPIN_LIMIT {
                 spin_count += 1;
                 thread::yield_now();
                 state = self.state.load(Ordering::Relaxed);
@@ -171,17 +174,13 @@ impl RawRwLock {
             unsafe {
                 let addr = self as *const _ as usize;
                 let validate = &mut || {
-                    self.state.load(Ordering::Relaxed) &
-                    (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) ==
-                    EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT
+                    let state = self.state.load(Ordering::Relaxed);
+                    state & EXCLUSIVE_PARKED_BIT != 0 &&
+                    state & (EXCLUSIVE_LOCKED_BIT | SHARED_COUNT_MASK) != 0
                 };
                 let before_sleep = &mut || {};
                 let timed_out = &mut |_, _| unreachable!();
-                if parking_lot::park(addr, validate, before_sleep, timed_out, None) {
-                    // If we successfully parked then the lock will be handed
-                    // off to us.
-                    return;
-                }
+                parking_lot::park(addr, validate, before_sleep, timed_out, None);
             }
 
             // Loop back and try locking again
@@ -207,22 +206,31 @@ impl RawRwLock {
                 continue;
             }
 
-            // If there are exclusive parked threads, hand off the lock to one
-            // of them without unlocking it. This is needed to avoid writer
-            // starvation.
+            // If there are exclusive parked threads, wake one of them up.
             if state & EXCLUSIVE_PARKED_BIT != 0 {
                 unsafe {
                     let addr = self as *const _ as usize;
                     let callback = &mut |result| {
                         // Clear the exclusive parked bit if this was the last
-                        // thread
-                        if result != UnparkResult::UnparkedNotLast {
-                            self.state.fetch_and(!EXCLUSIVE_PARKED_BIT, Ordering::Relaxed);
-                        }
+                        // exclusive thread. Also clear the locked bit if we
+                        // successfully unparked a thread.
+                        match result {
+                            UnparkResult::UnparkedNotLast => {
+                                self.state.fetch_and(!EXCLUSIVE_LOCKED_BIT, Ordering::Release)
+                            }
+                            UnparkResult::UnparkedLast => {
+                                self.state
+                                    .fetch_and(!(EXCLUSIVE_PARKED_BIT | EXCLUSIVE_LOCKED_BIT),
+                                               Ordering::Release)
+                            }
+                            UnparkResult::NoParkedThreads => {
+                                self.state.fetch_and(!EXCLUSIVE_PARKED_BIT, Ordering::Relaxed)
+                            }
+                        };
                     };
                     if parking_lot::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
-                        // We successfully unparked an exclusive thread and the
-                        // lock has been handed off to it.
+                        // If we successfully unparked an exclusive thread,
+                        // stop here.
                         return;
                     }
                 }
@@ -291,9 +299,9 @@ impl RawRwLock {
             unsafe {
                 let addr = self as *const _ as usize;
                 let validate = &mut || {
-                    self.state.load(Ordering::Relaxed) &
-                    (EXCLUSIVE_LOCKED_BIT | SHARED_PARKED_BIT) ==
-                    EXCLUSIVE_LOCKED_BIT | SHARED_PARKED_BIT
+                    let state = self.state.load(Ordering::Relaxed);
+                    state & SHARED_PARKED_BIT != 0 &&
+                    state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) != 0
                 };
                 let before_sleep = &mut || {};
                 let timed_out = &mut |_, _| unreachable!();
@@ -308,43 +316,42 @@ impl RawRwLock {
     #[cold]
     #[inline(never)]
     fn unlock_shared_slow(&self) {
-        let mut state = self.state.load(Ordering::Relaxed);
-        loop {
-            // Unlock directly if there are no parked threads or if there are
-            // still remaining shared threads
-            if state & EXCLUSIVE_PARKED_BIT == 0 || state & SHARED_COUNT_MASK != SHARED_COUNT_INC {
-                match self.state
-                    .compare_exchange_weak(state,
-                                           state - SHARED_COUNT_INC,
-                                           Ordering::Release,
-                                           Ordering::Relaxed) {
-                    Ok(_) => return,
-                    Err(x) => state = x,
-                }
-                continue;
-            }
+        // Decrement the shared lock count
+        let mut state = self.state.fetch_sub(SHARED_COUNT_INC, Ordering::Release) -
+                        SHARED_COUNT_INC;
 
-            // At this point we are the last shared thread and we need to wake
-            // up one exclusive thread to pass the lock to.
+        // If this was the last shared thread and there are exclusive parked
+        // threads then wake one up.
+        if state & EXCLUSIVE_PARKED_BIT != 0 && state & SHARED_COUNT_MASK == 0 {
             unsafe {
                 let addr = self as *const _ as usize;
                 let callback = &mut |result| {
                     // Clear the exclusive parked bit if this was the last
-                    // thread
+                    // exclusive thread
                     if result != UnparkResult::UnparkedNotLast {
                         self.state.fetch_and(!EXCLUSIVE_PARKED_BIT, Ordering::Relaxed);
                     }
                 };
                 if parking_lot::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
-                    // We successfully unparked an exclusive thread and the lock
-                    // has been handed off to it.
+                    // If we successfully unparked an exclusive thread,
+                    // stop here.
                     return;
                 }
-            }
 
-            // There was no exclusive thread to wake up, so just loop back again
-            // and try to release the lock normally.
-            state = self.state.load(Ordering::Relaxed);
+                state = self.state.load(Ordering::Relaxed);
+            }
+        }
+
+        // If there are any shared parked threads and no parked exclusive
+        // threads then unparked all shared threads.
+        if state & EXCLUSIVE_PARKED_BIT == 0 && state & SHARED_PARKED_BIT != 0 {
+            if self.state.fetch_and(!SHARED_PARKED_BIT, Ordering::Relaxed) & SHARED_PARKED_BIT !=
+               0 {
+                unsafe {
+                    let addr = self as *const _ as usize;
+                    parking_lot::unpark_all(addr + 1);
+                }
+            }
         }
     }
 }
