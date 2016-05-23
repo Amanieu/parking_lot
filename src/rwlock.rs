@@ -491,4 +491,13 @@ mod tests {
         *m.get_mut() = NonCopy(20);
         assert_eq!(m.into_inner(), NonCopy(20));
     }
+
+    #[test]
+    fn test_rwlockguard_send() {
+        fn send<T: Send>(_: T) {}
+
+        let rwlock = RwLock::new(());
+        send(rwlock.read());
+        send(rwlock.write());
+    }
 }

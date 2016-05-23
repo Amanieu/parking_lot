@@ -374,4 +374,12 @@ mod tests {
         let comp: &[i32] = &[4, 2, 5];
         assert_eq!(&*mutex.lock(), comp);
     }
+
+    #[test]
+    fn test_mutexguard_send() {
+        fn send<T: Send>(_: T) {}
+
+        let mutex = Mutex::new(());
+        send(mutex.lock());
+    }
 }
