@@ -101,14 +101,14 @@ fn run_benchmark<M: Mutex<f64> + Send + Sync + 'static>(num_threads: usize,
                 }
                 iterations += 1;
             }
-            iterations
+            (iterations, value)
         }));
     }
 
     thread::sleep(Duration::new(seconds_per_test as u64, 0));
     keep_going.store(false, Ordering::Relaxed);
 
-    let total = threads.into_iter().map(|x| x.join().unwrap()).fold(0, |a, b| a + b);
+    let total = threads.into_iter().map(|x| x.join().unwrap().0).fold(0, |a, b| a + b);
     println!("{:20} - {:10.3} kHz",
              M::name(),
              total as f64 / seconds_per_test as f64 / 1000.0);

@@ -42,6 +42,8 @@ in the Rust standard library:
    sections.
 6. `Condvar` and `RwLock` work on Windows XP, unlike the standard library
    versions of those types.
+7. `RwLock` takes advantage of hardware lock elision on processors that
+   support it, which can lead to huge performance wins with many readers.
 
 ## The parking lot
 
@@ -130,6 +132,8 @@ There are a few restrictions when using this library on stable Rust:
 - `Mutex` and `Once` will use 1 word of space instead of 1 byte.
 - You will have to use `lazy_static!` to statically initialize `Mutex`,
   `Condvar` and `RwLock` types instead of `const fn`.
+- `RwLock` will not be able to take advantage of hardware lock elision for
+  readers, which improves performance when there are multiple readers.
 - Slightly less efficient code may be generated for `compare_exchange`
   operations. This should not affect architectures like x86 though.
 

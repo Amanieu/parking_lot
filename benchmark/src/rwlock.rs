@@ -124,7 +124,7 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(num_writer_threads: usi
                 }
                 iterations += 1;
             }
-            iterations
+            (iterations, value)
         }));
     }
     for _ in 0..num_reader_threads {
@@ -149,15 +149,15 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(num_writer_threads: usi
                 }
                 iterations += 1;
             }
-            iterations
+            (iterations, value)
         }));
     }
 
     thread::sleep(Duration::new(seconds_per_test as u64, 0));
     keep_going.store(false, Ordering::Relaxed);
 
-    let total_writers = writers.into_iter().map(|x| x.join().unwrap()).fold(0, |a, b| a + b);
-    let total_readers = readers.into_iter().map(|x| x.join().unwrap()).fold(0, |a, b| a + b);
+    let total_writers = writers.into_iter().map(|x| x.join().unwrap().0).fold(0, |a, b| a + b);
+    let total_readers = readers.into_iter().map(|x| x.join().unwrap().0).fold(0, |a, b| a + b);
     println!("{:20} - [write] {:10.3} kHz [read] {:10.3} kHz",
              M::name(),
              total_writers as f64 / seconds_per_test as f64 / 1000.0,

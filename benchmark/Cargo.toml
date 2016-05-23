@@ -14,3 +14,6 @@ path = "src/mutex.rs"
 [[bin]]
 name = "rwlock"
 path = "src/rwlock.rs"
+
+[features]
+nightly = ["parking_lot/nightly"]

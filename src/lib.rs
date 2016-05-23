@@ -42,6 +42,8 @@
 //!    sections.
 //! 6. `Condvar` and `RwLock` work on Windows XP, unlike the standard library
 //!    versions of those types.
+//! 7. `RwLock` takes advantage of hardware lock elision on processors that
+//!    support it, which can lead to huge performance wins with many readers.
 //!
 //! # The parking lot
 //!
@@ -127,6 +129,9 @@
 #![cfg_attr(feature = "nightly", feature(extended_compare_and_swap))]
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
+#![cfg_attr(all(feature = "nightly",
+                any(target_arch = "x86", target_arch = "x86_64")),
+            feature(asm))]
 
 extern crate smallvec;
 
@@ -159,6 +164,7 @@ mod thread_parker;
 mod stable;
 mod word_lock;
 mod parking_lot;
+mod elision;
 mod raw_mutex;
 mod raw_rwlock;
 mod condvar;
