@@ -16,6 +16,9 @@ script:
 - travis-cargo build
 - travis-cargo test
 - travis-cargo doc
+- (cd benchmark && travis-cargo build)
+- benchmark/target/debug/mutex 2 1 0 1
+- benchmark/target/debug/rwlock 1 1 1 0 1
 
 after_success:
 - travis-cargo --only nightly doc-upload
