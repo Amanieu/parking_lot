@@ -34,6 +34,8 @@
 //! 5. The locks are adaptive and will suspend a thread after a few failed spin
 //!    attempts. This makes the locks suitable for both long and short critical
 //!    sections.
+//! 6. `Condvar` and `RwLock` work on Windows XP, unlike the standard library
+//!    versions of those types.
 //!
 //! # The parking lot
 //!
