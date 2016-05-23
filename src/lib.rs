@@ -10,13 +10,19 @@
 //! standard library. It also exposes a low-level API for creating your own
 //! efficient synchronization primitives.
 //!
+//! When tested on x86_64 Linux, `parking_lot::Mutex` was found to be 1.5x
+//! faster than `std::sync::Mutex` when uncontended, and up to 3x faster when
+//! contended from multiple threads. The numbers for `RwLock` vary depending on
+//! the number of reader and writer threads, but are almost always faster than
+//! the standard library `RwLock`, even up to 10x faster in some cases.
+//!
 //! # Features
 //!
 //! The primitives provided by this library have several advantages over those
 //! in the Rust standard library:
 //!
-//! 1. `Mutex`, `Condvar` and `Once` only require 1 byte of storage space, and
-//!    `RwLock` only requires 1 word of storage space. On the other hand the
+//! 1. `Mutex` and `Once` only require 1 byte of storage space, while `Condvar`
+//!    and `RwLock` only requires 1 word of storage space. On the other hand the
 //!    standard library primitives require a dynamically allocated `Box` to hold
 //!    OS-specific synchronization primitives. The small size of `Mutex` in
 //!    particular encourages the use of fine-grained locks to increase
