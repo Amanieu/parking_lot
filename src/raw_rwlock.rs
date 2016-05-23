@@ -89,14 +89,10 @@ impl RawRwLock {
             if self.state.elision_acquire(0, SHARED_COUNT_INC) {
                 return;
             }
-        } else {
+        } else if let Some(new_state) = state.checked_add(SHARED_COUNT_INC) {
             if state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) == 0 &&
                self.state
-                .compare_exchange_weak(state,
-                                       state.checked_add(SHARED_COUNT_INC)
-                                           .expect("RwLock shared count overflow"),
-                                       Ordering::Acquire,
-                                       Ordering::Relaxed)
+                .compare_exchange_weak(state, new_state, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok() {
                 return;
             }
