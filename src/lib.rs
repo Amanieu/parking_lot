@@ -134,8 +134,8 @@ extern crate winapi;
 #[cfg(windows)]
 extern crate kernel32;
 
-// Spin limit from JikesRVM & Webkit experiments
-const SPIN_LIMIT: usize = 40;
+// Spin limit, determined experimentally
+const SPIN_LIMIT: usize = 60;
 
 #[cfg(all(feature = "nightly", target_os = "linux"))]
 #[path = "thread_parker/linux.rs"]
