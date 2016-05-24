@@ -35,6 +35,12 @@ impl ThreadData {
     }
 }
 
+impl Default for ThreadData {
+    fn default() -> ThreadData {
+        ThreadData::new()
+    }
+}
+
 thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
 
 const LOCKED_BIT: usize = 1;
@@ -43,6 +49,7 @@ const QUEUE_MASK: usize = !3;
 
 // Word-sized lock that is used to implement the parking_lot API. Since this
 // can't used parking_lot, it instead manages its own queue of waiting threads.
+#[derive(Default)]
 pub struct WordLock {
     state: AtomicUsize,
 }

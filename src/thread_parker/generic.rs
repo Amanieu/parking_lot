@@ -10,6 +10,7 @@ use std::cell::Cell;
 use std::time::Instant;
 
 // Helper type for putting a thread to sleep until some other thread wakes it up
+#[derive(Default)]
 pub struct ThreadParker {
     should_park: Cell<bool>,
     mutex: Mutex<()>,

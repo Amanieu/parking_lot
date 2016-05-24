@@ -12,6 +12,7 @@ pub use std::sync::atomic::{Ordering, fence};
 
 // Wrapper around AtomicUsize for non-nightly which has usable compare_exchange
 // and compare_exchange_weak methods.
+#[derive(Default)]
 pub struct AtomicUsize(atomic::AtomicUsize);
 pub use self::AtomicUsize as AtomicU8;
 
