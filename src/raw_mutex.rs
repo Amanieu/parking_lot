@@ -20,6 +20,7 @@ use SPIN_LIMIT;
 const LOCKED_BIT: U8 = 1;
 const PARKED_BIT: U8 = 2;
 
+#[derive(Default)]
 pub struct RawMutex {
     state: AtomicU8,
 }

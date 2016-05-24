@@ -102,6 +102,12 @@ impl ThreadData {
     }
 }
 
+impl Default for ThreadData {
+    fn default() -> ThreadData {
+        ThreadData::new()
+    }
+}
+
 impl Drop for ThreadData {
     fn drop(&mut self) {
         NUM_THREADS.fetch_sub(1, Ordering::Relaxed);

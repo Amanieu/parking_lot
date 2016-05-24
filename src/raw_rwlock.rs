@@ -20,6 +20,7 @@ const EXCLUSIVE_LOCKED_BIT: usize = 4;
 const SHARED_COUNT_MASK: usize = !7;
 const SHARED_COUNT_INC: usize = 8;
 
+#[derive(Default)]
 pub struct RawRwLock {
     state: AtomicUsize,
 }
@@ -136,17 +137,15 @@ impl RawRwLock {
             if self.state.elision_release(SHARED_COUNT_INC, 0) {
                 return;
             }
-        } else {
-            if (state & EXCLUSIVE_PARKED_BIT == 0 ||
-                state & SHARED_COUNT_MASK != SHARED_COUNT_INC) &&
-               self.state
-                .compare_exchange_weak(state,
-                                       state - SHARED_COUNT_INC,
-                                       Ordering::Release,
-                                       Ordering::Relaxed)
-                .is_ok() {
-                return;
-            }
+        } else if (state & EXCLUSIVE_PARKED_BIT == 0 ||
+            state & SHARED_COUNT_MASK != SHARED_COUNT_INC) &&
+           self.state
+            .compare_exchange_weak(state,
+                                   state - SHARED_COUNT_INC,
+                                   Ordering::Release,
+                                   Ordering::Relaxed)
+            .is_ok() {
+            return;
         }
         self.unlock_shared_slow();
     }
@@ -368,13 +367,11 @@ impl RawRwLock {
 
         // If there are any shared parked threads and no parked exclusive
         // threads then unparked all shared threads.
-        if state & EXCLUSIVE_PARKED_BIT == 0 && state & SHARED_PARKED_BIT != 0 {
-            if self.state.fetch_and(!SHARED_PARKED_BIT, Ordering::Relaxed) & SHARED_PARKED_BIT !=
-               0 {
-                unsafe {
-                    let addr = self as *const _ as usize;
-                    parking_lot::unpark_all(addr + 1);
-                }
+        if state & EXCLUSIVE_PARKED_BIT == 0 && state & SHARED_PARKED_BIT != 0 &&
+           self.state.fetch_and(!SHARED_PARKED_BIT, Ordering::Relaxed) & SHARED_PARKED_BIT != 0 {
+            unsafe {
+                let addr = self as *const _ as usize;
+                parking_lot::unpark_all(addr + 1);
             }
         }
     }
