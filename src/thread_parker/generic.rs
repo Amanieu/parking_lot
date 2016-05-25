@@ -26,19 +26,19 @@ impl ThreadParker {
     }
 
     // Prepares the parker. This should be called before adding it to the queue.
-    pub fn prepare_park(&self) {
+    pub unsafe fn prepare_park(&self) {
         self.should_park.set(true);
     }
 
     // Checks if the park timed out. This should be called while holding the
     // queue lock after park_until has returned false.
-    pub fn timed_out(&self) -> bool {
+    pub unsafe fn timed_out(&self) -> bool {
         self.should_park.get()
     }
 
     // Parks the thread until it is unparked. This should be called after it has
     // been added to the queue, after unlocking the queue.
-    pub fn park(&self) {
+    pub unsafe fn park(&self) {
         let mut lock = self.mutex.lock().unwrap();
         while self.should_park.get() {
             lock = self.condvar.wait(lock).unwrap();
@@ -48,7 +48,7 @@ impl ThreadParker {
     // Parks the thread until it is unparked or the timeout is reached. This
     // should be called after it has been added to the queue, after unlocking
     // the queue. Returns true if we were unparked and false if we timed out.
-    pub fn park_until(&self, timeout: Instant) -> bool {
+    pub unsafe fn park_until(&self, timeout: Instant) -> bool {
         let mut lock = self.mutex.lock().unwrap();
         while self.should_park.get() {
             let now = Instant::now();
@@ -64,13 +64,13 @@ impl ThreadParker {
     // Lock the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
-    pub fn unpark_lock(&self) -> MutexGuard<()> {
+    pub unsafe fn unpark_lock(&self) -> MutexGuard<()> {
         self.mutex.lock().unwrap()
     }
 
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
-    pub fn unpark(&self, _lock: MutexGuard<()>) {
+    pub unsafe fn unpark(&self, _lock: MutexGuard<()>) {
         self.should_park.set(false);
 
         // We notify while holding the lock here to avoid races with the target

@@ -33,27 +33,25 @@ impl ThreadParker {
     }
 
     // Prepares the parker. This should be called before adding it to the queue.
-    pub fn prepare_park(&self) {
+    pub unsafe fn prepare_park(&self) {
         self.futex.store(1, Ordering::Relaxed);
     }
 
     // Checks if the park timed out. This should be called while holding the
     // queue lock after park_until has returned false.
-    pub fn timed_out(&self) -> bool {
+    pub unsafe fn timed_out(&self) -> bool {
         self.futex.load(Ordering::Relaxed) != 0
     }
 
     // Parks the thread until it is unparked. This should be called after it has
     // been added to the queue, after unlocking the queue.
-    pub fn park(&self) {
+    pub unsafe fn park(&self) {
         while self.futex.load(Ordering::Relaxed) != 0 {
-            unsafe {
-                let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, 0);
-                debug_assert!(r == 0 || r == -1);
-                if r == -1 {
-                    debug_assert!(*libc::__errno_location() == libc::EINTR ||
-                                  *libc::__errno_location() == libc::EAGAIN);
-                }
+            let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, 0);
+            debug_assert!(r == 0 || r == -1);
+            if r == -1 {
+                debug_assert!(*libc::__errno_location() == libc::EINTR ||
+                              *libc::__errno_location() == libc::EAGAIN);
             }
         }
     }
@@ -61,7 +59,7 @@ impl ThreadParker {
     // Parks the thread until it is unparked or the timeout is reached. This
     // should be called after it has been added to the queue, after unlocking
     // the queue. Returns true if we were unparked and false if we timed out.
-    pub fn park_until(&self, timeout: Instant) -> bool {
+    pub unsafe fn park_until(&self, timeout: Instant) -> bool {
         while self.futex.load(Ordering::Relaxed) != 0 {
             let now = Instant::now();
             if timeout <= now {
@@ -77,14 +75,12 @@ impl ThreadParker {
                 tv_sec: diff.as_secs() as libc::time_t,
                 tv_nsec: diff.subsec_nanos() as libc::c_long,
             };
-            unsafe {
-                let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, &ts);
-                debug_assert!(r == 0 || r == -1);
-                if r == -1 {
-                    debug_assert!(*libc::__errno_location() == libc::EINTR ||
-                                  *libc::__errno_location() == libc::EAGAIN ||
-                                  *libc::__errno_location() == libc::ETIMEDOUT);
-                }
+            let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, &ts);
+            debug_assert!(r == 0 || r == -1);
+            if r == -1 {
+                debug_assert!(*libc::__errno_location() == libc::EINTR ||
+                              *libc::__errno_location() == libc::EAGAIN ||
+                              *libc::__errno_location() == libc::ETIMEDOUT);
             }
         }
         true
@@ -93,22 +89,20 @@ impl ThreadParker {
     // Lock the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
-    pub fn unpark_lock(&self) {
+    pub unsafe fn unpark_lock(&self) -> () {
         // We don't need to lock anything, just clear the state
         self.futex.store(0, Ordering::Relaxed);
     }
 
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
-    pub fn unpark(&self, _lock: ()) {
+    pub unsafe fn unpark(&self, _lock: ()) {
         // The thread data may have been freed at this point, but it doesn't
         // matter since the syscall will just return EFAULT in that case.
-        unsafe {
-            let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAKE | FUTEX_PRIVATE, 1);
-            debug_assert!(r == 0 || r == 1 || r == -1);
-            if r == -1 {
-                debug_assert!(*libc::__errno_location() == libc::EFAULT);
-            }
+        let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAKE | FUTEX_PRIVATE, 1);
+        debug_assert!(r == 0 || r == 1 || r == -1);
+        if r == -1 {
+            debug_assert_eq!(*libc::__errno_location(), libc::EFAULT);
         }
     }
 }

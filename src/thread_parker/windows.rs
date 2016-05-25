@@ -139,29 +139,27 @@ impl ThreadParker {
     }
 
     // Prepares the parker. This should be called before adding it to the queue.
-    pub fn prepare_park(&self) {
+    pub unsafe fn prepare_park(&self) {
         self.key.store(1, Ordering::Relaxed);
     }
 
     // Checks if the park timed out. This should be called while holding the
     // queue lock after park_until has returned false.
-    pub fn timed_out(&self) -> bool {
+    pub unsafe fn timed_out(&self) -> bool {
         self.key.load(Ordering::Relaxed) != 0
     }
 
     // Parks the thread until it is unparked. This should be called after it has
     // been added to the queue, after unlocking the queue.
-    pub fn park(&self) {
-        let status = unsafe {
-            self.keyed_event.wait_for(self as *const _ as winapi::PVOID, ptr::null_mut())
-        };
+    pub unsafe fn park(&self) {
+        let status = self.keyed_event.wait_for(self as *const _ as winapi::PVOID, ptr::null_mut());
         debug_assert_eq!(status, winapi::STATUS_SUCCESS);
     }
 
     // Parks the thread until it is unparked or the timeout is reached. This
     // should be called after it has been added to the queue, after unlocking
     // the queue. Returns true if we were unparked and false if we timed out.
-    pub fn park_until(&self, timeout: Instant) -> bool {
+    pub unsafe fn park_until(&self, timeout: Instant) -> bool {
         let now = Instant::now();
         if timeout <= now {
             // If another thread unparked us, we need to call
@@ -189,9 +187,7 @@ impl ThreadParker {
             }
         };
 
-        let status = unsafe {
-            self.keyed_event.wait_for(self as *const _ as winapi::PVOID, &mut nt_timeout)
-        };
+        let status = self.keyed_event.wait_for(self as *const _ as winapi::PVOID, &mut nt_timeout);
         if status == winapi::STATUS_SUCCESS {
             return true;
         }
@@ -210,16 +206,16 @@ impl ThreadParker {
     // Lock the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
-    pub fn unpark_lock(&self) -> bool {
+    pub unsafe fn unpark_lock(&self) -> bool {
         // If the state was 1 then we need to wake up the thread
         self.key.swap(0, Ordering::Relaxed) == 1
     }
 
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
-    pub fn unpark(&self, need_wakeup: bool) {
+    pub unsafe fn unpark(&self, need_wakeup: bool) {
         if need_wakeup {
-            let status = unsafe { self.keyed_event.release(self as *const _ as winapi::PVOID) };
+            let status = self.keyed_event.release(self as *const _ as winapi::PVOID);
             debug_assert_eq!(status, winapi::STATUS_SUCCESS);
         }
     }

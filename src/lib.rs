@@ -139,7 +139,7 @@ extern crate smallvec;
 #[macro_use]
 extern crate lazy_static;
 
-#[cfg(all(feature = "nightly", target_os = "linux"))]
+#[cfg(unix)]
 extern crate libc;
 
 #[cfg(windows)]
@@ -153,10 +153,13 @@ const SPIN_LIMIT: usize = 60;
 #[cfg(all(feature = "nightly", target_os = "linux"))]
 #[path = "thread_parker/linux.rs"]
 mod thread_parker;
+#[cfg(all(unix, not(all(feature = "nightly", target_os = "linux"))))]
+#[path = "thread_parker/unix.rs"]
+mod thread_parker;
 #[cfg(windows)]
 #[path = "thread_parker/windows.rs"]
 mod thread_parker;
-#[cfg(not(any(windows, all(feature = "nightly", target_os = "linux"))))]
+#[cfg(not(any(windows, unix)))]
 #[path = "thread_parker/generic.rs"]
 mod thread_parker;
 
