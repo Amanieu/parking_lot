@@ -51,24 +51,31 @@ impl<T> Mutex<T> for parking_lot::Mutex<T> {
     }
 }
 
-struct PthreadMutex<T>(UnsafeCell<T>, libc::pthread_mutex_t);
+struct PthreadMutex<T>(UnsafeCell<T>, UnsafeCell<libc::pthread_mutex_t>);
 unsafe impl<T> Sync for PthreadMutex<T> {}
 impl<T> Mutex<T> for PthreadMutex<T> {
     fn new(v: T) -> Self {
-        PthreadMutex(UnsafeCell::new(v), libc::PTHREAD_MUTEX_INITIALIZER)
+        PthreadMutex(UnsafeCell::new(v), UnsafeCell::new(libc::PTHREAD_MUTEX_INITIALIZER))
     }
     fn lock<F, R>(&self, f: F) -> R
         where F: FnOnce(&mut T) -> R
     {
         unsafe {
-            libc::pthread_mutex_lock(&self.1 as *const _ as *mut _);
+            libc::pthread_mutex_lock(self.1.get());
             let res = f(&mut *self.0.get());
-            libc::pthread_mutex_unlock(&self.1 as *const _ as *mut _);
+            libc::pthread_mutex_unlock(self.1.get());
             res
         }
     }
     fn name() -> &'static str {
         "pthread_mutex_t"
+    }
+}
+impl<T> Drop for PthreadMutex<T> {
+    fn drop(&mut self) {
+        unsafe {
+            libc::pthread_mutex_destroy(self.1.get());
+        }
     }
 }
 

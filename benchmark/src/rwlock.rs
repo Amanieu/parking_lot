@@ -62,19 +62,19 @@ impl<T> RwLock<T> for parking_lot::RwLock<T> {
     }
 }
 
-struct PthreadRwLock<T>(UnsafeCell<T>, libc::pthread_rwlock_t);
+struct PthreadRwLock<T>(UnsafeCell<T>, UnsafeCell<libc::pthread_rwlock_t>);
 unsafe impl<T> Sync for PthreadRwLock<T> {}
 impl<T> RwLock<T> for PthreadRwLock<T> {
     fn new(v: T) -> Self {
-        PthreadRwLock(UnsafeCell::new(v), libc::PTHREAD_RWLOCK_INITIALIZER)
+        PthreadRwLock(UnsafeCell::new(v), UnsafeCell::new(libc::PTHREAD_RWLOCK_INITIALIZER))
     }
     fn read<F, R>(&self, f: F) -> R
         where F: FnOnce(&T) -> R
     {
         unsafe {
-            libc::pthread_rwlock_wrlock(&self.1 as *const _ as *mut _);
+            libc::pthread_rwlock_wrlock(self.1.get());
             let res = f(&*self.0.get());
-            libc::pthread_rwlock_unlock(&self.1 as *const _ as *mut _);
+            libc::pthread_rwlock_unlock(self.1.get());
             res
         }
     }
@@ -82,14 +82,21 @@ impl<T> RwLock<T> for PthreadRwLock<T> {
         where F: FnOnce(&mut T) -> R
     {
         unsafe {
-            libc::pthread_rwlock_wrlock(&self.1 as *const _ as *mut _);
+            libc::pthread_rwlock_wrlock(self.1.get());
             let res = f(&mut *self.0.get());
-            libc::pthread_rwlock_unlock(&self.1 as *const _ as *mut _);
+            libc::pthread_rwlock_unlock(self.1.get());
             res
         }
     }
     fn name() -> &'static str {
         "pthread_rwlock_t"
+    }
+}
+impl<T> Drop for PthreadRwLock<T> {
+    fn drop(&mut self) {
+        unsafe {
+            libc::pthread_rwlock_destroy(self.1.get());
+        }
     }
 }
 
