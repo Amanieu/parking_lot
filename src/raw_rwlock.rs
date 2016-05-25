@@ -399,7 +399,6 @@ impl RawRwLock {
                 }
             }
 
-
             // Release the shared lock and clear the shared parked bit if there
             // are no pending exclusive threads.
             let mut new_state = state - SHARED_COUNT_INC;
