@@ -119,7 +119,7 @@ original queue.
 ## Building custom synchronization primitives
 
 Building custom synchronization primitives is very simple since
-`parking_lot` takes care of all the hard parts for you. The most commmon
+`parking_lot` takes care of all the hard parts for you. The most common
 case for a custom primitive would be to integrate a `Mutex` inside another
 data type. Since a mutex only requires 2 bits, it can share space with other
 data. For example, one could create an `ArcMutex` type that combines the
