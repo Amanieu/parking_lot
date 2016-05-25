@@ -65,7 +65,7 @@ impl ThreadParker {
 
             // Convert the timeout to a target system time
             let diff = timeout - now;
-            let mut ts;
+            let ts;
             match (SystemTime::now() + diff).duration_since(UNIX_EPOCH) {
                 Ok(dur) => {
                     ts = libc::timespec {
@@ -77,17 +77,20 @@ impl ThreadParker {
                     // Handle times before the epoch in case the system clock is
                     // set to something strange...
                     let dur = err.duration();
-                    ts = libc::timespec {
-                        tv_sec: -(dur.as_secs() as libc::time_t + 1),
-                        tv_nsec: 1000000000 - dur.subsec_nanos() as libc::c_long,
-                    };
-                    if dur.subsec_nanos() == 0 {
-                        ts.tv_sec += 1;
-                        ts.tv_nsec = 0;
+                    if dur.subsec_nanos() != 0 {
+                        ts = libc::timespec {
+                            tv_sec: -(dur.as_secs() as libc::time_t + 1),
+                            tv_nsec: 1000000000 - dur.subsec_nanos() as libc::c_long,
+                        };
+                    } else {
+                        ts = libc::timespec {
+                            tv_sec: -(dur.as_secs() as libc::time_t),
+                            tv_nsec: 0,
+                        };
                     }
                 }
             }
-            let r = libc::pthread_cond_timedwait(self.condvar.get(), self.mutex.get(), &mut ts);
+            let r = libc::pthread_cond_timedwait(self.condvar.get(), self.mutex.get(), &ts);
             if ts.tv_sec < 0 {
                 // On some systems, negative timeouts will return EINVAL
                 debug_assert!(r == 0 || r == libc::ETIMEDOUT || r == libc::EINVAL);
