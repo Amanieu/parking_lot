@@ -15,9 +15,15 @@ pub trait AtomicElisionExt {
     type IntType;
 
     // Perform a compare_exchange and start a transaction
-    fn elision_acquire(&self, current: Self::IntType, new: Self::IntType) -> bool;
+    fn elision_acquire(&self,
+                       current: Self::IntType,
+                       new: Self::IntType)
+                       -> Result<Self::IntType, Self::IntType>;
     // Perform a compare_exchange and end a transaction
-    fn elision_release(&self, current: Self::IntType, new: Self::IntType) -> bool;
+    fn elision_release(&self,
+                       current: Self::IntType,
+                       new: Self::IntType)
+                       -> Result<Self::IntType, Self::IntType>;
 }
 
 // Indicates whether the target architecture supports lock elision
@@ -34,12 +40,12 @@ impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 
     #[inline]
-    fn elision_acquire(&self, _: usize, _: usize) -> bool {
+    fn elision_acquire(&self, _: usize, _: usize) -> Result<usize, usize> {
         unreachable!();
     }
 
     #[inline]
-    fn elision_release(&self, _: usize, _: usize) -> bool {
+    fn elision_release(&self, _: usize, _: usize) -> Result<usize, usize> {
         unreachable!();
     }
 }
@@ -49,7 +55,7 @@ impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 
     #[inline]
-    fn elision_acquire(&self, current: usize, new: usize) -> bool {
+    fn elision_acquire(&self, current: usize, new: usize) -> Result<usize, usize> {
         unsafe {
             let prev: usize;
             asm!("xacquire; lock; cmpxchgl $2, $1"
@@ -57,12 +63,16 @@ impl AtomicElisionExt for AtomicUsize {
                  : "r" (new), "{eax}" (current)
                  : "memory"
                  : "volatile");
-            prev == current
+            if prev == current {
+                Ok(prev)
+            } else {
+                Err(prev)
+            }
         }
     }
 
     #[inline]
-    fn elision_release(&self, current: usize, new: usize) -> bool {
+    fn elision_release(&self, current: usize, new: usize) -> Result<usize, usize> {
         unsafe {
             let prev: usize;
             asm!("xrelease; lock; cmpxchgl $2, $1"
@@ -70,7 +80,11 @@ impl AtomicElisionExt for AtomicUsize {
                  : "r" (new), "{eax}" (current)
                  : "memory"
                  : "volatile");
-            prev == current
+            if prev == current {
+                Ok(prev)
+            } else {
+                Err(prev)
+            }
         }
     }
 }
@@ -80,7 +94,7 @@ impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 
     #[inline]
-    fn elision_acquire(&self, current: usize, new: usize) -> bool {
+    fn elision_acquire(&self, current: usize, new: usize) -> Result<usize, usize> {
         unsafe {
             let prev: usize;
             asm!("xacquire; lock; cmpxchgq $2, $1"
@@ -88,12 +102,16 @@ impl AtomicElisionExt for AtomicUsize {
                  : "r" (new), "{rax}" (current)
                  : "memory"
                  : "volatile");
-            prev == current
+            if prev == current {
+                Ok(prev)
+            } else {
+                Err(prev)
+            }
         }
     }
 
     #[inline]
-    fn elision_release(&self, current: usize, new: usize) -> bool {
+    fn elision_release(&self, current: usize, new: usize) -> Result<usize, usize> {
         unsafe {
             let prev: usize;
             asm!("xrelease; lock; cmpxchgq $2, $1"
@@ -101,7 +119,11 @@ impl AtomicElisionExt for AtomicUsize {
                  : "r" (new), "{rax}" (current)
                  : "memory"
                  : "volatile");
-            prev == current
+            if prev == current {
+                Ok(prev)
+            } else {
+                Err(prev)
+            }
         }
     }
 }
