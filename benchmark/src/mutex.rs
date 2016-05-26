@@ -15,6 +15,7 @@ use std::thread;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+#[cfg(unix)]
 use std::cell::UnsafeCell;
 
 trait Mutex<T> {
@@ -51,11 +52,18 @@ impl<T> Mutex<T> for parking_lot::Mutex<T> {
     }
 }
 
+#[cfg(not(unix))]
+type PthreadMutex<T> = std::sync::Mutex<T>;
+
+#[cfg(unix)]
 struct PthreadMutex<T>(UnsafeCell<T>, UnsafeCell<libc::pthread_mutex_t>);
+#[cfg(unix)]
 unsafe impl<T> Sync for PthreadMutex<T> {}
+#[cfg(unix)]
 impl<T> Mutex<T> for PthreadMutex<T> {
     fn new(v: T) -> Self {
-        PthreadMutex(UnsafeCell::new(v), UnsafeCell::new(libc::PTHREAD_MUTEX_INITIALIZER))
+        PthreadMutex(UnsafeCell::new(v),
+                     UnsafeCell::new(libc::PTHREAD_MUTEX_INITIALIZER))
     }
     fn lock<F, R>(&self, f: F) -> R
         where F: FnOnce(&mut T) -> R
@@ -71,6 +79,7 @@ impl<T> Mutex<T> for PthreadMutex<T> {
         "pthread_mutex_t"
     }
 }
+#[cfg(unix)]
 impl<T> Drop for PthreadMutex<T> {
     fn drop(&mut self) {
         unsafe {
@@ -151,10 +160,12 @@ fn run_all(args: &[ArgRange],
                                            work_per_critical_section,
                                            work_between_critical_sections,
                                            seconds_per_test);
-    run_benchmark::<PthreadMutex<f64>>(num_threads,
-                                       work_per_critical_section,
-                                       work_between_critical_sections,
-                                       seconds_per_test);
+    if cfg!(unix) {
+        run_benchmark::<PthreadMutex<f64>>(num_threads,
+                                           work_per_critical_section,
+                                           work_between_critical_sections,
+                                           seconds_per_test);
+    }
 }
 
 fn main() {

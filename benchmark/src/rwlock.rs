@@ -15,6 +15,7 @@ use std::thread;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+#[cfg(unix)]
 use std::cell::UnsafeCell;
 
 trait RwLock<T> {
@@ -62,11 +63,18 @@ impl<T> RwLock<T> for parking_lot::RwLock<T> {
     }
 }
 
+#[cfg(not(unix))]
+type PthreadRwLock<T> = std::sync::RwLock<T>;
+
+#[cfg(unix)]
 struct PthreadRwLock<T>(UnsafeCell<T>, UnsafeCell<libc::pthread_rwlock_t>);
+#[cfg(unix)]
 unsafe impl<T> Sync for PthreadRwLock<T> {}
+#[cfg(unix)]
 impl<T> RwLock<T> for PthreadRwLock<T> {
     fn new(v: T) -> Self {
-        PthreadRwLock(UnsafeCell::new(v), UnsafeCell::new(libc::PTHREAD_RWLOCK_INITIALIZER))
+        PthreadRwLock(UnsafeCell::new(v),
+                      UnsafeCell::new(libc::PTHREAD_RWLOCK_INITIALIZER))
     }
     fn read<F, R>(&self, f: F) -> R
         where F: FnOnce(&T) -> R
@@ -92,6 +100,7 @@ impl<T> RwLock<T> for PthreadRwLock<T> {
         "pthread_rwlock_t"
     }
 }
+#[cfg(unix)]
 impl<T> Drop for PthreadRwLock<T> {
     fn drop(&mut self) {
         unsafe {
@@ -206,11 +215,13 @@ fn run_all(args: &[ArgRange],
                                             work_per_critical_section,
                                             work_between_critical_sections,
                                             seconds_per_test);
-    run_benchmark::<PthreadRwLock<f64>>(num_writer_threads,
-                                        num_reader_threads,
-                                        work_per_critical_section,
-                                        work_between_critical_sections,
-                                        seconds_per_test);
+    if cfg!(unix) {
+        run_benchmark::<PthreadRwLock<f64>>(num_writer_threads,
+                                            num_reader_threads,
+                                            work_per_critical_section,
+                                            work_between_critical_sections,
+                                            seconds_per_test);
+    }
 }
 
 fn main() {
