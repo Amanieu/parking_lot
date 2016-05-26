@@ -6,9 +6,9 @@
 // copied, modified, or distributed except according to those terms.
 
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering, fence};
 #[cfg(not(feature = "nightly"))]
-use stable::{AtomicUsize, Ordering};
+use stable::{AtomicUsize, Ordering, fence};
 use std::thread;
 use std::ptr;
 use std::mem;
@@ -18,19 +18,31 @@ use SPIN_LIMIT;
 
 struct ThreadData {
     parker: ThreadParker,
-    next_in_queue: Cell<*const ThreadData>,
 
-    // To make everything fit in 1 word we cheat by putting the tail pointer of
-    // the linked list in the first element of the queue.
+    // Linked list of threads in the queue. The queue is split into two parts:
+    // the processed part and the unprocessed part. When new nodes are added to
+    // the list, they only have the next pointer set, and queue_tail is null.
+    //
+    // Nodes are processed with the queue lock held, which consists of setting
+    // the prev pointer for each node and setting the queue_tail pointer on the
+    // first processed node of the list.
+    //
+    // This setup allows nodes to be added to the queue without a lock, while
+    // still allowing O(1) removal of nodes from the processed part of the list.
+    // The only cost is the O(n) processing, but this only needs to be done
+    // once for each node, and therefore isn't too expensive.
     queue_tail: Cell<*const ThreadData>,
+    prev: Cell<*const ThreadData>,
+    next: Cell<*const ThreadData>,
 }
 
 impl ThreadData {
     fn new() -> ThreadData {
         ThreadData {
             parker: ThreadParker::new(),
-            next_in_queue: Cell::new(ptr::null()),
             queue_tail: Cell::new(ptr::null()),
+            prev: Cell::new(ptr::null()),
+            next: Cell::new(ptr::null()),
         }
     }
 }
@@ -42,7 +54,7 @@ const QUEUE_LOCKED_BIT: usize = 2;
 const QUEUE_MASK: usize = !3;
 
 // Word-sized lock that is used to implement the parking_lot API. Since this
-// can't used parking_lot, it instead manages its own queue of waiting threads.
+// can't use parking_lot, it instead manages its own queue of waiting threads.
 pub struct WordLock {
     state: AtomicUsize,
 }
@@ -65,9 +77,8 @@ impl WordLock {
 
     #[inline]
     pub unsafe fn unlock(&self) {
-        if self.state
-            .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok() {
+        let state = self.state.fetch_sub(LOCKED_BIT, Ordering::Release);
+        if state & QUEUE_LOCKED_BIT != 0 || state & QUEUE_MASK == 0 {
             return;
         }
         self.unlock_slow();
@@ -100,43 +111,34 @@ impl WordLock {
                 continue;
             }
 
-            // Spin if the queue is locked
-            if state & QUEUE_LOCKED_BIT != 0 {
-                thread::yield_now();
-                state = self.state.load(Ordering::Relaxed);
-                continue;
-            }
-
-            // Get our thread data. We do this before locking the queue because
-            // the ThreadData constructor may panic and we don't want to leave
-            // the queue in a locked state.
+            // Get our thread data and prepare it for parking
             let thread_data = &*THREAD_DATA.with(|x| x as *const ThreadData);
             assert!(mem::align_of_val(thread_data) > !QUEUE_MASK);
-            thread_data.next_in_queue.set(ptr::null());
             thread_data.parker.prepare_park();
 
-            // Try locking the queue
+            // Add our thread to the front of the queue
+            let queue_head = (state & QUEUE_MASK) as *const ThreadData;
+            if queue_head.is_null() {
+                thread_data.queue_tail.set(thread_data);
+                thread_data.prev.set(ptr::null());
+            } else {
+                thread_data.queue_tail.set(ptr::null());
+                thread_data.prev.set(ptr::null());
+                thread_data.next.set(queue_head);
+            }
             if let Err(x) = self.state
                 .compare_exchange_weak(state,
-                                       state | QUEUE_LOCKED_BIT,
-                                       Ordering::Acquire,
+                                       (state & !QUEUE_MASK) | thread_data as *const _ as usize,
+                                       Ordering::Release,
                                        Ordering::Relaxed) {
                 state = x;
                 continue;
             }
 
-            // Add our thread to the queue and unlock the queue
-            let mut queue_head = (state & QUEUE_MASK) as *const ThreadData;
-            if !queue_head.is_null() {
-                (*(*queue_head).queue_tail.get()).next_in_queue.set(thread_data);
-            } else {
-                queue_head = thread_data;
-            }
-            (*queue_head).queue_tail.set(thread_data);
-            self.state.store((queue_head as usize) | LOCKED_BIT, Ordering::Release);
-
             // Sleep until we are woken up by an unlock
             thread_data.parker.park();
+
+            // Loop back and try locking again
             self.state.load(Ordering::Relaxed);
         }
     }
@@ -144,50 +146,96 @@ impl WordLock {
     #[cold]
     #[inline(never)]
     unsafe fn unlock_slow(&self) {
-        let queue_head;
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
-            // Unlock directly if there is no queue
-            if state == LOCKED_BIT {
-                match self.state
-                    .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed) {
-                    Ok(_) => return,
-                    Err(x) => state = x,
-                }
-                continue;
+            // We just unlocked the WordLock. Just check if there is a thread
+            // to wake up. If the queue is locked then another thread is already
+            // taking care of waking up a thread.
+            if state & QUEUE_LOCKED_BIT != 0 || state & QUEUE_MASK == 0 {
+                return;
             }
 
-            // Spin if the queue is locked
-            if state & QUEUE_LOCKED_BIT != 0 {
-                thread::yield_now();
-                state = self.state.load(Ordering::Relaxed);
-                continue;
-            }
-
-            // Try locking the queue
-            match self.state
-                .compare_exchange_weak(state,
-                                       state | QUEUE_LOCKED_BIT,
-                                       Ordering::Acquire,
-                                       Ordering::Relaxed) {
-                Ok(_) => {
-                    queue_head = (state & QUEUE_MASK) as *mut ThreadData;
-                    break;
-                }
+            // Try to grab the queue lock
+            match self.state.compare_exchange_weak(state,
+                                                   state | QUEUE_LOCKED_BIT,
+                                                   Ordering::Acquire,
+                                                   Ordering::Relaxed) {
+                Ok(_) => break,
                 Err(x) => state = x,
             }
         }
 
-        // At this point the queue is locked and must be non-empty. First remove
-        // the first entry in the queue.
-        let new_queue_head = (*queue_head).next_in_queue.get();
-        if !new_queue_head.is_null() {
-            (*new_queue_head).queue_tail.set((*queue_head).queue_tail.get());
-        }
-        self.state.store(new_queue_head as usize, Ordering::Release);
+        // Now we have the queue lock and the queue is non-empty
+        'outer: loop {
+            // First, we need to fill in the prev pointers for any newly added
+            // threads. We do this until we reach a node that we previously
+            // processed, which has a non-null queue_tail pointer.
+            let queue_head = (state & QUEUE_MASK) as *const ThreadData;
+            let mut queue_tail;
+            let mut current = queue_head;
+            loop {
+                queue_tail = (*current).queue_tail.get();
+                if !queue_tail.is_null() {
+                    break;
+                }
+                let next = (*current).next.get();
+                (*next).prev.set(current);
+                current = next;
+            }
 
-        // Then wake up the thread we removed from the queue
-        let lock = (*queue_head).parker.unpark_lock();
-        (*queue_head).parker.unpark(lock);
+            // Set queue_tail on the queue head to indicate that the whole list
+            // has prev pointers set correctly.
+            (*queue_head).queue_tail.set(queue_tail);
+
+            // If the WordLock is locked, then there is no point waking up a
+            // thread now. Instead we let the next unlocker take care of waking
+            // up a thread.
+            if state & LOCKED_BIT != 0 {
+                match self.state.compare_exchange_weak(state,
+                                                       state & !QUEUE_LOCKED_BIT,
+                                                       Ordering::Release,
+                                                       Ordering::Relaxed) {
+                    Ok(_) => return,
+                    Err(x) => state = x,
+                }
+
+                // Need an acquire fence before reading the new queue
+                fence(Ordering::Acquire);
+                continue;
+            }
+
+            // Remove the last thread from the queue and unlock the queue
+            let new_tail = (*queue_tail).prev.get();
+            if new_tail.is_null() {
+                loop {
+                    match self.state.compare_exchange_weak(state,
+                                                           state & LOCKED_BIT,
+                                                           Ordering::Release,
+                                                           Ordering::Relaxed) {
+                        Ok(_) => break,
+                        Err(x) => state = x,
+                    }
+
+                    // If the compare_exchange failed because a new thread was
+                    // added to the queue then we need to re-scan the queue to
+                    // find the previous element.
+                    if state & QUEUE_MASK == 0 {
+                        continue;
+                    } else {
+                        // Need an acquire fence before reading the new queue
+                        fence(Ordering::Acquire);
+                        continue 'outer;
+                    }
+                }
+            } else {
+                (*queue_head).queue_tail.set(new_tail);
+                self.state.fetch_and(!QUEUE_LOCKED_BIT, Ordering::Release);
+            }
+
+            // Finally, wake up the thread we removed from the queue
+            let lock = (*queue_tail).parker.unpark_lock();
+            (*queue_tail).parker.unpark(lock);
+            break;
+        }
     }
 }
