@@ -44,6 +44,9 @@ impl WaitTimeoutResult {
 ///
 /// - No spurious wakeups: A wait will only return a non-timeout result if it
 ///   was woken up by `notify_one` or `notify_all`.
+/// - `Condvar::notify_all` will only wake up a single thread, the rest are
+///   requeued to wait for the `Mutex` to be unlocked by the thread that was
+///   woken up.
 /// - Only requires 1 word of space, whereas the standard library boxes the
 ///   `Condvar` due to platform limitations.
 /// - Can be statically constructed (requires the `const_fn` nightly feature).

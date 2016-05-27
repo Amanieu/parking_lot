@@ -11,10 +11,10 @@
 //! efficient synchronization primitives.
 //!
 //! When tested on x86_64 Linux, `parking_lot::Mutex` was found to be 1.5x
-//! faster than `std::sync::Mutex` when uncontended, and up to 3x faster when
+//! faster than `std::sync::Mutex` when uncontended, and up to 5x faster when
 //! contended from multiple threads. The numbers for `RwLock` vary depending on
 //! the number of reader and writer threads, but are almost always faster than
-//! the standard library `RwLock`, even up to 10x faster in some cases.
+//! the standard library `RwLock`, and even up to 50x faster in some cases.
 //!
 //! # Features
 //!
@@ -40,10 +40,19 @@
 //! 5. The locks are adaptive and will suspend a thread after a few failed spin
 //!    attempts. This makes the locks suitable for both long and short critical
 //!    sections.
-//! 6. `Condvar` and `RwLock` work on Windows XP, unlike the standard library
-//!    versions of those types.
+//! 6. `Condvar`, `RwLock` and `Once` work on Windows XP, unlike the standard
+//!    library versions of those types.
 //! 7. `RwLock` takes advantage of hardware lock elision on processors that
 //!    support it, which can lead to huge performance wins with many readers.
+//! 8. `MutexGuard` (and the `RwLock` equivalents) is `Send`, which means it can
+//!    be unlocked by a different thread than the one that locked it.
+//! 9. `RwLock` will prefer writers, whereas the standard library version makes
+//!    no guarantees as to whether readers or writers are given priority.
+//! 10. `Condvar` is guaranteed not to produce spurious wakeups. A thread will
+//!     only be woken up if it timed out or it was woken up by a notification.
+//! 11. `Condvar::notify_all` will only wake up a single thread and requeue the
+//!     rest to wait on the associated `Mutex`. This avoids a thundering herd
+//!     problem where all threads try to acquire the lock at the same time.
 //!
 //! # The parking lot
 //!
