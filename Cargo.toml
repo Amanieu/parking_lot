@@ -1,6 +1,6 @@
 [package]
 name = "parking_lot"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 description = "Compact and efficient synchronization primitives. Also provides an API for creating custom synchronization primitives."
 documentation = "https://amanieu.github.io/parking_lot/parking_lot/index.html"
