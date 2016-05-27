@@ -533,9 +533,9 @@ pub unsafe fn unpark_one(key: usize, callback: &mut FnMut(UnparkResult)) -> Unpa
             // times out. Then we unlock the queue since we don't want to keep
             // the queue locked while we perform a system call. Finally we wake
             // up the parked thread.
-            let lock = (*current).parker.unpark_lock();
+            let handle = (*current).parker.unpark_lock();
             bucket.mutex.unlock();
-            (*current).parker.unpark(lock);
+            handle.unpark();
 
             return result;
         } else {
@@ -581,7 +581,7 @@ pub unsafe fn unpark_all(key: usize) -> usize {
             // Don't wake up threads while holding the queue lock. See comment
             // in unpark_one. For now just record which threads we need to wake
             // up.
-            threads.push((current, (*current).parker.unpark_lock()));
+            threads.push((*current).parker.unpark_lock());
             current = next;
         } else {
             link = &(*current).next_in_queue;
@@ -596,8 +596,8 @@ pub unsafe fn unpark_all(key: usize) -> usize {
     // Now that we are outside the lock, wake up all the threads that we removed
     // from the queue.
     let num_threads = threads.len();
-    for t in threads.into_iter() {
-        (*t.0).parker.unpark(t.1);
+    for handle in threads.into_iter() {
+        handle.unpark();
     }
 
     num_threads
@@ -697,9 +697,9 @@ pub unsafe fn unpark_requeue(key_from: usize,
 
     // See comment in unpark_one for why we mess with the locking
     if let Some(wakeup_thread) = wakeup_thread {
-        let lock = (*wakeup_thread).parker.unpark_lock();
+        let handle = (*wakeup_thread).parker.unpark_lock();
         unlock_bucket_pair(bucket_from, bucket_to);
-        (*wakeup_thread).parker.unpark(lock);
+        handle.unpark();
     } else {
         unlock_bucket_pair(bucket_from, bucket_to);
     }

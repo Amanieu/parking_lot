@@ -64,18 +64,31 @@ impl ThreadParker {
     // Lock the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
-    pub unsafe fn unpark_lock(&self) -> MutexGuard<()> {
-        self.mutex.lock().unwrap()
+    pub unsafe fn unpark_lock(&self) -> UnparkHandle {
+        UnparkHandle {
+            thread_parker: self,
+            _guard: self.mutex.lock().unwrap(),
+        }
     }
+}
 
+// Handle for a thread that is about to be unparked. We need to mark the thread
+// as unparked while holding the queue lock, but we delay the actual unparking
+// until after the queue lock is released.
+pub struct UnparkHandle<'a> {
+    thread_parker: *const ThreadParker,
+    _guard: MutexGuard<'a, ()>,
+}
+
+impl<'a> UnparkHandle<'a> {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
-    pub unsafe fn unpark(&self, _lock: MutexGuard<()>) {
-        self.should_park.set(false);
+    pub unsafe fn unpark(self) {
+        (*self.thread_parker).should_park.set(false);
 
         // We notify while holding the lock here to avoid races with the target
         // thread. In particular, the thread could exit after we unlock the
         // mutex, which would make the condvar access invalid memory.
-        self.condvar.notify_one();
+        (*self.thread_parker).condvar.notify_one();
     }
 }

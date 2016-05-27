@@ -206,16 +206,31 @@ impl ThreadParker {
     // Lock the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
-    pub unsafe fn unpark_lock(&self) -> bool {
+    pub unsafe fn unpark_lock(&self) -> UnparkHandle {
         // If the state was 1 then we need to wake up the thread
-        self.key.swap(0, Ordering::Relaxed) == 1
+        if self.key.swap(0, Ordering::Relaxed) == 1 {
+            UnparkHandle { thread_parker: self }
+        } else {
+            UnparkHandle { thread_parker: ptr::null() }
+        }
     }
+}
 
+// Handle for a thread that is about to be unparked. We need to mark the thread
+// as unparked while holding the queue lock, but we delay the actual unparking
+// until after the queue lock is released.
+pub struct UnparkHandle {
+    thread_parker: *const ThreadParker,
+}
+
+impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
-    pub unsafe fn unpark(&self, need_wakeup: bool) {
-        if need_wakeup {
-            let status = self.keyed_event.release(self as *const _ as winapi::PVOID);
+    pub unsafe fn unpark(self) {
+        if !self.thread_parker.is_null() {
+            let status = (*self.thread_parker)
+                .keyed_event
+                .release(self.thread_parker as winapi::PVOID);
             debug_assert_eq!(status, winapi::STATUS_SUCCESS);
         }
     }

@@ -106,23 +106,11 @@ impl ThreadParker {
     // Lock the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
-    pub unsafe fn unpark_lock(&self) -> () {
+    pub unsafe fn unpark_lock(&self) -> UnparkHandle {
         let r = libc::pthread_mutex_lock(self.mutex.get());
         debug_assert_eq!(r, 0);
-    }
 
-    // Wakes up the parked thread. This should be called after the queue lock is
-    // released to avoid blocking the queue for too long.
-    pub unsafe fn unpark(&self, _lock: ()) {
-        self.should_park.set(false);
-
-        // We notify while holding the lock here to avoid races with the target
-        // thread. In particular, the thread could exit after we unlock the
-        // mutex, which would make the condvar access invalid memory.
-        let r = libc::pthread_cond_signal(self.condvar.get());
-        debug_assert_eq!(r, 0);
-        let r = libc::pthread_mutex_unlock(self.mutex.get());
-        debug_assert_eq!(r, 0);
+        UnparkHandle { thread_parker: self }
     }
 }
 
@@ -146,5 +134,28 @@ impl Drop for ThreadParker {
                 debug_assert_eq!(r, 0);
             }
         }
+    }
+}
+
+// Handle for a thread that is about to be unparked. We need to mark the thread
+// as unparked while holding the queue lock, but we delay the actual unparking
+// until after the queue lock is released.
+pub struct UnparkHandle {
+    thread_parker: *const ThreadParker,
+}
+
+impl UnparkHandle {
+    // Wakes up the parked thread. This should be called after the queue lock is
+    // released to avoid blocking the queue for too long.
+    pub unsafe fn unpark(self) {
+        (*self.thread_parker).should_park.set(false);
+
+        // We notify while holding the lock here to avoid races with the target
+        // thread. In particular, the thread could exit after we unlock the
+        // mutex, which would make the condvar access invalid memory.
+        let r = libc::pthread_cond_signal((*self.thread_parker).condvar.get());
+        debug_assert_eq!(r, 0);
+        let r = libc::pthread_mutex_unlock((*self.thread_parker).mutex.get());
+        debug_assert_eq!(r, 0);
     }
 }

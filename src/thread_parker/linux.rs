@@ -89,17 +89,31 @@ impl ThreadParker {
     // Lock the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
-    pub unsafe fn unpark_lock(&self) -> () {
+    pub unsafe fn unpark_lock(&self) -> UnparkHandle {
         // We don't need to lock anything, just clear the state
         self.futex.store(0, Ordering::Relaxed);
-    }
 
+        UnparkHandle { thread_parker: self }
+    }
+}
+
+// Handle for a thread that is about to be unparked. We need to mark the thread
+// as unparked while holding the queue lock, but we delay the actual unparking
+// until after the queue lock is released.
+pub struct UnparkHandle {
+    thread_parker: *const ThreadParker,
+}
+
+impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
-    pub unsafe fn unpark(&self, _lock: ()) {
+    pub unsafe fn unpark(self) {
         // The thread data may have been freed at this point, but it doesn't
         // matter since the syscall will just return EFAULT in that case.
-        let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAKE | FUTEX_PRIVATE, 1);
+        let r = libc::syscall(SYS_FUTEX,
+                              &(*self.thread_parker).futex,
+                              FUTEX_WAKE | FUTEX_PRIVATE,
+                              1);
         debug_assert!(r == 0 || r == 1 || r == -1);
         if r == -1 {
             debug_assert_eq!(*libc::__errno_location(), libc::EFAULT);

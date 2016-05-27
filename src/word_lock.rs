@@ -232,9 +232,11 @@ impl WordLock {
                 self.state.fetch_and(!QUEUE_LOCKED_BIT, Ordering::Release);
             }
 
-            // Finally, wake up the thread we removed from the queue
-            let lock = (*queue_tail).parker.unpark_lock();
-            (*queue_tail).parker.unpark(lock);
+            // Finally, wake up the thread we removed from the queue. Note that
+            // we don't need to worry about any races here since the thread is
+            // guaranteed to be sleeping right now and we are the only one who
+            // can wake it up.
+            (*queue_tail).parker.unpark_lock().unpark();
             break;
         }
     }
