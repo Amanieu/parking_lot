@@ -13,9 +13,8 @@ type U8 = u8;
 use stable::{AtomicU8, Ordering};
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
-use std::thread;
+use spinwait::SpinWait;
 use parking_lot::{self, UnparkResult};
-use SPIN_LIMIT;
 
 const LOCKED_BIT: U8 = 1;
 const PARKED_BIT: U8 = 2;
@@ -102,7 +101,7 @@ impl RawMutex {
     #[cold]
     #[inline(never)]
     fn lock_slow(&self) {
-        let mut spin_count = 0;
+        let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // Grab the lock if it isn't locked, even if there is a queue on it
@@ -119,9 +118,7 @@ impl RawMutex {
             }
 
             // If there is no queue, try spinning a few times
-            if state & PARKED_BIT == 0 && spin_count < SPIN_LIMIT {
-                spin_count += 1;
-                thread::yield_now();
+            if state & PARKED_BIT == 0 && spinwait.spin() {
                 state = self.state.load(Ordering::Relaxed);
                 continue;
             }
@@ -149,6 +146,7 @@ impl RawMutex {
             }
 
             // Loop back and try locking again
+            spinwait.reset();
             state = self.state.load(Ordering::Relaxed);
         }
     }

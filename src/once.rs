@@ -13,10 +13,9 @@ type U8 = u8;
 use stable::{AtomicU8, ATOMIC_U8_INIT, Ordering, fence};
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
-use std::thread;
 use std::mem;
+use spinwait::SpinWait;
 use parking_lot;
-use SPIN_LIMIT;
 
 const DONE_BIT: U8 = 1;
 const POISON_BIT: U8 = 2;
@@ -177,7 +176,7 @@ impl Once {
     #[cold]
     #[inline(never)]
     fn call_once_slow(&self, ignore_poison: bool, f: &mut FnMut(OnceState)) {
-        let mut spin_count = 0;
+        let mut spinwait = SpinWait::new();
         let mut state = self.0.load(Ordering::Relaxed);
         loop {
             // If another thread called the closure, we're done
@@ -211,9 +210,7 @@ impl Once {
             }
 
             // If there is no queue, try spinning a few times
-            if state & PARKED_BIT == 0 && spin_count < SPIN_LIMIT {
-                spin_count += 1;
-                thread::yield_now();
+            if state & PARKED_BIT == 0 && spinwait.spin() {
                 state = self.0.load(Ordering::Relaxed);
                 continue;
             }
@@ -240,6 +237,7 @@ impl Once {
             }
 
             // Loop back and check if the done bit was set
+            spinwait.reset();
             state = self.0.load(Ordering::Relaxed);
         }
 

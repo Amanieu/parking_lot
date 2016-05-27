@@ -129,9 +129,7 @@
 #![cfg_attr(feature = "nightly", feature(extended_compare_and_swap))]
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
-#![cfg_attr(all(feature = "nightly",
-                any(target_arch = "x86", target_arch = "x86_64")),
-            feature(asm))]
+#![cfg_attr(feature = "nightly", feature(asm))]
 
 extern crate smallvec;
 
@@ -146,9 +144,6 @@ extern crate libc;
 extern crate winapi;
 #[cfg(windows)]
 extern crate kernel32;
-
-// Spin limit, determined experimentally
-const SPIN_LIMIT: usize = 60;
 
 #[cfg(all(feature = "nightly", target_os = "linux"))]
 #[path = "thread_parker/linux.rs"]
@@ -165,6 +160,7 @@ mod thread_parker;
 
 #[cfg(not(feature = "nightly"))]
 mod stable;
+mod spinwait;
 mod word_lock;
 mod parking_lot;
 mod elision;

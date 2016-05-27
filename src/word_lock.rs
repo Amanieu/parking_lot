@@ -9,12 +9,11 @@
 use std::sync::atomic::{AtomicUsize, Ordering, fence};
 #[cfg(not(feature = "nightly"))]
 use stable::{AtomicUsize, Ordering, fence};
-use std::thread;
 use std::ptr;
 use std::mem;
 use std::cell::Cell;
+use spinwait::SpinWait;
 use thread_parker::ThreadParker;
-use SPIN_LIMIT;
 
 struct ThreadData {
     parker: ThreadParker,
@@ -87,7 +86,7 @@ impl WordLock {
     #[cold]
     #[inline(never)]
     unsafe fn lock_slow(&self) {
-        let mut spin_count = 0;
+        let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // Grab the lock if it isn't locked, even if there is a queue on it
@@ -104,9 +103,7 @@ impl WordLock {
             }
 
             // If there is no queue, try spinning a few times
-            if state & QUEUE_MASK == 0 && spin_count < SPIN_LIMIT {
-                spin_count += 1;
-                thread::yield_now();
+            if state & QUEUE_MASK == 0 && spinwait.spin() {
                 state = self.state.load(Ordering::Relaxed);
                 continue;
             }
@@ -139,6 +136,7 @@ impl WordLock {
             thread_data.parker.park();
 
             // Loop back and try locking again
+            spinwait.reset();
             self.state.load(Ordering::Relaxed);
         }
     }

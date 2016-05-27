@@ -9,10 +9,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(not(feature = "nightly"))]
 use stable::{AtomicUsize, Ordering};
-use std::thread;
+use spinwait::SpinWait;
 use parking_lot::{self, UnparkResult};
 use elision::{have_elision, AtomicElisionExt};
-use SPIN_LIMIT;
 
 const SHARED_PARKED_BIT: usize = 1;
 const EXCLUSIVE_PARKED_BIT: usize = 2;
@@ -152,7 +151,7 @@ impl RawRwLock {
     #[cold]
     #[inline(never)]
     fn lock_exclusive_slow(&self) {
-        let mut spin_count = 0;
+        let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // Grab the lock if it isn't locked, even if there are other
@@ -173,10 +172,7 @@ impl RawRwLock {
             // writer, try spinning a few times.
             if state & EXCLUSIVE_PARKED_BIT == 0 &&
                (state & EXCLUSIVE_LOCKED_BIT != 0 ||
-                state & SHARED_COUNT_MASK == SHARED_COUNT_INC) &&
-               spin_count < SPIN_LIMIT {
-                spin_count += 1;
-                thread::yield_now();
+                state & SHARED_COUNT_MASK == SHARED_COUNT_INC) && spinwait.spin() {
                 state = self.state.load(Ordering::Relaxed);
                 continue;
             }
@@ -206,6 +202,7 @@ impl RawRwLock {
             }
 
             // Loop back and try locking again
+            spinwait.reset();
             state = self.state.load(Ordering::Relaxed);
         }
     }
@@ -275,34 +272,37 @@ impl RawRwLock {
     #[cold]
     #[inline(never)]
     fn lock_shared_slow(&self) {
-        let mut spin_count = 0;
+        let mut spinwait = SpinWait::new();
+        let mut spinwait_shared = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // Grab the lock if there are no exclusive threads locked or waiting
             if state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) == 0 {
                 if have_elision() && state == 0 {
-                    match self.state.elision_acquire(0, SHARED_COUNT_INC) {
-                        Ok(_) => return,
-                        Err(x) => state = x,
+                    if self.state.elision_acquire(0, SHARED_COUNT_INC).is_ok() {
+                        return;
                     }
                 } else {
-                    match self.state.compare_exchange(state,
+                    if self.state.compare_exchange_weak(state,
                                                       state.checked_add(SHARED_COUNT_INC)
                                                           .expect("RwLock shared count overflow"),
                                                       Ordering::Acquire,
-                                                      Ordering::Relaxed) {
-                        Ok(_) => return,
-                        Err(x) => state = x,
+                                                      Ordering::Relaxed).is_ok() {
+                        return;
                     }
                 }
+
+                // If there is high contention on the reader count then we want
+                // to leave some time between attempts to acquire the lock to
+                // let other threads make progress.
+                spinwait_shared.spin_no_yield();
+                state = self.state.load(Ordering::Relaxed);
                 continue;
             }
 
             // If there are no parked exclusive threads, try spinning a few
             // times
-            if state & EXCLUSIVE_PARKED_BIT == 0 && spin_count < SPIN_LIMIT {
-                spin_count += 1;
-                thread::yield_now();
+            if state & EXCLUSIVE_PARKED_BIT == 0 && spinwait.spin() {
                 state = self.state.load(Ordering::Relaxed);
                 continue;
             }
@@ -332,6 +332,8 @@ impl RawRwLock {
             }
 
             // Loop back and try locking again
+            spinwait.reset();
+            spinwait_shared.reset();
             state = self.state.load(Ordering::Relaxed);
         }
     }
@@ -350,7 +352,7 @@ impl RawRwLock {
                     Err(x) => state = x,
                 }
             } else {
-                match self.state.compare_exchange(state,
+                match self.state.compare_exchange_weak(state,
                                                   state.checked_add(SHARED_COUNT_INC)
                                                       .expect("RwLock shared count overflow"),
                                                   Ordering::Acquire,
