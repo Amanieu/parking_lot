@@ -140,8 +140,8 @@ impl<T: ?Sized> RwLock<T> {
     /// this method returns.
     ///
     /// Because `RwLock` prefers writers over readers, attempts to recursively
-    /// acquire a read lock when the current already owns one may result in a
-    /// deadlock.
+    /// acquire a read lock when the current thread already owns one may result
+    /// in a deadlock.
     ///
     /// Returns an RAII guard which will release this thread's shared access
     /// once it is dropped.
