@@ -16,9 +16,12 @@ script:
 - travis-cargo build
 - travis-cargo test
 - travis-cargo doc -- --no-deps
-- (cd benchmark && travis-cargo build)
-- benchmark/target/debug/mutex 2 1 0 1
-- benchmark/target/debug/rwlock 1 1 1 0 1
+- if [ "$TRAVIS_RUST_VERSION" != "1.8.0" ]; then
+      cd benchmark;
+      travis-cargo build;
+      travis-cargo run -- --release --bin mutex 2 1 0 1;
+      travis-cargo run -- --release --bin rwlock 1 1 1 0 1;
+  fi
 
 after_success:
 - travis-cargo --only nightly doc-upload
