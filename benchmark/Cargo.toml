@@ -5,6 +5,7 @@ authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 
 [dependencies]
 parking_lot = {path = ".."}
+seqlock = "0.1"
 libc = "0.2"
 
 [[bin]]

@@ -7,6 +7,7 @@
 
 extern crate parking_lot;
 extern crate libc;
+extern crate seqlock;
 
 mod args;
 use args::ArgRange;
@@ -60,6 +61,25 @@ impl<T> RwLock<T> for parking_lot::RwLock<T> {
     }
     fn name() -> &'static str {
         "parking_lot::RwLock"
+    }
+}
+
+impl<T: Copy> RwLock<T> for seqlock::SeqLock<T> {
+    fn new(v: T) -> Self {
+        Self::new(v)
+    }
+    fn read<F, R>(&self, f: F) -> R
+        where F: FnOnce(&T) -> R
+    {
+        f(&self.read())
+    }
+    fn write<F, R>(&self, f: F) -> R
+        where F: FnOnce(&mut T) -> R
+    {
+        f(&mut *self.lock_write())
+    }
+    fn name() -> &'static str {
+        "seqlock::SeqLock"
     }
 }
 
@@ -210,6 +230,11 @@ fn run_all(args: &[ArgRange],
                                               work_per_critical_section,
                                               work_between_critical_sections,
                                               seconds_per_test);
+    run_benchmark::<seqlock::SeqLock<f64>>(num_writer_threads,
+                                           num_reader_threads,
+                                           work_per_critical_section,
+                                           work_between_critical_sections,
+                                           seconds_per_test);
     run_benchmark::<std::sync::RwLock<f64>>(num_writer_threads,
                                             num_reader_threads,
                                             work_per_critical_section,
