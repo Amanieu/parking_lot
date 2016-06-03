@@ -8,6 +8,7 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::fmt;
+use std::mem;
 use std::marker::PhantomData;
 use raw_rwlock::RawRwLock;
 
@@ -248,6 +249,26 @@ impl<'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
         self.rwlock.raw.unlock_shared();
+    }
+}
+
+impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
+    /// Atomically downgrades a write lock into a read lock without allowing any
+    /// writers to take exclusive access of the lock in the meantime.
+    ///
+    /// Note that if there are any writers currently waiting to take the lock
+    /// then other readers may not be able to acquire the lock even if it was
+    /// downgraded. This is because `RwLock` prefers writers over readers and
+    /// will not allow any readers to acquire the lock while there are writers
+    /// waiting.
+    pub fn downgrade(self) -> RwLockReadGuard<'a, T> {
+        self.rwlock.raw.downgrade();
+        let rwlock = self.rwlock;
+        mem::forget(self);
+        RwLockReadGuard {
+            rwlock: rwlock,
+            marker: PhantomData,
+        }
     }
 }
 
@@ -500,5 +521,27 @@ mod tests {
         let rwlock = RwLock::new(());
         send(rwlock.read());
         send(rwlock.write());
+    }
+
+    #[test]
+    fn test_rwlock_downgrade() {
+        let x = Arc::new(RwLock::new(0));
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let x = x.clone();
+            handles.push(thread::spawn(move || {
+                for _ in 0..100 {
+                    let mut writer = x.write();
+                    *writer += 1;
+                    let cur_val = *writer;
+                    let reader = writer.downgrade();
+                    assert_eq!(cur_val, *reader);
+                }
+            }));
+        }
+        for handle in handles {
+            handle.join().unwrap()
+        }
+        assert_eq!(*x.read(), 800);
     }
 }

@@ -79,6 +79,17 @@ impl RawRwLock {
     }
 
     #[inline]
+    pub fn downgrade(&self) {
+        let state = self.state
+            .fetch_add(SHARED_COUNT_INC - EXCLUSIVE_LOCKED_BIT, Ordering::Release);
+
+        // Wake up parked shared thread if there are no parked exclusive threads
+        if state & SHARED_PARKED_BIT != 0 && state & EXCLUSIVE_PARKED_BIT == 0 {
+            self.downgrade_slow();
+        }
+    }
+
+    #[inline]
     pub fn lock_shared(&self) {
         let state = self.state.load(Ordering::Relaxed);
         // Use hardware lock elision to avoid cache conflicts when multiple
@@ -266,6 +277,19 @@ impl RawRwLock {
                 parking_lot::unpark_all(addr + 1);
             }
             break;
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn downgrade_slow(&self) {
+        // Clear the shared parked bit
+        self.state.fetch_and(!SHARED_PARKED_BIT, Ordering::Relaxed);
+
+        // Unpark all waiting shared threads.
+        unsafe {
+            let addr = self as *const _ as usize;
+            parking_lot::unpark_all(addr + 1);
         }
     }
 
