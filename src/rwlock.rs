@@ -8,6 +8,7 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::fmt;
+use std::marker::PhantomData;
 use raw_rwlock::RawRwLock;
 
 /// A reader-writer lock
@@ -64,7 +65,7 @@ use raw_rwlock::RawRwLock;
 /// } // write lock is dropped here
 /// ```
 pub struct RwLock<T: ?Sized> {
-    rwlock: RawRwLock,
+    raw: RawRwLock,
     data: UnsafeCell<T>,
 }
 
@@ -75,16 +76,16 @@ unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
 /// dropped.
 #[must_use]
 pub struct RwLockReadGuard<'a, T: ?Sized + 'a> {
-    rwlock: &'a RawRwLock,
-    data: &'a T,
+    rwlock: &'a RwLock<T>,
+    marker: PhantomData<&'a T>,
 }
 
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
 #[must_use]
 pub struct RwLockWriteGuard<'a, T: ?Sized + 'a> {
-    rwlock: &'a RawRwLock,
-    data: &'a mut T,
+    rwlock: &'a RwLock<T>,
+    marker: PhantomData<&'a mut T>,
 }
 
 impl<T> RwLock<T> {
@@ -102,7 +103,7 @@ impl<T> RwLock<T> {
     pub const fn new(val: T) -> RwLock<T> {
         RwLock {
             data: UnsafeCell::new(val),
-            rwlock: RawRwLock::new(),
+            raw: RawRwLock::new(),
         }
     }
 
@@ -120,7 +121,7 @@ impl<T> RwLock<T> {
     pub fn new(val: T) -> RwLock<T> {
         RwLock {
             data: UnsafeCell::new(val),
-            rwlock: RawRwLock::new(),
+            raw: RawRwLock::new(),
         }
     }
 
@@ -147,10 +148,10 @@ impl<T: ?Sized> RwLock<T> {
     /// once it is dropped.
     #[inline]
     pub fn read(&self) -> RwLockReadGuard<T> {
-        self.rwlock.lock_shared();
+        self.raw.lock_shared();
         RwLockReadGuard {
-            rwlock: &self.rwlock,
-            data: unsafe { &*self.data.get() },
+            rwlock: self,
+            marker: PhantomData,
         }
     }
 
@@ -163,10 +164,10 @@ impl<T: ?Sized> RwLock<T> {
     /// This function does not block.
     #[inline]
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
-        if self.rwlock.try_lock_shared() {
+        if self.raw.try_lock_shared() {
             Some(RwLockReadGuard {
-                rwlock: &self.rwlock,
-                data: unsafe { &*self.data.get() },
+                rwlock: self,
+                marker: PhantomData,
             })
         } else {
             None
@@ -183,10 +184,10 @@ impl<T: ?Sized> RwLock<T> {
     /// when dropped.
     #[inline]
     pub fn write(&self) -> RwLockWriteGuard<T> {
-        self.rwlock.lock_exclusive();
+        self.raw.lock_exclusive();
         RwLockWriteGuard {
-            rwlock: &self.rwlock,
-            data: unsafe { &mut *self.data.get() },
+            rwlock: self,
+            marker: PhantomData,
         }
     }
 
@@ -199,10 +200,10 @@ impl<T: ?Sized> RwLock<T> {
     /// This function does not block.
     #[inline]
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
-        if self.rwlock.try_lock_exclusive() {
+        if self.raw.try_lock_exclusive() {
             Some(RwLockWriteGuard {
-                rwlock: &self.rwlock,
-                data: unsafe { &mut *self.data.get() },
+                rwlock: self,
+                marker: PhantomData,
             })
         } else {
             None
@@ -239,14 +240,14 @@ impl<'a, T: ?Sized + 'a> Deref for RwLockReadGuard<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        self.data
+        unsafe { &*self.rwlock.data.get() }
     }
 }
 
 impl<'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.unlock_shared();
+        self.rwlock.raw.unlock_shared();
     }
 }
 
@@ -254,21 +255,21 @@ impl<'a, T: ?Sized + 'a> Deref for RwLockWriteGuard<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        self.data
+        unsafe { &*self.rwlock.data.get() }
     }
 }
 
 impl<'a, T: ?Sized + 'a> DerefMut for RwLockWriteGuard<'a, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        self.data
+        unsafe { &mut *self.rwlock.data.get() }
     }
 }
 
 impl<'a, T: ?Sized + 'a> Drop for RwLockWriteGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.unlock_exclusive();
+        self.rwlock.raw.unlock_exclusive();
     }
 }
 

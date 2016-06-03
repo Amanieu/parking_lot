@@ -283,11 +283,13 @@ impl RawRwLock {
                         return;
                     }
                 } else {
-                    if self.state.compare_exchange_weak(state,
-                                                      state.checked_add(SHARED_COUNT_INC)
-                                                          .expect("RwLock shared count overflow"),
-                                                      Ordering::Acquire,
-                                                      Ordering::Relaxed).is_ok() {
+                    if self.state
+                        .compare_exchange_weak(state,
+                                               state.checked_add(SHARED_COUNT_INC)
+                                                   .expect("RwLock shared count overflow"),
+                                               Ordering::Acquire,
+                                               Ordering::Relaxed)
+                        .is_ok() {
                         return;
                     }
                 }
@@ -353,10 +355,11 @@ impl RawRwLock {
                 }
             } else {
                 match self.state.compare_exchange_weak(state,
-                                                  state.checked_add(SHARED_COUNT_INC)
-                                                      .expect("RwLock shared count overflow"),
-                                                  Ordering::Acquire,
-                                                  Ordering::Relaxed) {
+                                                       state.checked_add(SHARED_COUNT_INC)
+                                                           .expect("RwLock shared count \
+                                                                    overflow"),
+                                                       Ordering::Acquire,
+                                                       Ordering::Relaxed) {
                     Ok(_) => return true,
                     Err(x) => state = x,
                 }

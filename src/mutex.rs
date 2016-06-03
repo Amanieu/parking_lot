@@ -8,6 +8,7 @@
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
 use std::fmt;
+use std::marker::PhantomData;
 use raw_mutex::RawMutex;
 
 /// A mutual exclusion primitive useful for protecting shared data
@@ -66,7 +67,7 @@ use raw_mutex::RawMutex;
 /// rx.recv().unwrap();
 /// ```
 pub struct Mutex<T: ?Sized> {
-    mutex: RawMutex,
+    raw: RawMutex,
     data: UnsafeCell<T>,
 }
 
@@ -80,8 +81,8 @@ unsafe impl<T: Send> Sync for Mutex<T> {}
 /// `Deref` and `DerefMut` implementations
 #[must_use]
 pub struct MutexGuard<'a, T: ?Sized + 'a> {
-    mutex: &'a RawMutex,
-    data: &'a mut T,
+    mutex: &'a Mutex<T>,
+    marker: PhantomData<&'a mut T>,
 }
 
 impl<T> Mutex<T> {
@@ -91,7 +92,7 @@ impl<T> Mutex<T> {
     pub const fn new(val: T) -> Mutex<T> {
         Mutex {
             data: UnsafeCell::new(val),
-            mutex: RawMutex::new(),
+            raw: RawMutex::new(),
         }
     }
 
@@ -101,7 +102,7 @@ impl<T> Mutex<T> {
     pub fn new(val: T) -> Mutex<T> {
         Mutex {
             data: UnsafeCell::new(val),
-            mutex: RawMutex::new(),
+            raw: RawMutex::new(),
         }
     }
 
@@ -124,10 +125,10 @@ impl<T: ?Sized> Mutex<T> {
     /// result is a deadlock.
     #[inline]
     pub fn lock(&self) -> MutexGuard<T> {
-        self.mutex.lock();
+        self.raw.lock();
         MutexGuard {
-            mutex: &self.mutex,
-            data: unsafe { &mut *self.data.get() },
+            mutex: self,
+            marker: PhantomData,
         }
     }
 
@@ -140,10 +141,10 @@ impl<T: ?Sized> Mutex<T> {
     /// This function does not block.
     #[inline]
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
-        if self.mutex.try_lock() {
+        if self.raw.try_lock() {
             Some(MutexGuard {
-                mutex: &self.mutex,
-                data: unsafe { &mut *self.data.get() },
+                mutex: self,
+                marker: PhantomData,
             })
         } else {
             None
@@ -180,28 +181,28 @@ impl<'a, T: ?Sized + 'a> Deref for MutexGuard<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        self.data
+        unsafe { &*self.mutex.data.get() }
     }
 }
 
 impl<'a, T: ?Sized + 'a> DerefMut for MutexGuard<'a, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        self.data
+        unsafe { &mut *self.mutex.data.get() }
     }
 }
 
 impl<'a, T: ?Sized + 'a> Drop for MutexGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.mutex.unlock();
+        self.mutex.raw.unlock();
     }
 }
 
 // Helper function used by Condvar, not publicly exported
 #[inline]
 pub fn guard_lock<'a, T: ?Sized>(guard: &MutexGuard<'a, T>) -> &'a RawMutex {
-    guard.mutex
+    &guard.mutex.raw
 }
 
 #[cfg(test)]
