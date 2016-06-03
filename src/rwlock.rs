@@ -33,6 +33,7 @@ use raw_rwlock::RawRwLock;
 ///
 /// # Differences from the standard library `RwLock`
 ///
+/// - Supports atomically downgrading a write lock into a read lock.
 /// - Writer-preferred policy instead of an unspecified platform default.
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 word of space, whereas the standard library boxes the

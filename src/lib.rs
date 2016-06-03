@@ -53,6 +53,7 @@
 //! 11. `Condvar::notify_all` will only wake up a single thread and requeue the
 //!     rest to wait on the associated `Mutex`. This avoids a thundering herd
 //!     problem where all threads try to acquire the lock at the same time.
+//! 12. `RwLock` supports atomically downgrading a write lock into a read lock.
 //!
 //! # The parking lot
 //!
