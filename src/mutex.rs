@@ -77,8 +77,8 @@ unsafe impl<T: Send> Sync for Mutex<T> {}
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
 /// dropped (falls out of scope), the lock will be unlocked.
 ///
-/// The data protected by the mutex can be access through this guard via its
-/// `Deref` and `DerefMut` implementations
+/// The data protected by the mutex can be accessed through this guard via its
+/// `Deref` and `DerefMut` implementations.
 #[must_use]
 pub struct MutexGuard<'a, T: ?Sized + 'a> {
     mutex: &'a Mutex<T>,
