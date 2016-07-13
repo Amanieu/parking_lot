@@ -134,7 +134,7 @@ impl<T: ?Sized> Mutex<T> {
 
     /// Attempts to acquire this lock.
     ///
-    /// If the lock could not be acquired at this time, then `Err` is returned.
+    /// If the lock could not be acquired at this time, then `None` is returned.
     /// Otherwise, an RAII guard is returned. The lock will be unlocked when the
     /// guard is dropped.
     ///
