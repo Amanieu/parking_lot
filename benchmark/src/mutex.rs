@@ -124,10 +124,18 @@ fn run_benchmark<M: Mutex<f64> + Send + Sync + 'static>(num_threads: usize,
     thread::sleep(Duration::new(seconds_per_test as u64, 0));
     keep_going.store(false, Ordering::Relaxed);
 
-    let total = threads.into_iter().map(|x| x.join().unwrap().0).fold(0, |a, b| a + b);
-    println!("{:20} - {:10.3} kHz",
+    let mut data: Vec<usize> = threads.into_iter().map(|x| x.join().unwrap().0).collect();
+    let average = data.iter().fold(0f64, |a, b| a + *b as f64) / data.len() as f64;
+    let variance = data.iter().fold(0f64, |a, b| a + ((*b as f64 - average).powi(2))) /
+                   data.len() as f64;
+    data.sort();
+
+    let k_hz = 1.0 / seconds_per_test as f64 / 1000.0;
+    println!("{:20} | {:10.3} kHz | {:10.3} kHz | {:10.3} kHz",
              M::name(),
-             total as f64 / seconds_per_test as f64 / 1000.0);
+             average * k_hz,
+             data[data.len() / 2] as f64 * k_hz,
+             variance.sqrt() * k_hz);
 }
 
 fn run_all(args: &[ArgRange],
@@ -152,6 +160,11 @@ fn run_all(args: &[ArgRange],
     }
     *first = false;
 
+    println!("{:^20} | {:^14} | {:^14} | {:^14}",
+             "name",
+             "average",
+             "median",
+             "std.dev.");
     run_benchmark::<parking_lot::Mutex<f64>>(num_threads,
                                              work_per_critical_section,
                                              work_between_critical_sections,
