@@ -21,6 +21,7 @@ script:
       travis-cargo build;
       travis-cargo run -- --release --bin mutex 2 1 0 1;
       travis-cargo run -- --release --bin rwlock 1 1 1 0 1;
+      cd ..;
   fi
 
 after_success:
