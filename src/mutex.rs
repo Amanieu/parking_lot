@@ -30,6 +30,7 @@ use raw_mutex::RawMutex;
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
 /// - Efficient handling of micro-contention using adaptive spinning.
+/// - Allows raw locking & unlocking without a guard.
 ///
 /// # Examples
 ///
@@ -122,7 +123,7 @@ impl<T: ?Sized> Mutex<T> {
     /// the guard goes out of scope, the mutex will be unlocked.
     ///
     /// Attempts to lock a mutex in the thread which already holds the lock will
-    /// result is a deadlock.
+    /// result in a deadlock.
     #[inline]
     pub fn lock(&self) -> MutexGuard<T> {
         self.raw.lock();
@@ -158,6 +159,38 @@ impl<T: ?Sized> Mutex<T> {
     #[inline]
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
+    }
+}
+
+impl Mutex<()> {
+    /// Acquires a mutex, blocking the current thread until it is able to do so.
+    ///
+    /// This is similar to `lock`, except that a `MutexGuard` is not returned.
+    /// Instead you will need to call `raw_unlock` to release the mutex.
+    #[inline]
+    pub fn raw_lock(&self) {
+        self.raw.lock();
+    }
+
+    /// Attempts to acquire this lock.
+    ///
+    /// This is similar to `try_lock`, except that a `MutexGuard` is not
+    /// returned. Instead you will need to call `raw_unlock` to release the
+    /// mutex.
+    #[inline]
+    pub fn raw_try_lock(&self) -> bool {
+        self.raw.try_lock()
+    }
+
+    /// Releases the mutex.
+    ///
+    /// # Safety
+    ///
+    /// This function must only be called if the mutex was locked using
+    /// `raw_lock` or `raw_try_lock`. The mutex must be locked.
+    #[inline]
+    pub unsafe fn raw_unlock(&self) {
+        self.raw.unlock();
     }
 }
 

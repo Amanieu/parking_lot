@@ -43,6 +43,7 @@ use raw_rwlock::RawRwLock;
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
 /// - Efficient handling of micro-contention using adaptive spinning.
+/// - Allows raw locking & unlocking without a guard.
 ///
 /// # Examples
 ///
@@ -219,6 +220,74 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
+    }
+}
+
+impl RwLock<()> {
+    /// Locks this rwlock with shared read access, blocking the current thread
+    /// until it can be acquired.
+    ///
+    /// This is similar to `read`, except that a `RwLockReadGuard` is not
+    /// returned. Instead you will need to call `raw_unlock` to release the
+    /// rwlock.
+    #[inline]
+    pub unsafe fn raw_read(&self) {
+        self.raw.lock_shared();
+    }
+
+    /// Attempts to acquire this rwlock with shared read access.
+    ///
+    /// This is similar to `read`, except that a `RwLockReadGuard` is not
+    /// returned. Instead you will need to call `raw_unlock` to release the
+    /// rwlock.
+    #[inline]
+    pub unsafe fn raw_try_read(&self) -> bool {
+        self.raw.try_lock_shared()
+    }
+
+    /// Releases shared read access of the rwlock.
+    ///
+    /// # Safety
+    ///
+    /// This function must only be called if the rwlock was locked using
+    /// `raw_read` or `raw_try_read`. The rwlock must be locked with shared
+    /// read access.
+    #[inline]
+    pub unsafe fn raw_unlock_read(&self) {
+        self.raw.unlock_shared();
+    }
+
+    /// Locks this rwlock with exclusive write access, blocking the current
+    /// thread until it can be acquired.
+    ///
+    /// This is similar to `read`, except that a `RwLockReadGuard` is not
+    /// returned. Instead you will need to call `raw_unlock` to release the
+    /// rwlock.
+    #[inline]
+    pub unsafe fn raw_write(&self) {
+        self.raw.lock_exclusive();
+    }
+
+    /// Attempts to lock this rwlock with exclusive write access.
+    ///
+    /// This is similar to `read`, except that a `RwLockReadGuard` is not
+    /// returned. Instead you will need to call `raw_unlock` to release the
+    /// rwlock.
+    #[inline]
+    pub unsafe fn raw_try_write(&self) -> bool {
+        self.raw.try_lock_exclusive()
+    }
+
+    /// Releases exclusive write access of the rwlock.
+    ///
+    /// # Safety
+    ///
+    /// This function must only be called if the rwlock was locked using
+    /// `raw_write` or `raw_try_write`. The rwlock must be locked with exclusive
+    /// write access.
+    #[inline]
+    pub unsafe fn raw_unlock_write(&self) {
+        self.raw.unlock_exclusive();
     }
 }
 
