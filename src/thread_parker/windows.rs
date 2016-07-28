@@ -121,6 +121,10 @@ impl Drop for KeyedEvent {
     }
 }
 
+const STATE_UNPARKED: usize = 0;
+const STATE_PARKED: usize = 1;
+const STATE_TIMED_OUT: usize = 2;
+
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {
     key: AtomicUsize,
@@ -133,20 +137,20 @@ impl ThreadParker {
         // later on, which could leave synchronization primitives in a broken
         // state.
         ThreadParker {
-            key: AtomicUsize::new(0),
+            key: AtomicUsize::new(STATE_UNPARKED),
             keyed_event: unsafe { KeyedEvent::get() },
         }
     }
 
     // Prepares the parker. This should be called before adding it to the queue.
     pub unsafe fn prepare_park(&self) {
-        self.key.store(1, Ordering::Relaxed);
+        self.key.store(STATE_UNPARKED, Ordering::Relaxed);
     }
 
     // Checks if the park timed out. This should be called while holding the
     // queue lock after park_until has returned false.
     pub unsafe fn timed_out(&self) -> bool {
-        self.key.load(Ordering::Relaxed) != 0
+        self.key.load(Ordering::Relaxed) == STATE_TIMED_OUT
     }
 
     // Parks the thread until it is unparked. This should be called after it has
@@ -165,7 +169,7 @@ impl ThreadParker {
             // If another thread unparked us, we need to call
             // NtWaitForKeyedEvent otherwise that thread will stay stuck at
             // NtReleaseKeyedEvent.
-            if self.key.swap(2, Ordering::Relaxed) == 0 {
+            if self.key.swap(STATE_TIMED_OUT, Ordering::Relaxed) == STATE_UNPARKED {
                 self.park();
                 return true;
             }
@@ -193,22 +197,21 @@ impl ThreadParker {
         }
         debug_assert_eq!(status, winapi::STATUS_TIMEOUT);
 
-        // If another thread unparked us, we need to call
-        // NtWaitForKeyedEvent otherwise that thread will stay stuck at
-        // NtReleaseKeyedEvent.
-        if self.key.swap(2, Ordering::Relaxed) == 0 {
+        // If another thread unparked us, we need to call NtWaitForKeyedEvent
+        // otherwise that thread will stay stuck at NtReleaseKeyedEvent.
+        if self.key.swap(STATE_TIMED_OUT, Ordering::Relaxed) == STATE_UNPARKED {
             self.park();
             return true;
         }
         false
     }
 
-    // Lock the parker to prevent the target thread from exiting. This is
+    // Locks the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
     pub unsafe fn unpark_lock(&self) -> UnparkHandle {
-        // If the state was 1 then we need to wake up the thread
-        if self.key.swap(0, Ordering::Relaxed) == 1 {
+        // If the state was STATE_PARKED then we need to wake up the thread
+        if self.key.swap(STATE_UNPARKED, Ordering::Relaxed) == STATE_PARKED {
             UnparkHandle { thread_parker: self }
         } else {
             UnparkHandle { thread_parker: ptr::null() }

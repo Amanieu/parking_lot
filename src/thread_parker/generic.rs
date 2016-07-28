@@ -61,7 +61,7 @@ impl ThreadParker {
         true
     }
 
-    // Lock the parker to prevent the target thread from exiting. This is
+    // Locks the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
     pub unsafe fn unpark_lock(&self) -> UnparkHandle {

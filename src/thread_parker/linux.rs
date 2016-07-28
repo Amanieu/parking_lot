@@ -46,7 +46,7 @@ impl ThreadParker {
     // Parks the thread until it is unparked. This should be called after it has
     // been added to the queue, after unlocking the queue.
     pub unsafe fn park(&self) {
-        while self.futex.load(Ordering::Relaxed) != 0 {
+        while self.futex.load(Ordering::Acquire) != 0 {
             let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, 0);
             debug_assert!(r == 0 || r == -1);
             if r == -1 {
@@ -60,7 +60,7 @@ impl ThreadParker {
     // should be called after it has been added to the queue, after unlocking
     // the queue. Returns true if we were unparked and false if we timed out.
     pub unsafe fn park_until(&self, timeout: Instant) -> bool {
-        while self.futex.load(Ordering::Relaxed) != 0 {
+        while self.futex.load(Ordering::Acquire) != 0 {
             let now = Instant::now();
             if timeout <= now {
                 return false;
@@ -86,12 +86,12 @@ impl ThreadParker {
         true
     }
 
-    // Lock the parker to prevent the target thread from exiting. This is
+    // Locks the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
     pub unsafe fn unpark_lock(&self) -> UnparkHandle {
         // We don't need to lock anything, just clear the state
-        self.futex.store(0, Ordering::Relaxed);
+        self.futex.store(0, Ordering::Release);
 
         UnparkHandle { thread_parker: self }
     }
