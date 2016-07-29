@@ -138,7 +138,6 @@
 //! atomic reference count and the two mutex bits in the same atomic word.
 
 #![warn(missing_docs)]
-#![cfg_attr(feature = "nightly", feature(extended_compare_and_swap))]
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
 #![cfg_attr(feature = "nightly", feature(asm))]
