@@ -160,8 +160,19 @@ impl<T: ?Sized> Mutex<T> {
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
-}
 
+    /// Releases the mutex.
+    ///
+    /// # Safety
+    ///
+    /// This function must only be called if the mutex was locked using
+    /// `raw_lock` or `raw_try_lock`, or if a `MutexGuard` from this mutex was
+    /// leaked (e.g. with `mem::forget`). The mutex must be locked.
+    #[inline]
+    pub unsafe fn raw_unlock(&self) {
+        self.raw.unlock();
+    }
+}
 impl Mutex<()> {
     /// Acquires a mutex, blocking the current thread until it is able to do so.
     ///
@@ -180,17 +191,6 @@ impl Mutex<()> {
     #[inline]
     pub fn raw_try_lock(&self) -> bool {
         self.raw.try_lock()
-    }
-
-    /// Releases the mutex.
-    ///
-    /// # Safety
-    ///
-    /// This function must only be called if the mutex was locked using
-    /// `raw_lock` or `raw_try_lock`. The mutex must be locked.
-    #[inline]
-    pub unsafe fn raw_unlock(&self) {
-        self.raw.unlock();
     }
 }
 
