@@ -55,7 +55,7 @@ in the Rust standard library:
     problem where all threads try to acquire the lock at the same time.
 12. `RwLock` supports atomically downgrading a write lock into a read lock.
 13. `Mutex` and `RwLock` allow raw unlocking without a RAII guard object.
-14. `Mutex<()>` and `RwLock<()>` allow raw locking without an RAII guard
+14. `Mutex<()>` and `RwLock<()>` allow raw locking without a RAII guard
     object.
 
 ## The parking lot
