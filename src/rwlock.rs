@@ -221,6 +221,33 @@ impl<T: ?Sized> RwLock<T> {
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
     }
+
+
+    /// Releases shared read access of the rwlock.
+    ///
+    /// # Safety
+    ///
+    /// This function must only be called if the rwlock was locked using
+    /// `raw_read` or `raw_try_read`, or if an `RwLockReadGuard` from this
+    /// rwlock was leaked (e.g. with `mem::forget`). The rwlock must be locked
+    /// with shared read access.
+    #[inline]
+    pub unsafe fn raw_unlock_read(&self) {
+        self.raw.unlock_shared();
+    }
+
+    /// Releases exclusive write access of the rwlock.
+    ///
+    /// # Safety
+    ///
+    /// This function must only be called if the rwlock was locked using
+    /// `raw_write` or `raw_try_write`, or if an `RwLockWriteGuard` from this
+    /// rwlock was leaked (e.g. with `mem::forget`). The rwlock must be locked
+    /// with exclusive write access.
+    #[inline]
+    pub unsafe fn raw_unlock_write(&self) {
+        self.raw.unlock_exclusive();
+    }
 }
 
 impl RwLock<()> {
@@ -231,7 +258,7 @@ impl RwLock<()> {
     /// returned. Instead you will need to call `raw_unlock` to release the
     /// rwlock.
     #[inline]
-    pub unsafe fn raw_read(&self) {
+    pub fn raw_read(&self) {
         self.raw.lock_shared();
     }
 
@@ -241,20 +268,8 @@ impl RwLock<()> {
     /// returned. Instead you will need to call `raw_unlock` to release the
     /// rwlock.
     #[inline]
-    pub unsafe fn raw_try_read(&self) -> bool {
+    pub fn raw_try_read(&self) -> bool {
         self.raw.try_lock_shared()
-    }
-
-    /// Releases shared read access of the rwlock.
-    ///
-    /// # Safety
-    ///
-    /// This function must only be called if the rwlock was locked using
-    /// `raw_read` or `raw_try_read`. The rwlock must be locked with shared
-    /// read access.
-    #[inline]
-    pub unsafe fn raw_unlock_read(&self) {
-        self.raw.unlock_shared();
     }
 
     /// Locks this rwlock with exclusive write access, blocking the current
@@ -264,7 +279,7 @@ impl RwLock<()> {
     /// returned. Instead you will need to call `raw_unlock` to release the
     /// rwlock.
     #[inline]
-    pub unsafe fn raw_write(&self) {
+    pub fn raw_write(&self) {
         self.raw.lock_exclusive();
     }
 
@@ -274,20 +289,8 @@ impl RwLock<()> {
     /// returned. Instead you will need to call `raw_unlock` to release the
     /// rwlock.
     #[inline]
-    pub unsafe fn raw_try_write(&self) -> bool {
+    pub fn raw_try_write(&self) -> bool {
         self.raw.try_lock_exclusive()
-    }
-
-    /// Releases exclusive write access of the rwlock.
-    ///
-    /// # Safety
-    ///
-    /// This function must only be called if the rwlock was locked using
-    /// `raw_write` or `raw_try_write`. The rwlock must be locked with exclusive
-    /// write access.
-    #[inline]
-    pub unsafe fn raw_unlock_write(&self) {
-        self.raw.unlock_exclusive();
     }
 }
 
