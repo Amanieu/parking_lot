@@ -137,9 +137,8 @@ impl RawMutex {
             // Park our thread until we are woken up by an unlock
             unsafe {
                 let addr = self as *const _ as usize;
-                let validate = &mut || {
-                    self.state.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT
-                };
+                let validate =
+                    &mut || self.state.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
                 let before_sleep = &mut || {};
                 let timed_out = &mut |_, _| unreachable!();
                 parking_lot::park(addr, validate, before_sleep, timed_out, None);

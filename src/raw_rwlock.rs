@@ -137,23 +137,20 @@ impl RawRwLock {
     #[inline]
     pub fn unlock_shared(&self) {
         let state = self.state.load(Ordering::Relaxed);
-        // Release the elided lock here. If we elided the lock then it will look
-        // as if we are the only reader on it.
-        if have_elision() && state == SHARED_COUNT_INC {
-            if self.state.elision_release(SHARED_COUNT_INC, 0).is_ok() {
-                return;
-            }
-        } else {
-            if (state & EXCLUSIVE_PARKED_BIT == 0 ||
-                state & SHARED_COUNT_MASK != SHARED_COUNT_INC) &&
-               self.state
-                .compare_exchange_weak(state,
-                                       state - SHARED_COUNT_INC,
-                                       Ordering::Release,
-                                       Ordering::Relaxed)
-                .is_ok() {
-                return;
-
+        if state & EXCLUSIVE_PARKED_BIT == 0 || state & SHARED_COUNT_MASK != SHARED_COUNT_INC {
+            if have_elision() {
+                if self.state.elision_release(state, state - SHARED_COUNT_INC).is_ok() {
+                    return;
+                }
+            } else {
+                if self.state
+                    .compare_exchange_weak(state,
+                                           state - SHARED_COUNT_INC,
+                                           Ordering::Release,
+                                           Ordering::Relaxed)
+                    .is_ok() {
+                    return;
+                }
             }
         }
         self.unlock_shared_slow();
@@ -300,22 +297,24 @@ impl RawRwLock {
         let mut spinwait_shared = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
+            // Use hardware lock elision to avoid cache conflicts when multiple
+            // readers try to acquire the lock. We only do this if the lock is
+            // completely empty since elision handles conflicts poorly.
+            if have_elision() && state == 0 {
+                match self.state.elision_acquire(0, SHARED_COUNT_INC) {
+                    Ok(_) => return,
+                    Err(x) => state = x,
+                }
+            }
+
             // Grab the lock if there are no exclusive threads locked or waiting
             if state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) == 0 {
-                if have_elision() && state == 0 {
-                    if self.state.elision_acquire(0, SHARED_COUNT_INC).is_ok() {
-                        return;
-                    }
-                } else {
-                    if self.state
-                        .compare_exchange_weak(state,
-                                               state.checked_add(SHARED_COUNT_INC)
-                                                   .expect("RwLock shared count overflow"),
-                                               Ordering::Acquire,
-                                               Ordering::Relaxed)
-                        .is_ok() {
-                        return;
-                    }
+                let new = state.checked_add(SHARED_COUNT_INC)
+                    .expect("RwLock shared count overflow");
+                if self.state
+                    .compare_exchange_weak(state, new, Ordering::Acquire, Ordering::Relaxed)
+                    .is_ok() {
+                    return;
                 }
 
                 // If there is high contention on the reader count then we want
@@ -378,12 +377,10 @@ impl RawRwLock {
                     Err(x) => state = x,
                 }
             } else {
-                match self.state.compare_exchange_weak(state,
-                                                       state.checked_add(SHARED_COUNT_INC)
-                                                           .expect("RwLock shared count \
-                                                                    overflow"),
-                                                       Ordering::Acquire,
-                                                       Ordering::Relaxed) {
+                let new = state.checked_add(SHARED_COUNT_INC)
+                    .expect("RwLock shared count overflow");
+                match self.state
+                    .compare_exchange_weak(state, new, Ordering::Acquire, Ordering::Relaxed) {
                     Ok(_) => return true,
                     Err(x) => state = x,
                 }
