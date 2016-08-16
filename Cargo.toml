@@ -21,7 +21,6 @@ kernel32-sys = "0.2"
 
 [dev-dependencies]
 rand = "0.3"
-lazy_static = "0.2"
 
 [features]
 nightly = []

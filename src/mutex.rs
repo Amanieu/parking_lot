@@ -263,32 +263,29 @@ mod tests {
 
     #[test]
     fn lots_and_lots() {
-        lazy_static! {
-            static ref M: Mutex<()> = Mutex::new(());
-        }
-        static mut CNT: u32 = 0;
         const J: u32 = 1000;
         const K: u32 = 3;
 
-        fn inc() {
+        let m = Arc::new(Mutex::new(0));
+
+        fn inc(m: &Mutex<u32>) {
             for _ in 0..J {
-                unsafe {
-                    let _g = M.lock();
-                    CNT += 1;
-                }
+                *m.lock() += 1;
             }
         }
 
         let (tx, rx) = channel();
         for _ in 0..K {
             let tx2 = tx.clone();
+            let m2 = m.clone();
             thread::spawn(move || {
-                inc();
+                inc(&m2);
                 tx2.send(()).unwrap();
             });
             let tx2 = tx.clone();
+            let m2 = m.clone();
             thread::spawn(move || {
-                inc();
+                inc(&m2);
                 tx2.send(()).unwrap();
             });
         }
@@ -297,7 +294,7 @@ mod tests {
         for _ in 0..2 * K {
             rx.recv().unwrap();
         }
-        assert_eq!(unsafe { CNT }, J * K * 2);
+        assert_eq!(*m.lock(), J * K * 2);
     }
 
     #[test]

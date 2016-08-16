@@ -343,17 +343,17 @@ mod tests {
 
     #[test]
     fn notify_one() {
-        lazy_static! {
-            static ref C: Condvar = Condvar::new();
-            static ref M: Mutex<()> = Mutex::new(());
-        }
+        let m = Arc::new(Mutex::new(()));
+        let m2 = m.clone();
+        let c = Arc::new(Condvar::new());
+        let c2 = c.clone();
 
-        let mut g = M.lock();
+        let mut g = m.lock();
         let _t = thread::spawn(move || {
-            let _g = M.lock();
-            C.notify_one();
+            let _g = m2.lock();
+            c2.notify_one();
         });
-        C.wait(&mut g);
+        c.wait(&mut g);
     }
 
     #[test]
@@ -394,38 +394,38 @@ mod tests {
 
     #[test]
     fn wait_for() {
-        lazy_static! {
-            static ref C: Condvar = Condvar::new();
-            static ref M: Mutex<()> = Mutex::new(());
-        }
+        let m = Arc::new(Mutex::new(()));
+        let m2 = m.clone();
+        let c = Arc::new(Condvar::new());
+        let c2 = c.clone();
 
-        let mut g = M.lock();
-        let no_timeout = C.wait_for(&mut g, Duration::from_millis(1));
+        let mut g = m.lock();
+        let no_timeout = c.wait_for(&mut g, Duration::from_millis(1));
         assert!(no_timeout.timed_out());
         let _t = thread::spawn(move || {
-            let _g = M.lock();
-            C.notify_one();
+            let _g = m2.lock();
+            c2.notify_one();
         });
-        let timeout_res = C.wait_for(&mut g, Duration::from_millis(u32::max_value() as u64));
+        let timeout_res = c.wait_for(&mut g, Duration::from_millis(u32::max_value() as u64));
         assert!(!timeout_res.timed_out());
         drop(g);
     }
 
     #[test]
     fn wait_until() {
-        lazy_static! {
-            static ref C: Condvar = Condvar::new();
-            static ref M: Mutex<()> = Mutex::new(());
-        }
+        let m = Arc::new(Mutex::new(()));
+        let m2 = m.clone();
+        let c = Arc::new(Condvar::new());
+        let c2 = c.clone();
 
-        let mut g = M.lock();
-        let no_timeout = C.wait_until(&mut g, Instant::now() + Duration::from_millis(1));
+        let mut g = m.lock();
+        let no_timeout = c.wait_until(&mut g, Instant::now() + Duration::from_millis(1));
         assert!(no_timeout.timed_out());
         let _t = thread::spawn(move || {
-            let _g = M.lock();
-            C.notify_one();
+            let _g = m2.lock();
+            c2.notify_one();
         });
-        let timeout_res = C.wait_until(&mut g,
+        let timeout_res = c.wait_until(&mut g,
                                        Instant::now() +
                                        Duration::from_millis(u32::max_value() as u64));
         assert!(!timeout_res.timed_out());
@@ -435,50 +435,50 @@ mod tests {
     #[test]
     #[should_panic]
     fn two_mutexes() {
-        lazy_static! {
-            static ref C: Condvar = Condvar::new();
-            static ref M1: Mutex<()> = Mutex::new(());
-            static ref M2: Mutex<()> = Mutex::new(());
-        }
+        let m = Arc::new(Mutex::new(()));
+        let m2 = m.clone();
+        let m3 = Arc::new(Mutex::new(()));
+        let c = Arc::new(Condvar::new());
+        let c2 = c.clone();
 
         // Make sure we don't leave the child thread dangling
-        struct PanicGuard;
-        impl Drop for PanicGuard {
+        struct PanicGuard<'a>(&'a Condvar);
+        impl<'a> Drop for PanicGuard<'a> {
             fn drop(&mut self) {
-                C.notify_one();
+                self.0.notify_one();
             }
         }
 
         let (tx, rx) = channel();
-        let g = M1.lock();
+        let g = m.lock();
         let _t = thread::spawn(move || {
-            let mut g = M1.lock();
+            let mut g = m2.lock();
             tx.send(()).unwrap();
-            C.wait(&mut g);
+            c2.wait(&mut g);
         });
         drop(g);
         rx.recv().unwrap();
-        let _g = M1.lock();
-        let _guard = PanicGuard;
-        let _ = C.wait(&mut M2.lock());
+        let _g = m.lock();
+        let _guard = PanicGuard(&*c);
+        let _ = c.wait(&mut m3.lock());
     }
 
     #[test]
     fn two_mutexes_disjoint() {
-        lazy_static! {
-            static ref C: Condvar = Condvar::new();
-            static ref M1: Mutex<()> = Mutex::new(());
-            static ref M2: Mutex<()> = Mutex::new(());
-        }
+        let m = Arc::new(Mutex::new(()));
+        let m2 = m.clone();
+        let m3 = Arc::new(Mutex::new(()));
+        let c = Arc::new(Condvar::new());
+        let c2 = c.clone();
 
-        let mut g = M1.lock();
+        let mut g = m.lock();
         let _t = thread::spawn(move || {
-            let _g = M1.lock();
-            C.notify_one();
+            let _g = m2.lock();
+            c2.notify_one();
         });
-        C.wait(&mut g);
+        c.wait(&mut g);
         drop(g);
 
-        let _ = C.wait_for(&mut M2.lock(), Duration::from_millis(1));
+        let _ = c.wait_for(&mut m3.lock(), Duration::from_millis(1));
     }
 }

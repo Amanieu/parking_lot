@@ -145,10 +145,6 @@
 
 extern crate smallvec;
 
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
-
 #[cfg(unix)]
 extern crate libc;
 

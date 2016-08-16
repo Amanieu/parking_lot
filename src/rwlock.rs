@@ -391,22 +391,22 @@ mod tests {
 
     #[test]
     fn frob() {
-        lazy_static! {
-            static ref R: RwLock<()> = RwLock::new(());
-        }
         const N: u32 = 10;
         const M: u32 = 1000;
+
+        let r = Arc::new(RwLock::new(()));
 
         let (tx, rx) = channel::<()>();
         for _ in 0..N {
             let tx = tx.clone();
+            let r = r.clone();
             thread::spawn(move || {
                 let mut rng = rand::thread_rng();
                 for _ in 0..M {
                     if rng.gen_weighted_bool(N) {
-                        drop(R.write());
+                        drop(r.write());
                     } else {
-                        drop(R.read());
+                        drop(r.read());
                     }
                 }
                 drop(tx);
