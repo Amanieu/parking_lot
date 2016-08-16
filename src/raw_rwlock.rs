@@ -199,13 +199,13 @@ impl RawRwLock {
             // Park our thread until we are woken up by an unlock
             unsafe {
                 let addr = self as *const _ as usize;
-                let validate = &mut || {
+                let validate = || {
                     let state = self.state.load(Ordering::Relaxed);
                     state & EXCLUSIVE_PARKED_BIT != 0 &&
                     state & (EXCLUSIVE_LOCKED_BIT | SHARED_COUNT_MASK) != 0
                 };
-                let before_sleep = &mut || {};
-                let timed_out = &mut |_, _| unreachable!();
+                let before_sleep = || {};
+                let timed_out = |_, _| unreachable!();
                 parking_lot::park(addr, validate, before_sleep, timed_out, None);
             }
 
@@ -237,7 +237,7 @@ impl RawRwLock {
             if state & EXCLUSIVE_PARKED_BIT != 0 {
                 unsafe {
                     let addr = self as *const _ as usize;
-                    let callback = &mut |result| {
+                    let callback = |result| {
                         // Clear the exclusive parked bit if this was the last
                         // exclusive thread. Also clear the locked bit if we
                         // successfully unparked a thread.
@@ -346,13 +346,13 @@ impl RawRwLock {
             // Park our thread until we are woken up by an unlock
             unsafe {
                 let addr = self as *const _ as usize;
-                let validate = &mut || {
+                let validate = || {
                     let state = self.state.load(Ordering::Relaxed);
                     state & SHARED_PARKED_BIT != 0 &&
                     state & (EXCLUSIVE_LOCKED_BIT | EXCLUSIVE_PARKED_BIT) != 0
                 };
-                let before_sleep = &mut || {};
-                let timed_out = &mut |_, _| unreachable!();
+                let before_sleep = || {};
+                let timed_out = |_, _| unreachable!();
                 parking_lot::park(addr + 1, validate, before_sleep, timed_out, None);
             }
 
@@ -398,7 +398,7 @@ impl RawRwLock {
             if state & EXCLUSIVE_PARKED_BIT != 0 && state & SHARED_COUNT_MASK == SHARED_COUNT_INC {
                 unsafe {
                     let addr = self as *const _ as usize;
-                    let callback = &mut |result| {
+                    let callback = |result| {
                         // Clear the exclusive parked bit if this was the last
                         // exclusive thread.
                         loop {

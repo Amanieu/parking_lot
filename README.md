@@ -76,9 +76,9 @@ consists of just 4 functions:
 
 ```rust,ignore
 unsafe fn park(key: usize,
-               validate: &mut FnMut() -> bool,
-               before_sleep: &mut FnMut(),
-               timed_out: &mut FnMut(usize, UnparkResult),
+               validate: FnOnce() -> bool,
+               before_sleep: FnOnce(),
+               timed_out: FnOnce(usize, UnparkResult),
                timeout: Option<Instant>)
                -> bool
 ```
@@ -96,7 +96,7 @@ This function performs the following steps:
 
 ```rust,ignore
 unsafe fn unpark_one(key: usize,
-                     callback: &mut FnMut(UnparkResult))
+                     callback: FnOnce(UnparkResult))
                      -> UnparkResult
 ```
 
@@ -116,8 +116,8 @@ returns the number of threads that were unparked.
 ```rust,ignore
 unsafe fn unpark_requeue(key_from: usize,
                          key_to: usize,
-                         validate: &mut FnMut() -> RequeueOp,
-                         callback: &mut FnMut(RequeueOp, usize))
+                         validate: FnOnce() -> RequeueOp,
+                         callback: FnOnce(RequeueOp, usize))
                          -> usize
 ```
 

@@ -122,7 +122,7 @@ impl Condvar {
         unsafe {
             // Unpark one thread
             let addr = self as *const _ as usize;
-            let callback = &mut |result| {
+            let callback = |result| {
                 // Clear our state if there are no more waiting threads
                 if result != UnparkResult::UnparkedNotLast {
                     self.state.store(ptr::null_mut(), Ordering::Relaxed);
@@ -157,7 +157,7 @@ impl Condvar {
             let mutex = self.state.load(Ordering::Relaxed);
             let from = self as *const _ as usize;
             let to = mutex as usize;
-            let validate = &mut || {
+            let validate = || {
                 // Make sure that our atomic state still points to the same
                 // mutex. If not then it means that all threads on the current
                 // mutex were woken up and a new waiting thread switched to a
@@ -183,7 +183,7 @@ impl Condvar {
                     RequeueOp::UnparkOneRequeueRest
                 }
             };
-            let callback = &mut |op, num_threads| {
+            let callback = |op, num_threads| {
                 // If we requeued threads to the mutex, mark it as having
                 // parked threads. The RequeueAll case is already handled above.
                 if op == RequeueOp::UnparkOneRequeueRest && num_threads > 1 {
@@ -249,7 +249,7 @@ impl Condvar {
             {
                 let addr = self as *const _ as usize;
                 let lock_addr = mutex as *const _ as *mut _;
-                let validate = &mut || {
+                let validate = || {
                     // Ensure we don't use two different mutexes with the same
                     // Condvar at the same time. This is done while locked to
                     // avoid races with notify_one
@@ -262,11 +262,11 @@ impl Condvar {
                     }
                     true
                 };
-                let before_sleep = &mut || {
+                let before_sleep = || {
                     // Unlock the mutex before sleeping...
                     mutex.unlock();
                 };
-                let timed_out = &mut |k, r| {
+                let timed_out = |k, r| {
                     // If we were requeued to a mutex, then we did not time out.
                     // We'll just park ourselves on the mutex again when we try
                     // to lock it later.

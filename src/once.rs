@@ -16,6 +16,7 @@ type U8 = usize;
 use std::mem;
 use spinwait::SpinWait;
 use parking_lot;
+use util::UncheckedOptionExt;
 
 const DONE_BIT: U8 = 1;
 const POISON_BIT: U8 = 2;
@@ -138,7 +139,7 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(false, &mut |_| f.take().unwrap()());
+        self.call_once_slow(false, &mut |_| unsafe { f.take().unchecked_unwrap()() });
     }
 
     /// Performs the same function as `call_once` except ignores poisoning.
@@ -159,7 +160,10 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(true, &mut |state| f.take().unwrap()(state));
+        self.call_once_slow(true,
+                            &mut |state| unsafe {
+                                f.take().unchecked_unwrap()(state)
+                            });
     }
 
     // This is a non-generic function to reduce the monomorphization cost of
@@ -230,9 +234,9 @@ impl Once {
             // lock.
             unsafe {
                 let addr = self as *const _ as usize;
-                let validate = &mut || self.0.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
-                let before_sleep = &mut || {};
-                let timed_out = &mut |_, _| unreachable!();
+                let validate = || self.0.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
+                let before_sleep = || {};
+                let timed_out = |_, _| unreachable!();
                 parking_lot::park(addr, validate, before_sleep, timed_out, None);
             }
 

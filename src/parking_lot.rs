@@ -16,6 +16,7 @@ use std::mem;
 use smallvec::SmallVec8;
 use thread_parker::ThreadParker;
 use word_lock::WordLock;
+use util::UncheckedOptionExt;
 
 static NUM_THREADS: AtomicUsize = ATOMIC_USIZE_INIT;
 static HASHTABLE: AtomicUsize = ATOMIC_USIZE_INIT;
@@ -381,12 +382,33 @@ pub enum RequeueOp {
 /// The `before_sleep` function is called outside the queue lock and is allowed
 /// to call `unpark_one`, `unpark_all` or `unpark_requeue`, but it is not
 /// allowed to call `park` or panic.
-pub unsafe fn park(key: usize,
-                   validate: &mut FnMut() -> bool,
-                   before_sleep: &mut FnMut(),
-                   timed_out: &mut FnMut(usize, UnparkResult),
-                   timeout: Option<Instant>)
-                   -> bool {
+pub unsafe fn park<V, B, T>(key: usize,
+                            validate: V,
+                            before_sleep: B,
+                            timed_out: T,
+                            timeout: Option<Instant>)
+                            -> bool
+    where V: FnOnce() -> bool,
+          B: FnOnce(),
+          T: FnOnce(usize, UnparkResult)
+{
+    let mut v = Some(validate);
+    let mut b = Some(before_sleep);
+    let mut t = Some(timed_out);
+    park_internal(key,
+                  &mut || v.take().unchecked_unwrap()(),
+                  &mut || b.take().unchecked_unwrap()(),
+                  &mut |key, result| t.take().unchecked_unwrap()(key, result),
+                  timeout)
+}
+
+// Non-generic version to reduce monomorphization cost
+unsafe fn park_internal(key: usize,
+                        validate: &mut FnMut() -> bool,
+                        before_sleep: &mut FnMut(),
+                        timed_out: &mut FnMut(usize, UnparkResult),
+                        timeout: Option<Instant>)
+                        -> bool {
     // Grab our thread data, this also ensures that the hash table exists
     let thread_data = &*THREAD_DATA.with(|x| x as *const ThreadData);
 
@@ -496,7 +518,15 @@ pub unsafe fn park(key: usize,
 ///
 /// The `callback` function is called while the queue is locked and must not
 /// panic or call into any function in `parking_lot`.
-pub unsafe fn unpark_one(key: usize, callback: &mut FnMut(UnparkResult)) -> UnparkResult {
+pub unsafe fn unpark_one<C>(key: usize, callback: C) -> UnparkResult
+    where C: FnOnce(UnparkResult)
+{
+    let mut c = Some(callback);
+    unpark_one_internal(key, &mut |result| c.take().unchecked_unwrap()(result))
+}
+
+// Non-generic version to reduce monomorphization cost
+unsafe fn unpark_one_internal(key: usize, callback: &mut FnMut(UnparkResult)) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -628,11 +658,28 @@ pub unsafe fn unpark_all(key: usize) -> usize {
 ///
 /// The `validate` and `callback` functions are called while the queue is locked
 /// and must not panic or call into any function in `parking_lot`.
-pub unsafe fn unpark_requeue(key_from: usize,
-                             key_to: usize,
-                             validate: &mut FnMut() -> RequeueOp,
-                             callback: &mut FnMut(RequeueOp, usize))
-                             -> usize {
+pub unsafe fn unpark_requeue<V, C>(key_from: usize,
+                                   key_to: usize,
+                                   validate: V,
+                                   callback: C)
+                                   -> usize
+    where V: FnOnce() -> RequeueOp,
+          C: FnOnce(RequeueOp, usize)
+{
+    let mut v = Some(validate);
+    let mut c = Some(callback);
+    unpark_requeue_internal(key_from,
+                            key_to,
+                            &mut || v.take().unchecked_unwrap()(),
+                            &mut |op, count| c.take().unchecked_unwrap()(op, count))
+}
+
+// Non-generic version to reduce monomorphization cost
+unsafe fn unpark_requeue_internal(key_from: usize,
+                                  key_to: usize,
+                                  validate: &mut FnMut() -> RequeueOp,
+                                  callback: &mut FnMut(RequeueOp, usize))
+                                  -> usize {
     // Lock the two buckets for the given key
     let (bucket_from, bucket_to) = lock_bucket_pair(key_from, key_to);
 
