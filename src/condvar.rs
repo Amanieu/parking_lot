@@ -209,48 +209,7 @@ impl Condvar {
     /// with a different `Mutex` object.
     #[inline]
     pub fn wait<T: ?Sized>(&self, mutex_guard: &mut MutexGuard<T>) {
-        self.wait_internal(guard_lock(mutex_guard));
-    }
-
-    // This is a non-generic function to reduce the monomorphization cost of
-    // using `wait`.
-    fn wait_internal(&self, mutex: &RawMutex) {
-        unsafe {
-            let mut bad_mutex = false;
-            {
-                let addr = self as *const _ as usize;
-                let lock_addr = mutex as *const _ as *mut _;
-                let validate = &mut || {
-                    // Ensure we don't use two different mutexes with the same
-                    // Condvar at the same time.
-                    let state = self.state.load(Ordering::Relaxed);
-                    if !state.is_null() && state != lock_addr {
-                        bad_mutex = true;
-                        return false;
-                    }
-
-                    // This is done while locked to avoid races with notify_one
-                    self.state.store(lock_addr, Ordering::Relaxed);
-                    true
-                };
-                let before_sleep = &mut || {
-                    // Unlock the mutex before sleeping...
-                    mutex.unlock();
-                };
-                let timed_out = &mut |_, _| unreachable!();
-                parking_lot::park(addr, validate, before_sleep, timed_out, None);
-            }
-
-            // Panic if we tried to use multiple mutexes with a Condvar. Note
-            // that at this point the MutexGuard is still locked. It will be
-            // unlocked by the unwinding logic.
-            if bad_mutex {
-                panic!("attempted to use a condition variable with more than one mutex");
-            }
-
-            // ... and re-lock it once we are done sleeping
-            mutex.lock();
-        }
+        self.wait_until_internal(guard_lock(mutex_guard), None);
     }
 
     /// Waits on this condition variable for a notification, timing out after
@@ -272,39 +231,35 @@ impl Condvar {
     ///
     /// This function will panic if another thread is waiting on the `Condvar`
     /// with a different `Mutex` object.
+    #[inline]
     pub fn wait_until<T: ?Sized>(&self,
                                  mutex_guard: &mut MutexGuard<T>,
                                  timeout: Instant)
                                  -> WaitTimeoutResult {
-        self.wait_until_internal(guard_lock(mutex_guard), timeout)
+        self.wait_until_internal(guard_lock(mutex_guard), Some(timeout))
     }
 
     // This is a non-generic function to reduce the monomorphization cost of
     // using `wait_until`.
-    fn wait_until_internal(&self, mutex: &RawMutex, timeout: Instant) -> WaitTimeoutResult {
+    fn wait_until_internal(&self, mutex: &RawMutex, timeout: Option<Instant>) -> WaitTimeoutResult {
         unsafe {
             let result;
             let mut bad_mutex = false;
             let mut requeued = false;
-            if timeout <= Instant::now() {
-                // If the timeout is in the past, we still need to release and
-                // re-acquire the mutex.
-                mutex.unlock();
-                result = false;
-            } else {
+            {
                 let addr = self as *const _ as usize;
                 let lock_addr = mutex as *const _ as *mut _;
                 let validate = &mut || {
                     // Ensure we don't use two different mutexes with the same
-                    // Condvar at the same time.
+                    // Condvar at the same time. This is done while locked to
+                    // avoid races with notify_one
                     let state = self.state.load(Ordering::Relaxed);
-                    if !state.is_null() && state != lock_addr {
+                    if state.is_null() {
+                        self.state.store(lock_addr, Ordering::Relaxed);
+                    } else if state != lock_addr {
                         bad_mutex = true;
                         return false;
                     }
-
-                    // This is done while locked to avoid races with notify_one
-                    self.state.store(lock_addr, Ordering::Relaxed);
                     true
                 };
                 let before_sleep = &mut || {
@@ -324,7 +279,7 @@ impl Condvar {
                         self.state.store(ptr::null_mut(), Ordering::Relaxed);
                     }
                 };
-                result = parking_lot::park(addr, validate, before_sleep, timed_out, Some(timeout));
+                result = parking_lot::park(addr, validate, before_sleep, timed_out, timeout);
             }
 
             // Panic if we tried to use multiple mutexes with a Condvar. Note
