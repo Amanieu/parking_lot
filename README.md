@@ -3,7 +3,9 @@ parking_lot
 
 [![Build Status](https://travis-ci.org/Amanieu/parking_lot.svg?branch=master)](https://travis-ci.org/Amanieu/parking_lot) [![Build status](https://ci.appveyor.com/api/projects/status/wppcc32ttpud0a30/branch/master?svg=true)](https://ci.appveyor.com/project/Amanieu/parking-lot/branch/master) [![Crates.io](https://img.shields.io/crates/v/parking_lot.svg)](https://crates.io/crates/parking_lot)
 
-[Documentation](https://amanieu.github.io/parking_lot/parking_lot/index.html)
+[Documentation (synchronization primitives)](https://amanieu.github.io/parking_lot/parking_lot/index.html)
+
+[Documentation (core parking lot API)](https://amanieu.github.io/parking_lot/parking_lot_core/index.html)
 
 This library provides implementations of `Mutex`, `RwLock`, `Condvar` and
 `Once` that are smaller, faster and more flexible than those in the Rust
@@ -69,75 +71,6 @@ consists of a hash table mapping of lock addresses to queues of parked
 [futexes](http://man7.org/linux/man-pages/man2/futex.2.html), but it is more
 powerful since it allows invoking callbacks while holding a queue lock.
 
-*Parking* refers to suspending the thread while simultaneously enqueuing it
-on a queue keyed by some address. *Unparking* refers to dequeuing a thread
-from a queue keyed by some address and resuming it. The parking lot API
-consists of just 4 functions:
-
-```rust,ignore
-unsafe fn park(key: usize,
-               validate: FnOnce() -> bool,
-               before_sleep: FnOnce(),
-               timed_out: FnOnce(usize, UnparkResult),
-               timeout: Option<Instant>)
-               -> bool
-```
-
-This function performs the following steps:
-
-1. Lock the queue associated with `key`.
-2. Call `validate`, if it returns `false`, unlock the queue and return.
-3. Add the current thread to the queue.
-4. Unlock the queue.
-5. Call `before_sleep`.
-6. Sleep until we are unparked or `timeout` is reached.
-7. If the park timed out, call `timed_out`.
-8. Return `true` if we were unparked by another thread, `false` otherwise.
-
-```rust,ignore
-unsafe fn unpark_one(key: usize,
-                     callback: FnOnce(UnparkResult))
-                     -> UnparkResult
-```
-
-This function will unpark a single thread from the queue associated with
-`key`. The `callback` function is invoked while holding the queue lock but
-before the thread is unparked. The `UnparkResult` indicates whether the
-queue was empty and, if not, whether there are still threads remaining in
-the queue.
-
-```rust,ignore
-unsafe fn unpark_all(key: usize) -> usize
-```
-
-This function will unpark all threads in the queue associated with `key`. It
-returns the number of threads that were unparked.
-
-```rust,ignore
-unsafe fn unpark_requeue(key_from: usize,
-                         key_to: usize,
-                         validate: FnOnce() -> RequeueOp,
-                         callback: FnOnce(RequeueOp, usize))
-                         -> usize
-```
-
-This function will remove all threads from the queue associated with
-`key_from`, optionally unpark the first one and move the rest to the queue
-associated with `key_to`. The `validate` function is invoked while holding
-both queue locks and can choose whether to abort the operation and whether
-to unpark one thread from the queue. The `callback` function is then called
-with the result of `validate` and the number of threads that were in the
-original queue.
-
-## Building custom synchronization primitives
-
-Building custom synchronization primitives is very simple since
-`parking_lot` takes care of all the hard parts for you. The most common
-case for a custom primitive would be to integrate a `Mutex` inside another
-data type. Since a mutex only requires 2 bits, it can share space with other
-data. For example, one could create an `ArcMutex` type that combines the
-atomic reference count and the two mutex bits in the same atomic word.
-
 ## Nightly vs stable
 
 There are a few restrictions when using this library on stable Rust:
@@ -171,6 +104,10 @@ To enable nightly-only features, add this to your `Cargo.toml` instead:
 [dependencies]
 parking_lot = {version = "0.2", features = ["nightly"]}
 ```
+
+The core parking lot API is provided by the `parking_lot_core` crate. It is
+separate from the synchronization primitives in the `parking_lot` crate so that
+changes to the core API do not cause breaking changes for users of `parking_lot`.
 
 ## License
 

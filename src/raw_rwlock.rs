@@ -9,8 +9,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(not(feature = "nightly"))]
 use stable::{AtomicUsize, Ordering};
-use spinwait::SpinWait;
-use parking_lot::{self, UnparkResult};
+use parking_lot_core::{self, UnparkResult, SpinWait};
 use elision::{have_elision, AtomicElisionExt};
 
 const SHARED_PARKED_BIT: usize = 1;
@@ -206,7 +205,7 @@ impl RawRwLock {
                 };
                 let before_sleep = || {};
                 let timed_out = |_, _| unreachable!();
-                parking_lot::park(addr, validate, before_sleep, timed_out, None);
+                parking_lot_core::park(addr, validate, before_sleep, timed_out, None);
             }
 
             // Loop back and try locking again
@@ -250,7 +249,7 @@ impl RawRwLock {
                         };
                         self.state.fetch_and(mask, Ordering::Release);
                     };
-                    if parking_lot::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
+                    if parking_lot_core::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
                         // If we successfully unparked an exclusive thread,
                         // stop here.
                         return;
@@ -271,7 +270,7 @@ impl RawRwLock {
             // Unpark all waiting shared threads.
             unsafe {
                 let addr = self as *const _ as usize;
-                parking_lot::unpark_all(addr + 1);
+                parking_lot_core::unpark_all(addr + 1);
             }
             break;
         }
@@ -286,7 +285,7 @@ impl RawRwLock {
         // Unpark all waiting shared threads.
         unsafe {
             let addr = self as *const _ as usize;
-            parking_lot::unpark_all(addr + 1);
+            parking_lot_core::unpark_all(addr + 1);
         }
     }
 
@@ -353,7 +352,7 @@ impl RawRwLock {
                 };
                 let before_sleep = || {};
                 let timed_out = |_, _| unreachable!();
-                parking_lot::park(addr + 1, validate, before_sleep, timed_out, None);
+                parking_lot_core::park(addr + 1, validate, before_sleep, timed_out, None);
             }
 
             // Loop back and try locking again
@@ -421,7 +420,7 @@ impl RawRwLock {
                             }
                         }
                     };
-                    if parking_lot::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
+                    if parking_lot_core::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
                         // If we successfully unparked an exclusive thread,
                         // stop here.
                         return;
@@ -446,7 +445,7 @@ impl RawRwLock {
             if state & EXCLUSIVE_PARKED_BIT == 0 && state & SHARED_PARKED_BIT != 0 {
                 unsafe {
                     let addr = self as *const _ as usize;
-                    parking_lot::unpark_all(addr + 1);
+                    parking_lot_core::unpark_all(addr + 1);
                 }
             }
             break;

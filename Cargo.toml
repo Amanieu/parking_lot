@@ -2,7 +2,7 @@
 name = "parking_lot"
 version = "0.2.8"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
-description = "Compact and efficient synchronization primitives. Also provides an API for creating custom synchronization primitives."
+description = "More compact and efficient implementations of the standard synchronization primitives."
 documentation = "https://amanieu.github.io/parking_lot/parking_lot/index.html"
 license = "Apache-2.0/MIT"
 repository = "https://github.com/Amanieu/parking_lot"
@@ -10,17 +10,10 @@ readme = "README.md"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 
 [dependencies]
-smallvec = "0.1"
-
-[target.'cfg(unix)'.dependencies]
-libc = "0.2"
-
-[target.'cfg(windows)'.dependencies]
-winapi = "0.2"
-kernel32-sys = "0.2"
+parking_lot_core = { path = "core" }
 
 [dev-dependencies]
 rand = "0.3"
 
 [features]
-nightly = []
+nightly = ["parking_lot_core/nightly"]

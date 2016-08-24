@@ -8,7 +8,7 @@
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 use std::ptr;
-use parking_lot::{self, UnparkResult, RequeueOp};
+use parking_lot_core::{self, UnparkResult, RequeueOp};
 use mutex::{MutexGuard, guard_lock};
 use raw_mutex::RawMutex;
 
@@ -128,7 +128,7 @@ impl Condvar {
                     self.state.store(ptr::null_mut(), Ordering::Relaxed);
                 }
             };
-            parking_lot::unpark_one(addr, callback);
+            parking_lot_core::unpark_one(addr, callback);
         }
     }
 
@@ -190,7 +190,7 @@ impl Condvar {
                     (*mutex).mark_parked();
                 }
             };
-            parking_lot::unpark_requeue(from, to, validate, callback);
+            parking_lot_core::unpark_requeue(from, to, validate, callback);
         }
     }
 
@@ -279,7 +279,7 @@ impl Condvar {
                         self.state.store(ptr::null_mut(), Ordering::Relaxed);
                     }
                 };
-                result = parking_lot::park(addr, validate, before_sleep, timed_out, timeout);
+                result = parking_lot_core::park(addr, validate, before_sleep, timed_out, timeout);
             }
 
             // Panic if we tried to use multiple mutexes with a Condvar. Note

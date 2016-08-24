@@ -13,8 +13,7 @@ type U8 = u8;
 use stable::{AtomicU8, Ordering};
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
-use spinwait::SpinWait;
-use parking_lot::{self, UnparkResult};
+use parking_lot_core::{self, UnparkResult, SpinWait};
 
 const LOCKED_BIT: U8 = 1;
 const PARKED_BIT: U8 = 2;
@@ -140,7 +139,7 @@ impl RawMutex {
                 let validate = || self.state.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
                 let before_sleep = || {};
                 let timed_out = |_, _| unreachable!();
-                parking_lot::park(addr, validate, before_sleep, timed_out, None);
+                parking_lot_core::park(addr, validate, before_sleep, timed_out, None);
             }
 
             // Loop back and try locking again
@@ -175,7 +174,7 @@ impl RawMutex {
                         self.state.store(0, Ordering::Release);
                     }
                 };
-                parking_lot::unpark_one(addr, callback);
+                parking_lot_core::unpark_one(addr, callback);
             }
             break;
         }
