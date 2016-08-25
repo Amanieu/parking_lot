@@ -174,46 +174,37 @@ impl RawMutex {
     #[cold]
     #[inline(never)]
     fn unlock_slow(&self, force_fair: bool) {
-        let mut state = self.state.load(Ordering::Relaxed);
-        loop {
-            // Unlock directly if there are no parked threads
-            if state & PARKED_BIT == 0 {
-                match self.state
-                    .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed) {
-                    Ok(_) => return,
-                    Err(x) => state = x,
+        // Unlock directly if there are no parked threads
+        if self.state.compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed).is_ok() {
+            return;
+        }
+
+        // Unpark one thread and leave the parked bit set if there might
+        // still be parked threads on this address.
+        unsafe {
+            let addr = self as *const _ as usize;
+            let callback = |result: UnparkResult| {
+                // If we are using a fair unlock then we should keep the
+                // mutex locked and hand it off to the unparked thread.
+                if result.unparked_thread && (force_fair || result.be_fair) {
+                    // Clear the parked bit if there are no more parked
+                    // threads.
+                    if !result.have_more_threads {
+                        self.state.store(LOCKED_BIT, Ordering::Relaxed);
+                    }
+                    return TOKEN_HANDOFF;
                 }
-                continue;
-            }
 
-            // Unpark one thread and leave the parked bit set if there might
-            // still be parked threads on this address.
-            unsafe {
-                let addr = self as *const _ as usize;
-                let callback = |result: UnparkResult| {
-                    // If we are using a fair unlock then we should keep the
-                    // mutex locked and hand it off to the unparked thread.
-                    if result.unparked_thread && (force_fair || result.be_fair) {
-                        // Clear the parked bit if there are no more parked
-                        // threads.
-                        if !result.have_more_threads {
-                            self.state.store(LOCKED_BIT, Ordering::Relaxed);
-                        }
-                        return TOKEN_HANDOFF;
-                    }
-
-                    // Clear the locked bit, and the parked bit as well if there
-                    // are no more parked threads.
-                    if result.have_more_threads {
-                        self.state.store(PARKED_BIT, Ordering::Release);
-                    } else {
-                        self.state.store(0, Ordering::Release);
-                    }
-                    TOKEN_NORMAL
-                };
-                parking_lot_core::unpark_one(addr, callback);
-            }
-            break;
+                // Clear the locked bit, and the parked bit as well if there
+                // are no more parked threads.
+                if result.have_more_threads {
+                    self.state.store(PARKED_BIT, Ordering::Release);
+                } else {
+                    self.state.store(0, Ordering::Release);
+                }
+                TOKEN_NORMAL
+            };
+            parking_lot_core::unpark_one(addr, callback);
         }
     }
 }
