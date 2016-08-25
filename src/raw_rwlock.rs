@@ -9,7 +9,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(not(feature = "nightly"))]
 use stable::{AtomicUsize, Ordering};
-use parking_lot_core::{self, UnparkResult, SpinWait};
+use parking_lot_core::{self, UnparkResult, SpinWait, DEFAULT_UNPARK_TOKEN};
 use elision::{have_elision, AtomicElisionExt};
 
 const SHARED_PARKED_BIT: usize = 1;
@@ -236,20 +236,21 @@ impl RawRwLock {
             if state & EXCLUSIVE_PARKED_BIT != 0 {
                 unsafe {
                     let addr = self as *const _ as usize;
-                    let callback = |result| {
+                    let callback = |result: UnparkResult| {
                         // Clear the exclusive parked bit if this was the last
                         // exclusive thread. Also clear the locked bit if we
                         // successfully unparked a thread.
-                        let mask = match result {
-                            UnparkResult::UnparkedNotLast => !EXCLUSIVE_LOCKED_BIT,
-                            UnparkResult::UnparkedLast => {
-                                !(EXCLUSIVE_PARKED_BIT | EXCLUSIVE_LOCKED_BIT)
-                            }
-                            UnparkResult::NoParkedThreads => !EXCLUSIVE_PARKED_BIT,
-                        };
+                        let mut mask = !0;
+                        if !result.have_more_threads {
+                            mask &= !EXCLUSIVE_PARKED_BIT;
+                        }
+                        if result.unparked_thread {
+                            mask &= !EXCLUSIVE_LOCKED_BIT;
+                        }
                         self.state.fetch_and(mask, Ordering::Release);
+                        DEFAULT_UNPARK_TOKEN
                     };
-                    if parking_lot_core::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
+                    if parking_lot_core::unpark_one(addr, callback).unparked_thread {
                         // If we successfully unparked an exclusive thread,
                         // stop here.
                         return;
@@ -397,15 +398,15 @@ impl RawRwLock {
             if state & EXCLUSIVE_PARKED_BIT != 0 && state & SHARED_COUNT_MASK == SHARED_COUNT_INC {
                 unsafe {
                     let addr = self as *const _ as usize;
-                    let callback = |result| {
+                    let callback = |result: UnparkResult| {
                         // Clear the exclusive parked bit if this was the last
                         // exclusive thread.
                         loop {
                             let mut new_state = state;
-                            if result != UnparkResult::NoParkedThreads {
+                            if result.unparked_thread {
                                 new_state -= SHARED_COUNT_INC;
                             }
-                            if result != UnparkResult::UnparkedNotLast {
+                            if !result.have_more_threads {
                                 new_state &= !EXCLUSIVE_PARKED_BIT;
                             }
                             match self.state.compare_exchange_weak(state,
@@ -414,13 +415,13 @@ impl RawRwLock {
                                                                    Ordering::Relaxed) {
                                 Ok(_) => {
                                     state = new_state;
-                                    return;
+                                    return DEFAULT_UNPARK_TOKEN;
                                 }
                                 Err(x) => state = x,
                             }
                         }
                     };
-                    if parking_lot_core::unpark_one(addr, callback) != UnparkResult::NoParkedThreads {
+                    if parking_lot_core::unpark_one(addr, callback).unparked_thread {
                         // If we successfully unparked an exclusive thread,
                         // stop here.
                         return;

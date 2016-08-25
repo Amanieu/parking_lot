@@ -13,7 +13,15 @@ type U8 = u8;
 use stable::{AtomicU8, Ordering};
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
-use parking_lot_core::{self, UnparkResult, SpinWait};
+use parking_lot_core::{self, UnparkResult, SpinWait, UnparkToken};
+
+// UnparkToken used to indicate that that the target thread should attempt to
+// lock the mutex again as soon as it is unparked.
+pub const TOKEN_NORMAL: UnparkToken = UnparkToken(0);
+
+// UnparkToken used to indicate that the mutex is being handed off to the target
+// thread directly without unlocking it.
+pub const TOKEN_HANDOFF: UnparkToken = UnparkToken(1);
 
 const LOCKED_BIT: U8 = 1;
 const PARKED_BIT: U8 = 2;
@@ -68,7 +76,17 @@ impl RawMutex {
             .is_ok() {
             return;
         }
-        self.unlock_slow();
+        self.unlock_slow(false);
+    }
+
+    #[inline]
+    pub fn unlock_fair(&self) {
+        if self.state
+            .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .is_ok() {
+            return;
+        }
+        self.unlock_slow(true);
     }
 
     // Used by Condvar when requeuing threads to us, must be called while
@@ -139,7 +157,12 @@ impl RawMutex {
                 let validate = || self.state.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
                 let before_sleep = || {};
                 let timed_out = |_, _| unreachable!();
-                parking_lot_core::park(addr, validate, before_sleep, timed_out, None);
+                if parking_lot_core::park(addr, validate, before_sleep, timed_out, None) ==
+                   Some(TOKEN_HANDOFF) {
+                    // The thread that unparked us passed the lock on to us
+                    // directly without unlocking it.
+                    return;
+                }
             }
 
             // Loop back and try locking again
@@ -150,7 +173,7 @@ impl RawMutex {
 
     #[cold]
     #[inline(never)]
-    fn unlock_slow(&self) {
+    fn unlock_slow(&self, force_fair: bool) {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // Unlock directly if there are no parked threads
@@ -167,12 +190,26 @@ impl RawMutex {
             // still be parked threads on this address.
             unsafe {
                 let addr = self as *const _ as usize;
-                let callback = |result| {
-                    if result == UnparkResult::UnparkedNotLast {
+                let callback = |result: UnparkResult| {
+                    // If we are using a fair unlock then we should keep the
+                    // mutex locked and hand it off to the unparked thread.
+                    if result.unparked_thread && (force_fair || result.be_fair) {
+                        // Clear the parked bit if there are no more parked
+                        // threads.
+                        if !result.have_more_threads {
+                            self.state.store(LOCKED_BIT, Ordering::Relaxed);
+                        }
+                        return TOKEN_HANDOFF;
+                    }
+
+                    // Clear the locked bit, and the parked bit as well if there
+                    // are no more parked threads.
+                    if result.have_more_threads {
                         self.state.store(PARKED_BIT, Ordering::Release);
                     } else {
                         self.state.store(0, Ordering::Release);
                     }
+                    TOKEN_NORMAL
                 };
                 parking_lot_core::unpark_one(addr, callback);
             }

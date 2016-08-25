@@ -20,6 +20,26 @@ use raw_mutex::RawMutex;
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
 /// ever accessed when the mutex is locked.
 ///
+/// # Fairness
+///
+/// A typical unfair lock can often end up in a situation where a single thread
+/// quickly acquires and releases the same mutex in succession, which can starve
+/// other threads waiting to acquire the mutex. While this improves performance
+/// because it doesn't force a context switch when a thread tries to re-acquire
+/// a mutex it has just released, this can starve other threads.
+///
+/// This mutex uses [eventual fairness](https://trac.webkit.org/changeset/203350)
+/// to ensure that the lock will be fair on average without sacrificing
+/// performance. This is done by forcing a fair unlock on average every 0.5ms,
+/// which will force the lock to go to the next thread waiting for the mutex.
+///
+/// Additionally, any critical section longer than 1ms will always use a fair
+/// unlock, which has a negligible performance impact compared to the length of
+/// the critical section.
+///
+/// You can also force a fair unlock by calling `MutexGuard::unlock_fair` when
+/// unlocking a mutex instead of simply dropping the `MutexGuard`.
+///
 /// # Differences from the standard library `Mutex`
 ///
 /// - No poisoning, the lock is released normally on panic.
@@ -31,6 +51,8 @@ use raw_mutex::RawMutex;
 /// - Inline fast path for the uncontended case.
 /// - Efficient handling of micro-contention using adaptive spinning.
 /// - Allows raw locking & unlocking without a guard.
+/// - Supports eventual fairness so that the mutex is fair on average.
+/// - Optionally allows making the mutex fair by calling `MutexGuard::unlock_fair`.
 ///
 /// # Examples
 ///
@@ -172,6 +194,20 @@ impl<T: ?Sized> Mutex<T> {
     pub unsafe fn raw_unlock(&self) {
         self.raw.unlock();
     }
+
+    /// Releases the mutex using a fair unlock protocol.
+    ///
+    /// See `MutexGuard::unlock_fair`.
+    ///
+    /// # Safety
+    ///
+    /// This function must only be called if the mutex was locked using
+    /// `raw_lock` or `raw_try_lock`, or if a `MutexGuard` from this mutex was
+    /// leaked (e.g. with `mem::forget`). The mutex must be locked.
+    #[inline]
+    pub unsafe fn raw_unlock_fair(&self) {
+        self.raw.unlock_fair();
+    }
 }
 impl Mutex<()> {
     /// Acquires a mutex, blocking the current thread until it is able to do so.
@@ -207,6 +243,25 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
             Some(guard) => write!(f, "Mutex {{ data: {:?} }}", &*guard),
             None => write!(f, "Mutex {{ <locked> }}"),
         }
+    }
+}
+
+impl<'a, T: ?Sized + 'a> MutexGuard<'a, T> {
+    /// Unlocks the mutex using a fair unlock protocol.
+    ///
+    /// By default, mutexes are unfair and allow the current thread to re-lock
+    /// the mutex before another has the chance to acquire the lock, even if
+    /// that thread has been blocked on the mutex for a long time. This is the
+    /// default because it allows much higher throughput as it avoids forcing a
+    /// context switch on every mutex unlock. This can result in one thread
+    /// acquiring a mutex many more times than other threads.
+    ///
+    /// However in some cases it can be beneficial to ensure fairness by forcing
+    /// the lock to pass on to a waiting thread if there is one. This is done by
+    /// using this method instead of dropping the `MutexGuard` normally.
+    #[inline]
+    pub fn unlock_fair(self) {
+        self.mutex.raw.unlock_fair();
     }
 }
 

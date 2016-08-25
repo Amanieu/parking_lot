@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use std::ptr;
 use parking_lot_core::{self, UnparkResult, RequeueOp};
 use mutex::{MutexGuard, guard_lock};
-use raw_mutex::RawMutex;
+use raw_mutex::{RawMutex, TOKEN_NORMAL, TOKEN_HANDOFF};
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.
@@ -122,11 +122,12 @@ impl Condvar {
         unsafe {
             // Unpark one thread
             let addr = self as *const _ as usize;
-            let callback = |result| {
+            let callback = |result: UnparkResult| {
                 // Clear our state if there are no more waiting threads
-                if result != UnparkResult::UnparkedNotLast {
+                if !result.have_more_threads {
                     self.state.store(ptr::null_mut(), Ordering::Relaxed);
                 }
+                TOKEN_NORMAL
             };
             parking_lot_core::unpark_one(addr, callback);
         }
@@ -189,6 +190,7 @@ impl Condvar {
                 if op == RequeueOp::UnparkOneRequeueRest && num_threads > 1 {
                     (*mutex).mark_parked();
                 }
+                TOKEN_NORMAL
             };
             parking_lot_core::unpark_requeue(from, to, validate, callback);
         }
@@ -266,7 +268,7 @@ impl Condvar {
                     // Unlock the mutex before sleeping...
                     mutex.unlock();
                 };
-                let timed_out = |k, r| {
+                let timed_out = |k, was_last_thread| {
                     // If we were requeued to a mutex, then we did not time out.
                     // We'll just park ourselves on the mutex again when we try
                     // to lock it later.
@@ -275,7 +277,7 @@ impl Condvar {
                     // If we were the last thread on the queue then we need to
                     // clear our state. This is normally done by the
                     // notify_{one,all} functions when not timing out.
-                    if !requeued && r == UnparkResult::UnparkedLast {
+                    if !requeued && was_last_thread {
                         self.state.store(ptr::null_mut(), Ordering::Relaxed);
                     }
                 };
@@ -290,9 +292,11 @@ impl Condvar {
             }
 
             // ... and re-lock it once we are done sleeping
-            mutex.lock();
+            if result != Some(TOKEN_HANDOFF) {
+                mutex.lock();
+            }
 
-            WaitTimeoutResult(!(result || requeued))
+            WaitTimeoutResult(!(result.is_some() || requeued))
         }
     }
 

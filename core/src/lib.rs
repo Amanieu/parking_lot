@@ -30,23 +30,23 @@
 //!                before_sleep: FnOnce(),
 //!                timed_out: FnOnce(usize, UnparkResult),
 //!                timeout: Option<Instant>)
-//!                -> bool
+//!                -> Option<UnparkToken>
 //! ```
 //!
 //! This function performs the following steps:
 //!
 //! 1. Lock the queue associated with `key`.
-//! 2. Call `validate`, if it returns `false`, unlock the queue and return.
+//! 2. Call `validate`, if it returns `None`, unlock the queue and return.
 //! 3. Add the current thread to the queue.
 //! 4. Unlock the queue.
 //! 5. Call `before_sleep`.
 //! 6. Sleep until we are unparked or `timeout` is reached.
-//! 7. If the park timed out, call `timed_out`.
-//! 8. Return `true` if we were unparked by another thread, `false` otherwise.
+//! 7. If the park timed out, call `timed_out` and then return `None`.
+//! 8. Return an `UnparkToken` if we were unparked by another thread.
 //!
 //! ```rust,ignore
 //! unsafe fn unpark_one(key: usize,
-//!                      callback: FnOnce(UnparkResult))
+//!                      callback: FnOnce(UnparkResult) -> UnparkToken)
 //!                      -> UnparkResult
 //! ```
 //!
@@ -67,7 +67,7 @@
 //! unsafe fn unpark_requeue(key_from: usize,
 //!                          key_to: usize,
 //!                          validate: FnOnce() -> RequeueOp,
-//!                          callback: FnOnce(RequeueOp, usize))
+//!                          callback: FnOnce(RequeueOp, usize) -> UnparkToken)
 //!                          -> usize
 //! ```
 //!
@@ -94,6 +94,7 @@
 #![cfg_attr(feature = "nightly", feature(asm))]
 
 extern crate smallvec;
+extern crate rand;
 
 #[cfg(unix)]
 extern crate libc;
@@ -124,5 +125,6 @@ mod spinwait;
 mod word_lock;
 mod parking_lot;
 
-pub use parking_lot::{UnparkResult, RequeueOp, park, unpark_one, unpark_all, unpark_requeue};
+pub use parking_lot::{UnparkResult, RequeueOp, UnparkToken, DEFAULT_UNPARK_TOKEN};
+pub use parking_lot::{park, unpark_one, unpark_all, unpark_requeue};
 pub use spinwait::SpinWait;

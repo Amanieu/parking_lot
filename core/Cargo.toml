@@ -10,6 +10,7 @@ keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 
 [dependencies]
 smallvec = "0.1"
+rand = "0.3"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
