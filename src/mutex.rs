@@ -192,7 +192,7 @@ impl<T: ?Sized> Mutex<T> {
     /// leaked (e.g. with `mem::forget`). The mutex must be locked.
     #[inline]
     pub unsafe fn raw_unlock(&self) {
-        self.raw.unlock();
+        self.raw.unlock(false);
     }
 
     /// Releases the mutex using a fair unlock protocol.
@@ -206,7 +206,7 @@ impl<T: ?Sized> Mutex<T> {
     /// leaked (e.g. with `mem::forget`). The mutex must be locked.
     #[inline]
     pub unsafe fn raw_unlock_fair(&self) {
-        self.raw.unlock_fair();
+        self.raw.unlock(true);
     }
 }
 impl Mutex<()> {
@@ -261,7 +261,7 @@ impl<'a, T: ?Sized + 'a> MutexGuard<'a, T> {
     /// using this method instead of dropping the `MutexGuard` normally.
     #[inline]
     pub fn unlock_fair(self) {
-        self.mutex.raw.unlock_fair();
+        self.mutex.raw.unlock(true);
     }
 }
 
@@ -283,7 +283,7 @@ impl<'a, T: ?Sized + 'a> DerefMut for MutexGuard<'a, T> {
 impl<'a, T: ?Sized + 'a> Drop for MutexGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.mutex.raw.unlock();
+        self.mutex.raw.unlock(false);
     }
 }
 

@@ -59,8 +59,8 @@ in the Rust standard library:
 13. `Mutex` and `RwLock` allow raw unlocking without a RAII guard object.
 14. `Mutex<()>` and `RwLock<()>` allow raw locking without a RAII guard
     object.
-15. `Mutex` supports [eventual fairness](https://trac.webkit.org/changeset/203350)
-    which allows it to be fair on average without sacrificing performance.
+15. `Mutex` and `RwLock` support [eventual fairness](https://trac.webkit.org/changeset/203350)
+    which allows them to be fair on average without sacrificing performance.
 
 ## The parking lot
 

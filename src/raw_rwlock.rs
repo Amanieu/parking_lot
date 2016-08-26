@@ -7,10 +7,13 @@
 
 #[cfg(feature = "nightly")]
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::cell::Cell;
 #[cfg(not(feature = "nightly"))]
 use stable::{AtomicUsize, Ordering};
-use parking_lot_core::{self, UnparkResult, SpinWait, DEFAULT_UNPARK_TOKEN, ParkToken, FilterOp};
+use parking_lot_core::{self, UnparkResult, SpinWait, ParkToken, FilterOp};
 use elision::{have_elision, AtomicElisionExt};
+use util::UncheckedOptionExt;
+use raw_mutex::{TOKEN_NORMAL, TOKEN_HANDOFF};
 
 // Token indicating what type of lock queued threads are trying to acquire
 const TOKEN_SHARED: ParkToken = ParkToken(0);
@@ -20,6 +23,7 @@ const PARKED_BIT: usize = 1;
 const LOCKED_BIT: usize = 2;
 const SHARED_COUNT_MASK: usize = !3;
 const SHARED_COUNT_INC: usize = 4;
+const SHARED_COUNT_SHIFT: usize = 2;
 
 pub struct RawRwLock {
     state: AtomicUsize,
@@ -55,13 +59,13 @@ impl RawRwLock {
     }
 
     #[inline]
-    pub fn unlock_exclusive(&self) {
+    pub fn unlock_exclusive(&self, force_fair: bool) {
         if self.state
             .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok() {
             return;
         }
-        self.unlock_exclusive_slow();
+        self.unlock_exclusive_slow(force_fair);
     }
 
     #[inline]
@@ -125,7 +129,7 @@ impl RawRwLock {
     }
 
     #[inline]
-    pub fn unlock_shared(&self) {
+    pub fn unlock_shared(&self, force_fair: bool) {
         let state = self.state.load(Ordering::Relaxed);
         if state & PARKED_BIT == 0 || state & SHARED_COUNT_MASK != SHARED_COUNT_INC {
             if have_elision() {
@@ -143,7 +147,7 @@ impl RawRwLock {
                 }
             }
         }
-        self.unlock_shared_slow();
+        self.unlock_shared_slow(force_fair);
     }
 
     #[cold]
@@ -204,12 +208,16 @@ impl RawRwLock {
                 };
                 let before_sleep = || {};
                 let timed_out = |_, _| unreachable!();
-                parking_lot_core::park(addr,
-                                       validate,
-                                       before_sleep,
-                                       timed_out,
-                                       TOKEN_EXCLUSIVE,
-                                       None);
+                if parking_lot_core::park(addr,
+                                          validate,
+                                          before_sleep,
+                                          timed_out,
+                                          TOKEN_EXCLUSIVE,
+                                          None) == Some(TOKEN_HANDOFF) {
+                    // The thread that unparked us passed the lock on to us
+                    // directly without unlocking it.
+                    return;
+                }
             }
 
             // Loop back and try locking again
@@ -220,7 +228,7 @@ impl RawRwLock {
 
     #[cold]
     #[inline(never)]
-    fn unlock_exclusive_slow(&self) {
+    fn unlock_exclusive_slow(&self, force_fair: bool) {
         // Unlock directly if there are no parked threads
         if self.state
             .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
@@ -230,22 +238,51 @@ impl RawRwLock {
 
         // There are threads to unpark. We can unpark a single exclusive
         // thread or many shared threads.
-        let mut first_token = None;
+        let first_token = Cell::new(None);
         unsafe {
             let addr = self as *const _ as usize;
             let filter = |token| -> FilterOp {
-                if let Some(first_token) = first_token {
+                if let Some(first_token) = first_token.get() {
                     if first_token == TOKEN_EXCLUSIVE || token != first_token {
                         FilterOp::Stop
                     } else {
                         FilterOp::Unpark
                     }
                 } else {
-                    first_token = Some(token);
+                    first_token.set(Some(token));
                     FilterOp::Unpark
                 }
             };
             let callback = |result: UnparkResult| {
+                // PARKED_BIT should always accurately reflect whether the
+                // queue is empty. This means that we should always unpark at
+                // least one thread.
+                debug_assert!(result.unparked_threads != 0);
+
+                // If we are using a fair unlock then we should keep the
+                // rwlock locked and hand it off to the unparked threads.
+                if force_fair || result.be_fair {
+                    if first_token.get().unchecked_unwrap() == TOKEN_EXCLUSIVE {
+                        // If we unparked an exclusive thread, just clear the
+                        // parked bit if there are no more parked threads.
+                        if !result.have_more_threads {
+                            self.state.store(LOCKED_BIT, Ordering::Relaxed);
+                        }
+                    } else {
+                        // If we unparked shared threads then we need to set
+                        // the shared count accordingly.
+                        if result.have_more_threads {
+                            self.state.store((result.unparked_threads << SHARED_COUNT_SHIFT) |
+                                             PARKED_BIT,
+                                             Ordering::Release);
+                        } else {
+                            self.state.store(result.unparked_threads << SHARED_COUNT_SHIFT,
+                                             Ordering::Release);
+                        }
+                    }
+                    return TOKEN_HANDOFF;
+                }
+
                 // Clear the locked bit, and the parked bit as well if there
                 // are no more parked threads.
                 if result.have_more_threads {
@@ -253,7 +290,7 @@ impl RawRwLock {
                 } else {
                     self.state.store(0, Ordering::Release);
                 }
-                DEFAULT_UNPARK_TOKEN
+                TOKEN_NORMAL
             };
             parking_lot_core::unpark_filter(addr, filter, callback);
         }
@@ -277,7 +314,7 @@ impl RawRwLock {
                 if !result.have_more_threads {
                     self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
                 }
-                DEFAULT_UNPARK_TOKEN
+                TOKEN_NORMAL
             };
             parking_lot_core::unpark_filter(addr, filter, callback);
         }
@@ -358,7 +395,16 @@ impl RawRwLock {
                 };
                 let before_sleep = || {};
                 let timed_out = |_, _| unreachable!();
-                parking_lot_core::park(addr, validate, before_sleep, timed_out, TOKEN_SHARED, None);
+                if parking_lot_core::park(addr,
+                                          validate,
+                                          before_sleep,
+                                          timed_out,
+                                          TOKEN_SHARED,
+                                          None) == Some(TOKEN_HANDOFF) {
+                    // The thread that unparked us passed the lock on to us
+                    // directly without unlocking it.
+                    return;
+                }
             }
 
             // Loop back and try locking again
@@ -396,7 +442,7 @@ impl RawRwLock {
 
     #[cold]
     #[inline(never)]
-    fn unlock_shared_slow(&self) {
+    fn unlock_shared_slow(&self, force_fair: bool) {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // Just release the lock if there are no parked thread or if we are
@@ -414,7 +460,10 @@ impl RawRwLock {
             }
 
             // There are exclusive threads to unpark. We shouldn't have a case
-            // where we have shared threads at the front of the queue.
+            // where we have shared threads at the front of the queue. Note that
+            // since the parked bit is set, no new shared threads would have
+            // been allowed to acquire the lock, so we are absolutely sure that
+            // we are the last shared thread to release the shared lock.
             let mut first = true;
             unsafe {
                 let addr = self as *const _ as usize;
@@ -431,6 +480,22 @@ impl RawRwLock {
                     }
                 };
                 let callback = |result: UnparkResult| {
+                    // PARKED_BIT should always accurately reflect whether the
+                    // queue is empty. This means that we should always unpark
+                    // at least one thread.
+                    debug_assert!(result.unparked_threads != 0);
+
+                    // If we are using a fair unlock then we should keep the
+                    // rwlock locked and hand it off to the unparked thread.
+                    if force_fair || result.be_fair {
+                        if result.have_more_threads {
+                            self.state.store(PARKED_BIT | LOCKED_BIT, Ordering::Relaxed);
+                        } else {
+                            self.state.store(LOCKED_BIT, Ordering::Relaxed);
+                        }
+                        return TOKEN_HANDOFF;
+                    }
+
                     // Release the shared lock and clear the parked bit if there
                     // are no more parked threads.
                     let mut state = self.state.load(Ordering::Relaxed);
@@ -448,7 +513,7 @@ impl RawRwLock {
                             Err(x) => state = x,
                         }
                     }
-                    DEFAULT_UNPARK_TOKEN
+                    TOKEN_NORMAL
                 };
                 parking_lot_core::unpark_filter(addr, filter, callback);
             }

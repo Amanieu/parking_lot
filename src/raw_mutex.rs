@@ -70,23 +70,13 @@ impl RawMutex {
     }
 
     #[inline]
-    pub fn unlock(&self) {
+    pub fn unlock(&self, force_fair: bool) {
         if self.state
             .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok() {
             return;
         }
-        self.unlock_slow(false);
-    }
-
-    #[inline]
-    pub fn unlock_fair(&self) {
-        if self.state
-            .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok() {
-            return;
-        }
-        self.unlock_slow(true);
+        self.unlock_slow(force_fair);
     }
 
     // Used by Condvar when requeuing threads to us, must be called while

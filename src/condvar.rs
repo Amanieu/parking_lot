@@ -266,7 +266,7 @@ impl Condvar {
                 };
                 let before_sleep = || {
                     // Unlock the mutex before sleeping...
-                    mutex.unlock();
+                    mutex.unlock(false);
                 };
                 let timed_out = |k, was_last_thread| {
                     // If we were requeued to a mutex, then we did not time out.

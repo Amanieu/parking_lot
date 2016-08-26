@@ -31,6 +31,27 @@ use raw_rwlock::RawRwLock;
 /// locking methods implement `Deref` (and `DerefMut` for the `write` methods)
 /// to allow access to the contained of the lock.
 ///
+/// # Fairness
+///
+/// A typical unfair lock can often end up in a situation where a single thread
+/// quickly acquires and releases the same lock in succession, which can starve
+/// other threads waiting to acquire the rwlock. While this improves performance
+/// because it doesn't force a context switch when a thread tries to re-acquire
+/// a rwlock it has just released, this can starve other threads.
+///
+/// This rwlock uses [eventual fairness](https://trac.webkit.org/changeset/203350)
+/// to ensure that the lock will be fair on average without sacrificing
+/// performance. This is done by forcing a fair unlock on average every 0.5ms,
+/// which will force the lock to go to the next thread waiting for the rwlock.
+///
+/// Additionally, any critical section longer than 1ms will always use a fair
+/// unlock, which has a negligible performance impact compared to the length of
+/// the critical section.
+///
+/// You can also force a fair unlock by calling `RwLockReadGuard::unlock_fair`
+/// or `RwLockWriteGuard::unlock_fair` when unlocking a mutex instead of simply
+/// dropping the guard.
+///
 /// # Differences from the standard library `RwLock`
 ///
 /// - Supports atomically downgrading a write lock into a read lock.
@@ -44,6 +65,9 @@ use raw_rwlock::RawRwLock;
 /// - Inline fast path for the uncontended case.
 /// - Efficient handling of micro-contention using adaptive spinning.
 /// - Allows raw locking & unlocking without a guard.
+/// - Supports eventual fairness so that the rwlock is fair on average.
+/// - Optionally allows making the rwlock fair by calling
+///   `RwLockReadGuard::unlock_fair` and `RwLockWriteGuard::unlock_fair`.
 ///
 /// # Examples
 ///
@@ -232,7 +256,7 @@ impl<T: ?Sized> RwLock<T> {
     /// with shared read access.
     #[inline]
     pub unsafe fn raw_unlock_read(&self) {
-        self.raw.unlock_shared();
+        self.raw.unlock_shared(false);
     }
 
     /// Releases exclusive write access of the rwlock.
@@ -245,7 +269,38 @@ impl<T: ?Sized> RwLock<T> {
     /// with exclusive write access.
     #[inline]
     pub unsafe fn raw_unlock_write(&self) {
-        self.raw.unlock_exclusive();
+        self.raw.unlock_exclusive(false);
+    }
+
+    /// Releases shared read access of the rwlock using a fair unlock protocol.
+    ///
+    /// See `RwLockReadGuard::unlock_fair`.
+    ///
+    /// # Safety
+    ///
+    /// This function must only be called if the rwlock was locked using
+    /// `raw_read` or `raw_try_read`, or if an `RwLockReadGuard` from this
+    /// rwlock was leaked (e.g. with `mem::forget`). The rwlock must be locked
+    /// with shared read access.
+    #[inline]
+    pub unsafe fn raw_unlock_read_fair(&self) {
+        self.raw.unlock_shared(true);
+    }
+
+    /// Releases exclusive write access of the rwlock using a fair unlock
+    /// protocol.
+    ///
+    /// See `RwLockWriteGuard::unlock_fair`.
+    ///
+    /// # Safety
+    ///
+    /// This function must only be called if the rwlock was locked using
+    /// `raw_write` or `raw_try_write`, or if an `RwLockWriteGuard` from this
+    /// rwlock was leaked (e.g. with `mem::forget`). The rwlock must be locked
+    /// with exclusive write access.
+    #[inline]
+    pub unsafe fn raw_unlock_write_fair(&self) {
+        self.raw.unlock_exclusive(true);
     }
 }
 
@@ -309,6 +364,25 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
     }
 }
 
+impl<'a, T: ?Sized + 'a> RwLockReadGuard<'a, T> {
+    /// Unlocks the `RwLock` using a fair unlock protocol.
+    ///
+    /// By default, `RwLock` is unfair and allow the current thread to re-lock
+    /// the rwlock before another has the chance to acquire the lock, even if
+    /// that thread has been blocked on the `RwLock` for a long time. This is
+    /// the default because it allows much higher throughput as it avoids
+    /// forcing a context switch on every rwlock unlock. This can result in one
+    /// thread acquiring a `RwLock` many more times than other threads.
+    ///
+    /// However in some cases it can be beneficial to ensure fairness by forcing
+    /// the lock to pass on to a waiting thread if there is one. This is done by
+    /// using this method instead of dropping the `RwLockReadGuard` normally.
+    #[inline]
+    pub fn unlock_fair(self) {
+        self.rwlock.raw.unlock_shared(true);
+    }
+}
+
 impl<'a, T: ?Sized + 'a> Deref for RwLockReadGuard<'a, T> {
     type Target = T;
     #[inline]
@@ -320,7 +394,7 @@ impl<'a, T: ?Sized + 'a> Deref for RwLockReadGuard<'a, T> {
 impl<'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.raw.unlock_shared();
+        self.rwlock.raw.unlock_shared(false);
     }
 }
 
@@ -339,6 +413,23 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
             rwlock: rwlock,
             marker: PhantomData,
         }
+    }
+
+    /// Unlocks the `RwLock` using a fair unlock protocol.
+    ///
+    /// By default, `RwLock` is unfair and allow the current thread to re-lock
+    /// the rwlock before another has the chance to acquire the lock, even if
+    /// that thread has been blocked on the `RwLock` for a long time. This is
+    /// the default because it allows much higher throughput as it avoids
+    /// forcing a context switch on every rwlock unlock. This can result in one
+    /// thread acquiring a `RwLock` many more times than other threads.
+    ///
+    /// However in some cases it can be beneficial to ensure fairness by forcing
+    /// the lock to pass on to a waiting thread if there is one. This is done by
+    /// using this method instead of dropping the `RwLockWriteGuard` normally.
+    #[inline]
+    pub fn unlock_fair(self) {
+        self.rwlock.raw.unlock_exclusive(true);
     }
 }
 
@@ -360,7 +451,7 @@ impl<'a, T: ?Sized + 'a> DerefMut for RwLockWriteGuard<'a, T> {
 impl<'a, T: ?Sized + 'a> Drop for RwLockWriteGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.raw.unlock_exclusive();
+        self.rwlock.raw.unlock_exclusive(false);
     }
 }
 
