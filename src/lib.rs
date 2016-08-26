@@ -17,12 +17,9 @@
 extern crate parking_lot_core;
 
 #[cfg(not(feature = "nightly"))]
-#[path = "../core/src/stable.rs"]
 mod stable;
 
-#[path = "../core/src/util.rs"]
 mod util;
-
 mod elision;
 mod raw_mutex;
 mod raw_rwlock;
