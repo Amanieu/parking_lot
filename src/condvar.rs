@@ -8,7 +8,7 @@
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 use std::ptr;
-use parking_lot_core::{self, UnparkResult, RequeueOp};
+use parking_lot_core::{self, UnparkResult, RequeueOp, DEFAULT_PARK_TOKEN};
 use mutex::{MutexGuard, guard_lock};
 use raw_mutex::{RawMutex, TOKEN_NORMAL, TOKEN_HANDOFF};
 
@@ -184,10 +184,10 @@ impl Condvar {
                     RequeueOp::UnparkOneRequeueRest
                 }
             };
-            let callback = |op, num_threads| {
+            let callback = |op, result: UnparkResult| {
                 // If we requeued threads to the mutex, mark it as having
                 // parked threads. The RequeueAll case is already handled above.
-                if op == RequeueOp::UnparkOneRequeueRest && num_threads > 1 {
+                if op == RequeueOp::UnparkOneRequeueRest && result.have_more_threads {
                     (*mutex).mark_parked();
                 }
                 TOKEN_NORMAL
@@ -281,7 +281,12 @@ impl Condvar {
                         self.state.store(ptr::null_mut(), Ordering::Relaxed);
                     }
                 };
-                result = parking_lot_core::park(addr, validate, before_sleep, timed_out, timeout);
+                result = parking_lot_core::park(addr,
+                                                validate,
+                                                before_sleep,
+                                                timed_out,
+                                                DEFAULT_PARK_TOKEN,
+                                                timeout);
             }
 
             // Panic if we tried to use multiple mutexes with a Condvar. Note

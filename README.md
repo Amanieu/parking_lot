@@ -48,8 +48,8 @@ in the Rust standard library:
    support it, which can lead to huge performance wins with many readers.
 8. `MutexGuard` (and the `RwLock` equivalents) is `Send`, which means it can
    be unlocked by a different thread than the one that locked it.
-9. `RwLock` will prefer writers, whereas the standard library version makes
-   no guarantees as to whether readers or writers are given priority.
+9. `RwLock` uses a task-fair locking policy, which avoids reader and writer
+   starvation, whereas the standard library version makes no guarantees.
 10. `Condvar` is guaranteed not to produce spurious wakeups. A thread will
     only be woken up if it timed out or it was woken up by a notification.
 11. `Condvar::notify_all` will only wake up a single thread and requeue the

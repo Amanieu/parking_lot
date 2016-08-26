@@ -13,7 +13,7 @@ type U8 = u8;
 use stable::{AtomicU8, Ordering};
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
-use parking_lot_core::{self, UnparkResult, SpinWait, UnparkToken};
+use parking_lot_core::{self, UnparkResult, SpinWait, UnparkToken, DEFAULT_PARK_TOKEN};
 
 // UnparkToken used to indicate that that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.
@@ -157,8 +157,12 @@ impl RawMutex {
                 let validate = || self.state.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
                 let before_sleep = || {};
                 let timed_out = |_, _| unreachable!();
-                if parking_lot_core::park(addr, validate, before_sleep, timed_out, None) ==
-                   Some(TOKEN_HANDOFF) {
+                if parking_lot_core::park(addr,
+                                          validate,
+                                          before_sleep,
+                                          timed_out,
+                                          DEFAULT_PARK_TOKEN,
+                                          None) == Some(TOKEN_HANDOFF) {
                     // The thread that unparked us passed the lock on to us
                     // directly without unlocking it.
                     return;
@@ -175,7 +179,9 @@ impl RawMutex {
     #[inline(never)]
     fn unlock_slow(&self, force_fair: bool) {
         // Unlock directly if there are no parked threads
-        if self.state.compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed).is_ok() {
+        if self.state
+            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .is_ok() {
             return;
         }
 
@@ -186,7 +192,7 @@ impl RawMutex {
             let callback = |result: UnparkResult| {
                 // If we are using a fair unlock then we should keep the
                 // mutex locked and hand it off to the unparked thread.
-                if result.unparked_thread && (force_fair || result.be_fair) {
+                if result.unparked_threads != 0 && (force_fair || result.be_fair) {
                     // Clear the parked bit if there are no more parked
                     // threads.
                     if !result.have_more_threads {

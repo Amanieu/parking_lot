@@ -19,11 +19,11 @@ use raw_rwlock::RawRwLock;
 /// of the underlying data (exclusive access) and the read portion of this lock
 /// typically allows for read-only access (shared access).
 ///
-/// This lock will always prioritize writers over readers to avoid writer
-/// starvation. This means that readers trying to acquire the lock will block
-/// even if the lock is unlocked when there are writers waiting to acquire the
-/// lock. Because of this, attempts to recursively acquire a read lock within a
-/// single thread may result in a deadlock.
+/// This lock uses a task-fair locking policy which avoids both reader and
+/// writer starvation. This means that readers trying to acquire the lock will
+/// block even if the lock is unlocked when there are writers waiting to acquire
+/// the lock. Because of this, attempts to recursively acquire a read lock
+/// within a single thread may result in a deadlock.
 ///
 /// The type parameter `T` represents the data that this lock protects. It is
 /// required that `T` satisfies `Send` to be shared across threads and `Sync` to
@@ -34,7 +34,7 @@ use raw_rwlock::RawRwLock;
 /// # Differences from the standard library `RwLock`
 ///
 /// - Supports atomically downgrading a write lock into a read lock.
-/// - Writer-preferred policy instead of an unspecified platform default.
+/// - Task-fair locking policy instead of an unspecified platform default.
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 word of space, whereas the standard library boxes the
 ///   `RwLock` due to platform limitations.
@@ -143,9 +143,8 @@ impl<T: ?Sized> RwLock<T> {
     /// hold the lock. There may be other readers currently inside the lock when
     /// this method returns.
     ///
-    /// Because `RwLock` prefers writers over readers, attempts to recursively
-    /// acquire a read lock when the current thread already owns one may result
-    /// in a deadlock.
+    /// Note that attempts to recursively acquire a read lock on a `RwLock` when
+    /// the current thread already holds one may result in a deadlock.
     ///
     /// Returns an RAII guard which will release this thread's shared access
     /// once it is dropped.
@@ -331,9 +330,7 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
     ///
     /// Note that if there are any writers currently waiting to take the lock
     /// then other readers may not be able to acquire the lock even if it was
-    /// downgraded. This is because `RwLock` prefers writers over readers and
-    /// will not allow any readers to acquire the lock while there are writers
-    /// waiting.
+    /// downgraded.
     pub fn downgrade(self) -> RwLockReadGuard<'a, T> {
         self.rwlock.raw.downgrade();
         let rwlock = self.rwlock;

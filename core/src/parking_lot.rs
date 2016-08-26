@@ -127,6 +127,9 @@ struct ThreadData {
 
     // UnparkToken passed to this thread when it is unparked
     unpark_token: Cell<UnparkToken>,
+
+    // ParkToken value set by the thread when it was parked
+    park_token: Cell<ParkToken>,
 }
 
 impl ThreadData {
@@ -141,8 +144,9 @@ impl ThreadData {
         ThreadData {
             parker: ThreadParker::new(),
             key: AtomicUsize::new(0),
-            unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
             next_in_queue: Cell::new(ptr::null()),
+            unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
+            park_token: Cell::new(DEFAULT_PARK_TOKEN),
         }
     }
 }
@@ -368,11 +372,11 @@ unsafe fn unlock_bucket_pair(bucket1: &Bucket, bucket2: &Bucket) {
     }
 }
 
-/// Result of an `unpark_one` operation.
+/// Result of an unpark operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct UnparkResult {
-    /// Whether a thread was successfully unparked.
-    pub unparked_thread: bool,
+    /// The number of threads that were unparked.
+    pub unparked_threads: usize,
 
     /// Whether there are any threads remaining in the queue. This only returns
     /// true if a thread was unparked.
@@ -397,12 +401,32 @@ pub enum RequeueOp {
     RequeueAll,
 }
 
+/// Operation that `unpark_filter` should perform for each thread.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum FilterOp {
+    /// Unpark the thread and continue scanning the list of parked threads.
+    Unpark,
+
+    /// Don't unpark the thread and continue scanning the list of parked threads.
+    Skip,
+
+    /// Don't unpark the thread and stop scanning the list of parked threads.
+    Stop,
+}
+
 /// A value which is passed from an unparker to a parked thread.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct UnparkToken(pub usize);
 
+/// A value associated with a parked thread which can be used by `unpark_filter`.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub struct ParkToken(pub usize);
+
 /// A default unpark token to use.
 pub const DEFAULT_UNPARK_TOKEN: UnparkToken = UnparkToken(0);
+
+/// A default park token to use.
+pub const DEFAULT_PARK_TOKEN: ParkToken = ParkToken(0);
 
 /// Parks the current thread in the queue associated with the given key.
 ///
@@ -434,12 +458,14 @@ pub const DEFAULT_UNPARK_TOKEN: UnparkToken = UnparkToken(0);
 /// locked and must not panic or call into any function in `parking_lot`.
 ///
 /// The `before_sleep` function is called outside the queue lock and is allowed
-/// to call `unpark_one`, `unpark_all` or `unpark_requeue`, but it is not
-/// allowed to call `park` or panic.
+/// to call `unpark_one`, `unpark_all`, `unpark_requeue` or `unpark_filter`, but
+/// it is not allowed to call `park` or panic.
+#[inline]
 pub unsafe fn park<V, B, T>(key: usize,
                             validate: V,
                             before_sleep: B,
                             timed_out: T,
+                            park_token: ParkToken,
                             timeout: Option<Instant>)
                             -> Option<UnparkToken>
     where V: FnOnce() -> bool,
@@ -453,6 +479,7 @@ pub unsafe fn park<V, B, T>(key: usize,
                   &mut || v.take().unchecked_unwrap()(),
                   &mut || b.take().unchecked_unwrap()(),
                   &mut |key, was_last_thread| t.take().unchecked_unwrap()(key, was_last_thread),
+                  park_token,
                   timeout)
 }
 
@@ -461,6 +488,7 @@ unsafe fn park_internal(key: usize,
                         validate: &mut FnMut() -> bool,
                         before_sleep: &mut FnMut(),
                         timed_out: &mut FnMut(usize, bool),
+                        park_token: ParkToken,
                         timeout: Option<Instant>)
                         -> Option<UnparkToken> {
     // Grab our thread data, this also ensures that the hash table exists
@@ -478,6 +506,7 @@ unsafe fn park_internal(key: usize,
     // Append our thread data to the queue and unlock the bucket
     thread_data.next_in_queue.set(ptr::null());
     thread_data.key.store(key, Ordering::Relaxed);
+    thread_data.park_token.set(park_token);
     thread_data.parker.prepare_park();
     if !bucket.queue_head.get().is_null() {
         (*bucket.queue_tail.get()).next_in_queue.set(thread_data);
@@ -580,6 +609,7 @@ unsafe fn park_internal(key: usize,
 ///
 /// The `callback` function is called while the queue is locked and must not
 /// panic or call into any function in `parking_lot`.
+#[inline]
 pub unsafe fn unpark_one<C>(key: usize, callback: C) -> UnparkResult
     where C: FnOnce(UnparkResult) -> UnparkToken
 {
@@ -588,7 +618,9 @@ pub unsafe fn unpark_one<C>(key: usize, callback: C) -> UnparkResult
 }
 
 // Non-generic version to reduce monomorphization cost
-unsafe fn unpark_one_internal(key: usize, callback: &mut FnMut(UnparkResult) -> UnparkToken) -> UnparkResult {
+unsafe fn unpark_one_internal(key: usize,
+                              callback: &mut FnMut(UnparkResult) -> UnparkToken)
+                              -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -597,7 +629,7 @@ unsafe fn unpark_one_internal(key: usize, callback: &mut FnMut(UnparkResult) -> 
     let mut current = bucket.queue_head.get();
     let mut previous = ptr::null();
     let mut result = UnparkResult {
-        unparked_thread: false,
+        unparked_threads: 0,
         have_more_threads: false,
         be_fair: false,
     };
@@ -622,7 +654,7 @@ unsafe fn unpark_one_internal(key: usize, callback: &mut FnMut(UnparkResult) -> 
             }
 
             // Invoke the callback before waking up the thread
-            result.unparked_thread = true;
+            result.unparked_threads = 1;
             result.be_fair = (*bucket.fair_timeout.get()).should_timeout();
             let token = callback(result);
 
@@ -654,7 +686,7 @@ unsafe fn unpark_one_internal(key: usize, callback: &mut FnMut(UnparkResult) -> 
 
 /// Unparks all threads in the queue associated with the given key.
 ///
-/// `DEFAULT_UNPARK_TOKEN` is passed to all unparked threads.
+/// The given `UnparkToken` is passed to all unparked threads.
 ///
 /// This function returns the number of threads that were unparked.
 ///
@@ -663,7 +695,7 @@ unsafe fn unpark_one_internal(key: usize, callback: &mut FnMut(UnparkResult) -> 
 /// You should only call this function with an address that you control, since
 /// you could otherwise interfere with the operation of other synchronization
 /// primitives.
-pub unsafe fn unpark_all(key: usize) -> usize {
+pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -682,7 +714,7 @@ pub unsafe fn unpark_all(key: usize) -> usize {
             }
 
             // Set the token for the target thread
-            (*current).unpark_token.set(DEFAULT_UNPARK_TOKEN);
+            (*current).unpark_token.set(unpark_token);
 
             // Don't wake up threads while holding the queue lock. See comment
             // in unpark_one. For now just record which threads we need to wake
@@ -720,15 +752,14 @@ pub unsafe fn unpark_all(key: usize) -> usize {
 /// `RequeueOp::RequeueAll` will move all threads to the destination queue.
 ///
 /// The `callback` function is also called while both queues are locked. It is
-/// passed the `RequeueOp` returned by `validate` and the number of threads that
-/// were removed from the original queue.
+/// passed the `RequeueOp` returned by `validate` and an `UnparkResult`
+/// indicating whether a thread was unparked and whether there are threads still
+/// parked in the new queue. This `UnparkResult` value is also returned by
+/// `unpark_requeue`.
 ///
 /// The `callback` function should return an `UnparkToken` value which will be
 /// passed to the thread that is unparked. If no thread is unparked then the
 /// returned value is ignored.
-///
-/// This function returns the number of threads that were removed from the
-/// original queue.
 ///
 /// # Safety
 ///
@@ -738,36 +769,42 @@ pub unsafe fn unpark_all(key: usize) -> usize {
 ///
 /// The `validate` and `callback` functions are called while the queue is locked
 /// and must not panic or call into any function in `parking_lot`.
+#[inline]
 pub unsafe fn unpark_requeue<V, C>(key_from: usize,
                                    key_to: usize,
                                    validate: V,
                                    callback: C)
-                                   -> usize
+                                   -> UnparkResult
     where V: FnOnce() -> RequeueOp,
-          C: FnOnce(RequeueOp, usize) -> UnparkToken
+          C: FnOnce(RequeueOp, UnparkResult) -> UnparkToken
 {
     let mut v = Some(validate);
     let mut c = Some(callback);
     unpark_requeue_internal(key_from,
                             key_to,
                             &mut || v.take().unchecked_unwrap()(),
-                            &mut |op, count| c.take().unchecked_unwrap()(op, count))
+                            &mut |op, r| c.take().unchecked_unwrap()(op, r))
 }
 
 // Non-generic version to reduce monomorphization cost
 unsafe fn unpark_requeue_internal(key_from: usize,
                                   key_to: usize,
                                   validate: &mut FnMut() -> RequeueOp,
-                                  callback: &mut FnMut(RequeueOp, usize) -> UnparkToken)
-                                  -> usize {
+                                  callback: &mut FnMut(RequeueOp, UnparkResult) -> UnparkToken)
+                                  -> UnparkResult {
     // Lock the two buckets for the given key
     let (bucket_from, bucket_to) = lock_bucket_pair(key_from, key_to);
 
     // If the validation function fails, just return
+    let mut result = UnparkResult {
+        unparked_threads: 0,
+        have_more_threads: false,
+        be_fair: false,
+    };
     let op = validate();
     if op == RequeueOp::Abort {
         unlock_bucket_pair(bucket_from, bucket_to);
-        return 0;
+        return result;
     }
 
     // Remove all threads with the given key in the source bucket
@@ -777,7 +814,6 @@ unsafe fn unpark_requeue_internal(key_from: usize,
     let mut requeue_threads = ptr::null();
     let mut requeue_threads_tail: *const ThreadData = ptr::null();
     let mut wakeup_thread = None;
-    let mut num_threads = 0;
     while !current.is_null() {
         if (*current).key.load(Ordering::Relaxed) == key_from {
             // Remove the thread from the queue
@@ -790,6 +826,7 @@ unsafe fn unpark_requeue_internal(key_from: usize,
             // Prepare the first thread for wakeup and requeue the rest.
             if op == RequeueOp::UnparkOneRequeueRest && wakeup_thread.is_none() {
                 wakeup_thread = Some(current);
+                result.unparked_threads = 1;
             } else {
                 if !requeue_threads.is_null() {
                     (*requeue_threads_tail).next_in_queue.set(current);
@@ -798,8 +835,8 @@ unsafe fn unpark_requeue_internal(key_from: usize,
                 }
                 requeue_threads_tail = current;
                 (*current).key.store(key_to, Ordering::Relaxed);
+                result.have_more_threads = true;
             }
-            num_threads += 1;
             current = next;
         } else {
             link = &(*current).next_in_queue;
@@ -820,7 +857,10 @@ unsafe fn unpark_requeue_internal(key_from: usize,
     }
 
     // Invoke the callback before waking up the thread
-    let token = callback(op, num_threads);
+    if result.unparked_threads != 0 {
+        result.be_fair = (*bucket_from.fair_timeout.get()).should_timeout();
+    }
+    let token = callback(op, result);
 
     // See comment in unpark_one for why we mess with the locking
     if let Some(wakeup_thread) = wakeup_thread {
@@ -832,5 +872,118 @@ unsafe fn unpark_requeue_internal(key_from: usize,
         unlock_bucket_pair(bucket_from, bucket_to);
     }
 
-    num_threads
+    result
+}
+
+/// Unparks a number of threads from the front of the queue associated with
+/// `key` depending on the results of a filter function which inspects the
+/// `ParkToken` associated with each thread.
+///
+/// The `filter` function is called for each thread in the queue or until
+/// `FilterOp::Stop` is returned. This function is passed the `ParkToken`
+/// associated with a particular thread, which is unparked if `FilterOp::Unpark`
+/// is returned.
+///
+/// The `callback` function is also called while both queues are locked. It is
+/// passed an `UnparkResult` indicating the number of threads that were unparked
+/// and whether there are still parked threads in the queue. This `UnparkResult`
+/// value is also returned by `unpark_filter`.
+///
+/// The `callback` function should return an `UnparkToken` value which will be
+/// passed to all threads that are unparked. If no thread is unparked then the
+/// returned value is ignored.
+///
+/// # Safety
+///
+/// You should only call this function with an address that you control, since
+/// you could otherwise interfere with the operation of other synchronization
+/// primitives.
+///
+/// The `filter` and `callback` functions are called while the queue is locked
+/// and must not panic or call into any function in `parking_lot`.
+#[inline]
+pub unsafe fn unpark_filter<F, C>(key: usize, mut filter: F, callback: C) -> UnparkResult
+    where F: FnMut(ParkToken) -> FilterOp,
+          C: FnOnce(UnparkResult) -> UnparkToken
+{
+    let mut c = Some(callback);
+    unpark_filter_internal(key, &mut filter, &mut |r| c.take().unchecked_unwrap()(r))
+}
+
+// Non-generic version to reduce monomorphization cost
+unsafe fn unpark_filter_internal(key: usize,
+                                 filter: &mut FnMut(ParkToken) -> FilterOp,
+                                 callback: &mut FnMut(UnparkResult) -> UnparkToken)
+                                 -> UnparkResult {
+    // Lock the bucket for the given key
+    let bucket = lock_bucket(key);
+
+    // Go through the queue looking for threads with a matching key
+    let mut link = &bucket.queue_head;
+    let mut current = bucket.queue_head.get();
+    let mut previous = ptr::null();
+    let mut threads = SmallVec8::new();
+    let mut result = UnparkResult {
+        unparked_threads: 0,
+        have_more_threads: false,
+        be_fair: false,
+    };
+    while !current.is_null() {
+        if (*current).key.load(Ordering::Relaxed) == key {
+            // Call the filter function with the thread's ParkToken
+            let next = (*current).next_in_queue.get();
+            match filter((*current).park_token.get()) {
+                FilterOp::Unpark => {
+                    // Remove the thread from the queue
+                    link.set(next);
+                    if bucket.queue_tail.get() == current {
+                        bucket.queue_tail.set(previous);
+                    }
+
+                    // Add the thread to our list of threads to unpark
+                    threads.push((current, None));
+
+                    current = next;
+                }
+                FilterOp::Skip => {
+                    result.have_more_threads = true;
+                    link = &(*current).next_in_queue;
+                    previous = current;
+                    current = link.get();
+                }
+                FilterOp::Stop => {
+                    result.have_more_threads = true;
+                    break;
+                }
+            }
+        } else {
+            link = &(*current).next_in_queue;
+            previous = current;
+            current = link.get();
+        }
+    }
+
+    // Invoke the callback before waking up the threads
+    result.unparked_threads = threads.len();
+    if result.unparked_threads != 0 {
+        result.be_fair = (*bucket.fair_timeout.get()).should_timeout();
+    }
+    let token = callback(result);
+
+    // Pass the token to all threads that are going to be unparked and prepare
+    // them for unparking.
+    for t in threads.iter_mut() {
+        (*t.0).unpark_token.set(token);
+        t.1 = Some((*t.0).parker.unpark_lock());
+    }
+
+    bucket.mutex.unlock();
+
+    // Now that we are outside the lock, wake up all the threads that we removed
+    // from the queue.
+    for (_, handle) in threads.into_iter() {
+        handle.unchecked_unwrap().unpark();
+    }
+
+    result
 }

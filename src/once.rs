@@ -14,7 +14,7 @@ use stable::{AtomicU8, ATOMIC_U8_INIT, Ordering, fence};
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use std::mem;
-use parking_lot_core::{self, SpinWait};
+use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 use util::UncheckedOptionExt;
 
 const DONE_BIT: U8 = 1;
@@ -236,7 +236,12 @@ impl Once {
                 let validate = || self.0.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
                 let before_sleep = || {};
                 let timed_out = |_, _| unreachable!();
-                parking_lot_core::park(addr, validate, before_sleep, timed_out, None);
+                parking_lot_core::park(addr,
+                                       validate,
+                                       before_sleep,
+                                       timed_out,
+                                       DEFAULT_PARK_TOKEN,
+                                       None);
             }
 
             // Loop back and check if the done bit was set
@@ -253,7 +258,7 @@ impl Once {
                 if state & PARKED_BIT != 0 {
                     unsafe {
                         let addr = once as *const _ as usize;
-                        parking_lot_core::unpark_all(addr);
+                        parking_lot_core::unpark_all(addr, DEFAULT_UNPARK_TOKEN);
                     }
                 }
             }
@@ -270,7 +275,7 @@ impl Once {
         if state & PARKED_BIT != 0 {
             unsafe {
                 let addr = self as *const _ as usize;
-                parking_lot_core::unpark_all(addr);
+                parking_lot_core::unpark_all(addr, DEFAULT_UNPARK_TOKEN);
             }
         }
     }
