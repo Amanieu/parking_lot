@@ -68,23 +68,23 @@ impl KeyedEvent {
 
     #[allow(non_snake_case)]
     unsafe fn create() -> Box<KeyedEvent> {
-        let ntdll = kernel32::GetModuleHandleA(b"ntdll.dll".as_ptr() as winapi::LPCSTR);
+        let ntdll = kernel32::GetModuleHandleA(b"ntdll.dll\0".as_ptr() as winapi::LPCSTR);
         if ntdll.is_null() {
             panic!("Could not get module handle for ntdll.dll");
         }
 
         let NtCreateKeyedEvent =
-            kernel32::GetProcAddress(ntdll, b"NtCreateKeyedEvent".as_ptr() as winapi::LPCSTR);
+            kernel32::GetProcAddress(ntdll, b"NtCreateKeyedEvent\0".as_ptr() as winapi::LPCSTR);
         if NtCreateKeyedEvent.is_null() {
             panic!("Entry point NtCreateKeyedEvent not found in ntdll.dll");
         }
         let NtReleaseKeyedEvent =
-            kernel32::GetProcAddress(ntdll, b"NtReleaseKeyedEvent".as_ptr() as winapi::LPCSTR);
+            kernel32::GetProcAddress(ntdll, b"NtReleaseKeyedEvent\0".as_ptr() as winapi::LPCSTR);
         if NtReleaseKeyedEvent.is_null() {
             panic!("Entry point NtReleaseKeyedEvent not found in ntdll.dll");
         }
         let NtWaitForKeyedEvent =
-            kernel32::GetProcAddress(ntdll, b"NtWaitForKeyedEvent".as_ptr() as winapi::LPCSTR);
+            kernel32::GetProcAddress(ntdll, b"NtWaitForKeyedEvent\0".as_ptr() as winapi::LPCSTR);
         if NtWaitForKeyedEvent.is_null() {
             panic!("Entry point NtWaitForKeyedEvent not found in ntdll.dll");
         }
@@ -144,7 +144,7 @@ impl ThreadParker {
 
     // Prepares the parker. This should be called before adding it to the queue.
     pub unsafe fn prepare_park(&self) {
-        self.key.store(STATE_UNPARKED, Ordering::Relaxed);
+        self.key.store(STATE_PARKED, Ordering::Relaxed);
     }
 
     // Checks if the park timed out. This should be called while holding the
