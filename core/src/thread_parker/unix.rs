@@ -174,7 +174,7 @@ unsafe fn timespec_now() -> libc::timespec {
     debug_assert_eq!(r, 0);
     libc::timespec {
         tv_sec: now.tv_sec,
-        tv_nsec: now.tv_usec * 1000,
+        tv_nsec: now.tv_usec as libc::c_long * 1000,
     }
 }
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
