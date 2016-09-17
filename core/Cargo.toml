@@ -13,7 +13,7 @@ smallvec = "0.1"
 rand = "0.3"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = "0.2.15"
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.2"
