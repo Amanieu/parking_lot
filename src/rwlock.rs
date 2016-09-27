@@ -11,6 +11,7 @@ use std::fmt;
 use std::mem;
 use std::marker::PhantomData;
 use raw_rwlock::RawRwLock;
+use owning_ref::StableAddress;
 
 /// A reader-writer lock
 ///
@@ -398,6 +399,8 @@ impl<'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, T> {
     }
 }
 
+unsafe impl<'a, T: ?Sized> StableAddress for RwLockReadGuard<'a, T> {}
+
 impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
     /// Atomically downgrades a write lock into a read lock without allowing any
     /// writers to take exclusive access of the lock in the meantime.
@@ -454,6 +457,8 @@ impl<'a, T: ?Sized + 'a> Drop for RwLockWriteGuard<'a, T> {
         self.rwlock.raw.unlock_exclusive(false);
     }
 }
+
+unsafe impl<'a, T: ?Sized> StableAddress for RwLockWriteGuard<'a, T> {}
 
 #[cfg(test)]
 mod tests {

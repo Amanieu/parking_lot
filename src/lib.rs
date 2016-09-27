@@ -14,6 +14,9 @@
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
 #![cfg_attr(feature = "nightly", feature(asm))]
 
+extern crate owning_ref;
+use owning_ref::OwningRef;
+
 extern crate parking_lot_core;
 
 #[cfg(not(feature = "nightly"))]
@@ -32,3 +35,10 @@ pub use once::{Once, ONCE_INIT, OnceState};
 pub use mutex::{Mutex, MutexGuard};
 pub use condvar::{Condvar, WaitTimeoutResult};
 pub use rwlock::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+/// Typedef of a owning reference that uses a `MutexGuard` as the owner.
+pub type MutexGuardRef<'a, T, U = T> = OwningRef<MutexGuard<'a, T>, U>;
+/// Typedef of a owning reference that uses a `RwLockReadGuard` as the owner.
+pub type RwLockReadGuardRef<'a, T, U = T> = OwningRef<RwLockReadGuard<'a, T>, U>;
+/// Typedef of a owning reference that uses a `RwLockWriteGuard` as the owner.
+pub type RwLockWriteGuardRef<'a, T, U = T> = OwningRef<RwLockWriteGuard<'a, T>, U>;

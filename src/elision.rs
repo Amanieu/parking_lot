@@ -63,11 +63,7 @@ impl AtomicElisionExt for AtomicUsize {
                  : "r" (new), "{eax}" (current)
                  : "memory"
                  : "volatile");
-            if prev == current {
-                Ok(prev)
-            } else {
-                Err(prev)
-            }
+            if prev == current { Ok(prev) } else { Err(prev) }
         }
     }
 
@@ -80,11 +76,7 @@ impl AtomicElisionExt for AtomicUsize {
                  : "r" (new), "{eax}" (current)
                  : "memory"
                  : "volatile");
-            if prev == current {
-                Ok(prev)
-            } else {
-                Err(prev)
-            }
+            if prev == current { Ok(prev) } else { Err(prev) }
         }
     }
 }
@@ -102,11 +94,7 @@ impl AtomicElisionExt for AtomicUsize {
                  : "r" (new), "{rax}" (current)
                  : "memory"
                  : "volatile");
-            if prev == current {
-                Ok(prev)
-            } else {
-                Err(prev)
-            }
+            if prev == current { Ok(prev) } else { Err(prev) }
         }
     }
 
@@ -119,11 +107,7 @@ impl AtomicElisionExt for AtomicUsize {
                  : "r" (new), "{rax}" (current)
                  : "memory"
                  : "volatile");
-            if prev == current {
-                Ok(prev)
-            } else {
-                Err(prev)
-            }
+            if prev == current { Ok(prev) } else { Err(prev) }
         }
     }
 }
