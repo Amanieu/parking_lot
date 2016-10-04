@@ -8,7 +8,7 @@
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 use std::ptr;
-use parking_lot_core::{self, UnparkResult, RequeueOp, DEFAULT_PARK_TOKEN};
+use parking_lot_core::{self, ParkResult, UnparkResult, RequeueOp, DEFAULT_PARK_TOKEN};
 use mutex::{MutexGuard, guard_lock};
 use raw_mutex::{RawMutex, TOKEN_NORMAL, TOKEN_HANDOFF};
 
@@ -301,11 +301,11 @@ impl Condvar {
             }
 
             // ... and re-lock it once we are done sleeping
-            if result != Some(TOKEN_HANDOFF) {
+            if result != ParkResult::Unparked(TOKEN_HANDOFF) {
                 mutex.lock();
             }
 
-            WaitTimeoutResult(!(result.is_some() || requeued))
+            WaitTimeoutResult(!(result.is_unparked() || requeued))
         }
     }
 

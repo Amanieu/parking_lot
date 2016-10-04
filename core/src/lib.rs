@@ -73,7 +73,7 @@ mod spinwait;
 mod word_lock;
 mod parking_lot;
 
-pub use parking_lot::{UnparkResult, RequeueOp, UnparkToken, ParkToken, FilterOp};
+pub use parking_lot::{ParkResult, UnparkResult, RequeueOp, UnparkToken, ParkToken, FilterOp};
 pub use parking_lot::{DEFAULT_UNPARK_TOKEN, DEFAULT_PARK_TOKEN};
 pub use parking_lot::{park, unpark_one, unpark_all, unpark_requeue, unpark_filter};
 pub use spinwait::SpinWait;

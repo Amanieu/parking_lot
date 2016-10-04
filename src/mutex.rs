@@ -7,6 +7,7 @@
 
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
+use std::time::{Duration, Instant};
 use std::fmt;
 use std::marker::PhantomData;
 use raw_mutex::RawMutex;
@@ -166,6 +167,40 @@ impl<T: ?Sized> Mutex<T> {
     #[inline]
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         if self.raw.try_lock() {
+            Some(MutexGuard {
+                mutex: self,
+                marker: PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Attempts to acquire this lock until a timeout is reached.
+    ///
+    /// If the lock could not be acquired before the timeout expired, then
+    /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
+    /// be unlocked when the guard is dropped.
+    #[inline]
+    pub fn try_lock_for(&self, timeout: Duration) -> Option<MutexGuard<T>> {
+        if self.raw.try_lock_for(timeout) {
+            Some(MutexGuard {
+                mutex: self,
+                marker: PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Attempts to acquire this lock until a timeout is reached.
+    ///
+    /// If the lock could not be acquired before the timeout expired, then
+    /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
+    /// be unlocked when the guard is dropped.
+    #[inline]
+    pub fn try_lock_until(&self, timeout: Instant) -> Option<MutexGuard<T>> {
+        if self.raw.try_lock_until(timeout) {
             Some(MutexGuard {
                 mutex: self,
                 marker: PhantomData,

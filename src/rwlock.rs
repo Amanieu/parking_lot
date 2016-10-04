@@ -7,6 +7,7 @@
 
 use std::cell::UnsafeCell;
 use std::ops::{Deref, DerefMut};
+use std::time::{Duration, Instant};
 use std::fmt;
 use std::mem;
 use std::marker::PhantomData;
@@ -201,6 +202,42 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
+    /// Attempts to acquire this rwlock with shared read access until a timeout
+    /// is reached.
+    ///
+    /// If the access could not be granted before the timeout expires, then
+    /// `None` is returned. Otherwise, an RAII guard is returned which will
+    /// release the shared access when it is dropped.
+    #[inline]
+    pub fn try_read_for(&self, timeout: Duration) -> Option<RwLockReadGuard<T>> {
+        if self.raw.try_lock_shared_for(timeout) {
+            Some(RwLockReadGuard {
+                rwlock: self,
+                marker: PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Attempts to acquire this rwlock with shared read access until a timeout
+    /// is reached.
+    ///
+    /// If the access could not be granted before the timeout expires, then
+    /// `None` is returned. Otherwise, an RAII guard is returned which will
+    /// release the shared access when it is dropped.
+    #[inline]
+    pub fn try_read_until(&self, timeout: Instant) -> Option<RwLockReadGuard<T>> {
+        if self.raw.try_lock_shared_until(timeout) {
+            Some(RwLockReadGuard {
+                rwlock: self,
+                marker: PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+
     /// Locks this rwlock with exclusive write access, blocking the current
     /// thread until it can be acquired.
     ///
@@ -228,6 +265,42 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
         if self.raw.try_lock_exclusive() {
+            Some(RwLockWriteGuard {
+                rwlock: self,
+                marker: PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Attempts to acquire this rwlock with exclusive write access until a
+    /// timeout is reached.
+    ///
+    /// If the access could not be granted before the timeout expires, then
+    /// `None` is returned. Otherwise, an RAII guard is returned which will
+    /// release the exclusive access when it is dropped.
+    #[inline]
+    pub fn try_write_for(&self, timeout: Duration) -> Option<RwLockWriteGuard<T>> {
+        if self.raw.try_lock_exclusive_for(timeout) {
+            Some(RwLockWriteGuard {
+                rwlock: self,
+                marker: PhantomData,
+            })
+        } else {
+            None
+        }
+    }
+
+    /// Attempts to acquire this rwlock with exclusive write access until a
+    /// timeout is reached.
+    ///
+    /// If the access could not be granted before the timeout expires, then
+    /// `None` is returned. Otherwise, an RAII guard is returned which will
+    /// release the exclusive access when it is dropped.
+    #[inline]
+    pub fn try_write_until(&self, timeout: Instant) -> Option<RwLockWriteGuard<T>> {
+        if self.raw.try_lock_exclusive_until(timeout) {
             Some(RwLockWriteGuard {
                 rwlock: self,
                 marker: PhantomData,

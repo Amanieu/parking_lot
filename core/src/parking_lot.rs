@@ -372,6 +372,30 @@ unsafe fn unlock_bucket_pair(bucket1: &Bucket, bucket2: &Bucket) {
     }
 }
 
+/// Result of a park operation.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum ParkResult {
+    /// We were unparked by another thread with the given token.
+    Unparked(UnparkToken),
+
+    /// The validation callback returned false.
+    Invalid,
+
+    /// The timeout expired.
+    TimedOut,
+}
+
+impl ParkResult {
+    /// Returns true if we were unparked by another thread.
+    pub fn is_unparked(self) -> bool {
+        if let ParkResult::Unparked(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
 /// Result of an unpark operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct UnparkResult {
@@ -444,10 +468,6 @@ pub const DEFAULT_PARK_TOKEN: ParkToken = ParkToken(0);
 /// `unpark_requeue` was called. It is also passed a bool which indicates
 /// whether it was the last thread in the queue.
 ///
-/// This function returns an `UnparkToken` if the thread was unparked by another
-/// thread, and `None` if the validation function failed or the timeout was
-/// reached.
-///
 /// # Safety
 ///
 /// You should only call this function with an address that you control, since
@@ -467,7 +487,7 @@ pub unsafe fn park<V, B, T>(key: usize,
                             timed_out: T,
                             park_token: ParkToken,
                             timeout: Option<Instant>)
-                            -> Option<UnparkToken>
+                            -> ParkResult
     where V: FnOnce() -> bool,
           B: FnOnce(),
           T: FnOnce(usize, bool)
@@ -490,7 +510,7 @@ unsafe fn park_internal(key: usize,
                         timed_out: &mut FnMut(usize, bool),
                         park_token: ParkToken,
                         timeout: Option<Instant>)
-                        -> Option<UnparkToken> {
+                        -> ParkResult {
     // Grab our thread data, this also ensures that the hash table exists
     let thread_data = &*THREAD_DATA.with(|x| x as *const ThreadData);
 
@@ -500,7 +520,7 @@ unsafe fn park_internal(key: usize,
     // If the validation function fails, just return
     if !validate() {
         bucket.mutex.unlock();
-        return None;
+        return ParkResult::Invalid;
     }
 
     // Append our thread data to the queue and unlock the bucket
@@ -532,7 +552,7 @@ unsafe fn park_internal(key: usize,
 
     // If we were unparked, return now
     if unparked {
-        return Some(thread_data.unpark_token.get());
+        return ParkResult::Unparked(thread_data.unpark_token.get());
     }
 
     // Lock our bucket again. Note that the hashtable may have been rehashed in
@@ -543,7 +563,7 @@ unsafe fn park_internal(key: usize,
     // last check this is precise because we hold the bucket lock.
     if !thread_data.parker.timed_out() {
         bucket.mutex.unlock();
-        return Some(thread_data.unpark_token.get());
+        return ParkResult::Unparked(thread_data.unpark_token.get());
     }
 
     // We timed out, so we now need to remove our thread from the queue
@@ -587,7 +607,7 @@ unsafe fn park_internal(key: usize,
 
     // Unlock the bucket, we are done
     bucket.mutex.unlock();
-    None
+    ParkResult::TimedOut
 }
 
 /// Unparks one thread from the queue associated with the given key.
