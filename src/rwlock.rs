@@ -12,6 +12,8 @@ use std::fmt;
 use std::mem;
 use std::marker::PhantomData;
 use raw_rwlock::RawRwLock;
+
+#[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
 /// A reader-writer lock
@@ -472,6 +474,7 @@ impl<'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, T> {
     }
 }
 
+#[cfg(feature = "owning_ref")]
 unsafe impl<'a, T: ?Sized> StableAddress for RwLockReadGuard<'a, T> {}
 
 impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
@@ -531,6 +534,7 @@ impl<'a, T: ?Sized + 'a> Drop for RwLockWriteGuard<'a, T> {
     }
 }
 
+#[cfg(feature = "owning_ref")]
 unsafe impl<'a, T: ?Sized> StableAddress for RwLockWriteGuard<'a, T> {}
 
 #[cfg(test)]

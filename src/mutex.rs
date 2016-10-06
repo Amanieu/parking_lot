@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 use std::fmt;
 use std::marker::PhantomData;
 use raw_mutex::RawMutex;
+
+#[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
 /// A mutual exclusion primitive useful for protecting shared data
@@ -323,6 +325,7 @@ impl<'a, T: ?Sized + 'a> Drop for MutexGuard<'a, T> {
     }
 }
 
+#[cfg(feature = "owning_ref")]
 unsafe impl<'a, T: ?Sized> StableAddress for MutexGuard<'a, T> {}
 
 // Helper function used by Condvar, not publicly exported

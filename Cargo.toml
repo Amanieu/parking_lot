@@ -11,10 +11,11 @@ keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 
 [dependencies]
 parking_lot_core = { path = "core", version = "0.2" }
-owning_ref = "0.2"
+owning_ref = { version = "0.2", optional = true }
 
 [dev-dependencies]
 rand = "0.3"
 
 [features]
+default = ["owning_ref"]
 nightly = ["parking_lot_core/nightly"]
