@@ -235,7 +235,12 @@ impl RawRwLock {
                     }
                 };
                 let before_sleep = || {};
-                let timed_out = |_, _| unreachable!();
+                let timed_out = |_, was_last_thread| {
+                    // Clear the parked bit if we were the last parked thread
+                    if was_last_thread {
+                        self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
+                    }
+                };
                 match parking_lot_core::park(addr,
                                              validate,
                                              before_sleep,
