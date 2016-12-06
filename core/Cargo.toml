@@ -9,7 +9,7 @@ repository = "https://github.com/Amanieu/parking_lot"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 
 [dependencies]
-smallvec = "0.1"
+smallvec = "0.3"
 rand = "0.3"
 
 [target.'cfg(unix)'.dependencies]
