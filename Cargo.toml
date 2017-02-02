@@ -13,6 +13,9 @@ keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 parking_lot_core = { path = "core", version = "0.2" }
 owning_ref = { version = "0.2", optional = true }
 
+[target.'cfg(not(target_os = "emscripten"))'.dependencies]
+thread-id = "3.0"
+
 [dev-dependencies]
 rand = "0.3"
 

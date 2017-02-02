@@ -9,8 +9,9 @@ parking_lot
 
 This library provides implementations of `Mutex`, `RwLock`, `Condvar` and
 `Once` that are smaller, faster and more flexible than those in the Rust
-standard library. It also exposes a low-level API for creating your own
-efficient synchronization primitives.
+standard library, as well as a `ReentrantMutex` type which supports recursive
+locking. It also exposes a low-level API for creating your own efficient
+synchronization primitives.
 
 When tested on x86_64 Linux, `parking_lot::Mutex` was found to be 1.5x
 faster than `std::sync::Mutex` when uncontended, and up to 5x faster when
@@ -61,6 +62,7 @@ in the Rust standard library:
     object.
 15. `Mutex` and `RwLock` support [eventual fairness](https://trac.webkit.org/changeset/203350)
     which allows them to be fair on average without sacrificing performance.
+16. A `ReentrantMutex` type which supports recursive locking.
 
 ## The parking lot
 
