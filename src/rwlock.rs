@@ -457,6 +457,12 @@ impl<'a, T: ?Sized + 'a> RwLockReadGuard<'a, T> {
     pub fn unlock_fair(self) {
         self.rwlock.raw.unlock_shared(true);
     }
+
+    /// Return a reference to the lock being guarded.
+    #[inline]
+    pub fn for_lock(&self) -> &'a RwLock<T> {
+        self.rwlock
+    }
 }
 
 impl<'a, T: ?Sized + 'a> Deref for RwLockReadGuard<'a, T> {
@@ -509,6 +515,12 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
     #[inline]
     pub fn unlock_fair(self) {
         self.rwlock.raw.unlock_exclusive(true);
+    }
+
+    /// Return a reference to the lock being guarded.
+    #[inline]
+    pub fn for_lock(&self) -> &'a RwLock<T> {
+        self.rwlock
     }
 }
 
