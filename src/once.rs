@@ -22,9 +22,21 @@ const POISON_BIT: U8 = 2;
 const LOCKED_BIT: U8 = 4;
 const PARKED_BIT: U8 = 8;
 
-/// State yielded to the `call_once_force` method which can be used to query
-/// whether the `Once` was previously poisoned or not.
-pub struct OnceState(bool);
+/// Current state of a `Once`.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum OnceState {
+    /// A closure has not been executed yet
+    New,
+
+    /// A closure was executed but panicked.
+    Poisoned,
+
+    /// A thread is currently executing a closure.
+    InProgress,
+
+    /// A closure has completed sucessfully.
+    Done,
+}
 
 impl OnceState {
     /// Returns whether the associated `Once` has been poisoned.
@@ -33,7 +45,24 @@ impl OnceState {
     /// indicate to future forced initialization routines that it is poisoned.
     #[inline]
     pub fn poisoned(&self) -> bool {
-        self.0
+        match *self {
+            OnceState::Poisoned => true,
+            _ => false,
+        }
+    }
+
+    /// Returns whether the associated `Once` has successfullly executed a
+    /// closure.
+    ///
+    /// Note that you generally need an `Acquire` barrier after checking this to
+    /// ensure that operations are correctly ordered with regards to a
+    /// concurrently executing closure.
+    #[inline]
+    pub fn done(&self) -> bool {
+        match *self {
+            OnceState::Done => true,
+            _ => false,
+        }
     }
 }
 
@@ -78,6 +107,21 @@ impl Once {
     #[inline]
     pub fn new() -> Once {
         Once(AtomicU8::new(0))
+    }
+
+    /// Returns the current state of this `Once`.
+    #[inline]
+    pub fn state(&self) -> OnceState {
+        let state = self.0.load(Ordering::Relaxed);
+        if state & DONE_BIT != 0 {
+            OnceState::Done
+        } else if state & LOCKED_BIT != 0 {
+            OnceState::InProgress
+        } else if state & POISON_BIT != 0 {
+            OnceState::Poisoned
+        } else {
+            OnceState::New
+        }
     }
 
     /// Performs an initialization routine once and only once. The given closure
@@ -267,7 +311,12 @@ impl Once {
         // At this point we have the lock, so run the closure. Make sure we
         // properly clean up if the closure panicks.
         let guard = PanicGuard(self);
-        f(OnceState(state & POISON_BIT != 0));
+        let once_state = if state & POISON_BIT != 0 {
+            OnceState::Poisoned
+        } else {
+            OnceState::New
+        };
+        f(once_state);
         mem::forget(guard);
 
         // Now unlock the state, set the done bit and unpark all threads
