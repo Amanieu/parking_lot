@@ -204,9 +204,7 @@ impl Once {
 
         let mut f = Some(f);
         self.call_once_slow(true,
-                            &mut |state| unsafe {
-                                f.take().unchecked_unwrap()(state)
-                            });
+                            &mut |state| unsafe { f.take().unchecked_unwrap()(state) });
     }
 
     // This is a non-generic function to reduce the monomorphization cost of
@@ -397,15 +395,11 @@ mod tests {
         static O: Once = ONCE_INIT;
 
         // poison the once
-        let t = panic::catch_unwind(|| {
-            O.call_once(|| panic!());
-        });
+        let t = panic::catch_unwind(|| { O.call_once(|| panic!()); });
         assert!(t.is_err());
 
         // poisoning propagates
-        let t = panic::catch_unwind(|| {
-            O.call_once(|| {});
-        });
+        let t = panic::catch_unwind(|| { O.call_once(|| {}); });
         assert!(t.is_err());
 
         // we can subvert poisoning, however
@@ -426,9 +420,7 @@ mod tests {
         static O: Once = ONCE_INIT;
 
         // poison the once
-        let t = panic::catch_unwind(|| {
-            O.call_once(|| panic!());
-        });
+        let t = panic::catch_unwind(|| { O.call_once(|| panic!()); });
         assert!(t.is_err());
 
         // make sure someone's waiting inside the once via a force
@@ -447,9 +439,7 @@ mod tests {
         // put another waiter on the once
         let t2 = thread::spawn(|| {
             let mut called = false;
-            O.call_once(|| {
-                called = true;
-            });
+            O.call_once(|| { called = true; });
             assert!(!called);
         });
 

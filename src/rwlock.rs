@@ -788,14 +788,12 @@ mod tests {
         let mut handles = Vec::new();
         for _ in 0..8 {
             let x = x.clone();
-            handles.push(thread::spawn(move || {
-                for _ in 0..100 {
-                    let mut writer = x.write();
-                    *writer += 1;
-                    let cur_val = *writer;
-                    let reader = writer.downgrade();
-                    assert_eq!(cur_val, *reader);
-                }
+            handles.push(thread::spawn(move || for _ in 0..100 {
+                let mut writer = x.write();
+                *writer += 1;
+                let cur_val = *writer;
+                let reader = writer.downgrade();
+                assert_eq!(cur_val, *reader);
             }));
         }
         for handle in handles {
