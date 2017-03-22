@@ -53,10 +53,6 @@ impl OnceState {
 
     /// Returns whether the associated `Once` has successfullly executed a
     /// closure.
-    ///
-    /// Note that you generally need an `Acquire` barrier after checking this to
-    /// ensure that operations are correctly ordered with regards to a
-    /// concurrently executing closure.
     #[inline]
     pub fn done(&self) -> bool {
         match *self {
@@ -112,7 +108,7 @@ impl Once {
     /// Returns the current state of this `Once`.
     #[inline]
     pub fn state(&self) -> OnceState {
-        let state = self.0.load(Ordering::Relaxed);
+        let state = self.0.load(Ordering::Acquire);
         if state & DONE_BIT != 0 {
             OnceState::Done
         } else if state & LOCKED_BIT != 0 {
