@@ -9,6 +9,7 @@ use std::cell::UnsafeCell;
 use std::ops::Deref;
 use std::time::{Duration, Instant};
 use std::fmt;
+use std::mem;
 use std::marker::PhantomData;
 use raw_remutex::RawReentrantMutex;
 
@@ -239,6 +240,7 @@ impl<'a, T: ?Sized + 'a> ReentrantMutexGuard<'a, T> {
     #[inline]
     pub fn unlock_fair(self) {
         self.mutex.raw.unlock(true);
+        mem::forget(self);
     }
 }
 

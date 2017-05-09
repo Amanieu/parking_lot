@@ -472,6 +472,7 @@ impl<'a, T: ?Sized + 'a> RwLockReadGuard<'a, T> {
     #[inline]
     pub fn unlock_fair(self) {
         self.rwlock.raw.unlock_shared(true);
+        mem::forget(self);
     }
 }
 
@@ -525,6 +526,7 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
     #[inline]
     pub fn unlock_fair(self) {
         self.rwlock.raw.unlock_exclusive(true);
+        mem::forget(self);
     }
 }
 
