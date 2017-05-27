@@ -559,15 +559,15 @@ impl RawRwLock {
                         // unlocking. If we are then we should set the exclusive
                         // locked bit and tell the thread that we are handing it
                         // the lock directly.
-                        let token;
-                        if result.unparked_threads != 0 && new & SHARED_COUNT_MASK == 0 &&
-                           first_token.get().unchecked_unwrap() == TOKEN_EXCLUSIVE &&
-                           (force_fair || result.be_fair) {
+                        let token = if result.unparked_threads != 0 &&
+                                       new & SHARED_COUNT_MASK == 0 &&
+                                       first_token.get().unchecked_unwrap() == TOKEN_EXCLUSIVE &&
+                                       (force_fair || result.be_fair) {
                             new |= LOCKED_BIT;
-                            token = TOKEN_HANDOFF;
+                            TOKEN_HANDOFF
                         } else {
-                            token = TOKEN_NORMAL;
-                        }
+                            TOKEN_NORMAL
+                        };
 
                         match self.state
                             .compare_exchange_weak(state,
