@@ -42,7 +42,7 @@ fn thread_yield() {
 // using a hint to indicate to the CPU that we are spinning.
 #[cfg(all(feature = "nightly", any(target_arch = "x86", target_arch = "x86_64")))]
 #[inline]
-fn pause(iterations: u32) {
+fn pause() {
     unsafe {
         asm!("pause" ::: "memory" : "volatile");
     }
@@ -50,7 +50,7 @@ fn pause(iterations: u32) {
 
 #[cfg(all(feature = "nightly", target_arch = "aarch64"))]
 #[inline]
-fn pause(iterations: u32) {
+fn pause() {
     unsafe {
         asm!("yield" ::: "memory" : "volatile");
     }
