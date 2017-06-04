@@ -42,40 +42,100 @@ fn thread_yield() {
 // using a hint to indicate to the CPU that we are spinning.
 #[cfg(all(feature = "nightly", any(target_arch = "x86", target_arch = "x86_64")))]
 #[inline]
-fn cpu_relax(iterations: u32) {
-    for _ in 0..iterations {
-        unsafe {
-            asm!("pause" ::: "memory" : "volatile");
-        }
+fn pause(iterations: u32) {
+    unsafe {
+        asm!("pause" ::: "memory" : "volatile");
     }
 }
+
 #[cfg(all(feature = "nightly", target_arch = "aarch64"))]
 #[inline]
-fn cpu_relax(iterations: u32) {
-    for _ in 0..iterations {
-        unsafe {
-            asm!("yield" ::: "memory" : "volatile");
-        }
+fn pause(iterations: u32) {
+    unsafe {
+        asm!("yield" ::: "memory" : "volatile");
     }
 }
+
 #[cfg(all(feature = "nightly", not(any(target_arch = "x86",
                                        target_arch = "x86_64",
                                        target_arch = "aarch64"))))]
 #[inline]
-fn cpu_relax(iterations: u32) {
-    for _ in 0..iterations {
-        unsafe {
-            asm!("" ::: "memory" : "volatile");
-        }
+fn pause() {
+    unsafe {
+        asm!("" ::: "memory" : "volatile");
     }
 }
+
 #[cfg(not(feature = "nightly"))]
 #[inline]
-fn cpu_relax(iterations: u32) {
+fn pause() {
     // This is a bit tricky: we rely on the fact that LLVM doesn't optimize
     // atomic operations and effectively treats them as volatile.
-    for _ in 0..iterations {
-        fence(Ordering::SeqCst);
+    fence(Ordering::SeqCst);
+}
+
+#[inline]
+fn cpu_relax(iterations: u32) {
+    if 0 == iterations {
+        return;
+    }
+    let unroll = 8;
+    let start_loops = iterations % unroll;
+    let outer_loops = iterations / unroll;
+
+    // Implement duff's device in Rust
+    'do_0: loop {
+        'do_1: loop {
+            'do_2: loop {
+                'do_3: loop {
+                    'do_4: loop {
+                        'do_5: loop {
+                            'do_6: loop {
+                                match start_loops {
+                                    0 => break 'do_0,
+                                    1 => break 'do_1,
+                                    2 => break 'do_2,
+                                    3 => break 'do_3,
+                                    4 => break 'do_4,
+                                    5 => break 'do_5,
+                                    6 => break 'do_6,
+                                    7 => {},
+                                    _ => unreachable!()
+                                }
+                                pause();
+                                break;
+                            }
+                            pause();
+                            break;
+                        }
+                        pause();
+                        break;
+                    }
+                    pause();
+                    break;
+                }
+                pause();
+                break;
+            }
+            pause();
+            break;
+        }
+        pause();
+        break;
+    }
+
+    let mut counter = outer_loops;
+    loop {
+        match counter.checked_sub(1) {
+            None => break,
+            Some(newcounter) => {
+                counter = newcounter;
+            }
+        }
+
+        for _ in 0..unroll {
+            pause();
+        }
     }
 }
 
