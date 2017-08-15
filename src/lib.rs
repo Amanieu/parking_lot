@@ -17,9 +17,6 @@
 #[cfg(feature = "owning_ref")]
 extern crate owning_ref;
 
-#[cfg(not(target_os = "emscripten"))]
-extern crate thread_id;
-
 extern crate parking_lot_core;
 
 #[cfg(not(feature = "nightly"))]
