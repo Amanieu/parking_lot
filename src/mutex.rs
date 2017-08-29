@@ -12,6 +12,7 @@ use std::fmt;
 use std::mem;
 use std::marker::PhantomData;
 use raw_mutex::RawMutex;
+use deadlock::DeadlockDetectionMarker;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -110,7 +111,7 @@ unsafe impl<T: Send> Sync for Mutex<T> {}
 #[must_use]
 pub struct MutexGuard<'a, T: ?Sized + 'a> {
     mutex: &'a Mutex<T>,
-    marker: PhantomData<&'a mut T>,
+    marker: PhantomData<(&'a mut T, DeadlockDetectionMarker)>,
 }
 
 impl<T> Mutex<T> {
@@ -332,7 +333,7 @@ unsafe impl<'a, T: ?Sized> StableAddress for MutexGuard<'a, T> {}
 
 // Helper function used by Condvar, not publicly exported
 #[inline]
-pub fn guard_lock<'a, T: ?Sized>(guard: &MutexGuard<'a, T>) -> &'a RawMutex {
+pub(crate) fn guard_lock<'a, T: ?Sized>(guard: &MutexGuard<'a, T>) -> &'a RawMutex {
     &guard.mutex.raw
 }
 
@@ -504,11 +505,20 @@ mod tests {
         assert_eq!(&*mutex.lock(), comp);
     }
 
+    #[cfg(not(feature = "deadlock_detection"))]
     #[test]
     fn test_mutexguard_send() {
         fn send<T: Send>(_: T) {}
 
         let mutex = Mutex::new(());
         send(mutex.lock());
+    }
+
+    #[test]
+    fn test_mutexguard_sync() {
+        fn sync<T: Sync>(_: T) {}
+
+        let mutex = Mutex::new(());
+        sync(mutex.lock());
     }
 }

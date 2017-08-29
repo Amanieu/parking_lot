@@ -12,6 +12,7 @@ use std::fmt;
 use std::mem;
 use std::marker::PhantomData;
 use raw_rwlock::RawRwLock;
+use deadlock::DeadlockDetectionMarker;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -108,7 +109,7 @@ unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
 #[must_use]
 pub struct RwLockReadGuard<'a, T: ?Sized + 'a> {
     rwlock: &'a RwLock<T>,
-    marker: PhantomData<&'a T>,
+    marker: PhantomData<(&'a T, DeadlockDetectionMarker)>,
 }
 
 /// RAII structure used to release the exclusive write access of a lock when
@@ -116,7 +117,7 @@ pub struct RwLockReadGuard<'a, T: ?Sized + 'a> {
 #[must_use]
 pub struct RwLockWriteGuard<'a, T: ?Sized + 'a> {
     rwlock: &'a RwLock<T>,
-    marker: PhantomData<&'a mut T>,
+    marker: PhantomData<(&'a mut T, DeadlockDetectionMarker)>,
 }
 
 impl<T> RwLock<T> {
@@ -883,6 +884,7 @@ mod tests {
         assert_eq!(m.into_inner(), NonCopy(20));
     }
 
+    #[cfg(not(feature = "deadlock_detection"))]
     #[test]
     fn test_rwlockguard_send() {
         fn send<T: Send>(_: T) {}
@@ -890,6 +892,15 @@ mod tests {
         let rwlock = RwLock::new(());
         send(rwlock.read());
         send(rwlock.write());
+    }
+
+    #[test]
+    fn test_rwlockguard_sync() {
+        fn sync<T: Sync>(_: T) {}
+
+        let rwlock = RwLock::new(());
+        sync(rwlock.read());
+        sync(rwlock.write());
     }
 
     #[test]

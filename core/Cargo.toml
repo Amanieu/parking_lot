@@ -11,6 +11,9 @@ keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 [dependencies]
 smallvec = "0.4"
 rand = "0.3"
+petgraph = { version = "0.4.5", optional = true }
+thread-id = { version = "3.2.0", optional = true }
+backtrace = { version = "0.3.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.15"
@@ -21,3 +24,4 @@ kernel32-sys = "0.2"
 
 [features]
 nightly = []
+deadlock_detection = ["petgraph", "thread-id", "backtrace"]

@@ -19,3 +19,4 @@ rand = "0.3"
 [features]
 default = ["owning_ref"]
 nightly = ["parking_lot_core/nightly"]
+deadlock_detection = ["parking_lot_core/deadlock_detection"]

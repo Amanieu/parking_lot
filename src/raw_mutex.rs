@@ -15,6 +15,7 @@ use stable::{AtomicU8, Ordering};
 type U8 = usize;
 use std::time::{Duration, Instant};
 use parking_lot_core::{self, ParkResult, UnparkResult, SpinWait, UnparkToken, DEFAULT_PARK_TOKEN};
+use deadlock;
 
 // UnparkToken used to indicate that that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.
@@ -47,30 +48,40 @@ impl RawMutex {
     pub fn lock(&self) {
         if self.state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok() {
-            return;
+            .is_err() {
+            self.lock_slow(None);
         }
-        self.lock_slow(None);
+        unsafe { deadlock::acquire_resource(self as *const _ as usize) };
     }
 
     #[inline]
     pub fn try_lock_until(&self, timeout: Instant) -> bool {
-        if self.state
+        let result = if self.state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok() {
-            return true;
+            true
+        } else {
+            self.lock_slow(Some(timeout))
+        };
+        if result {
+            unsafe { deadlock::acquire_resource(self as *const _ as usize) };
         }
-        self.lock_slow(Some(timeout))
+        result
     }
 
     #[inline]
     pub fn try_lock_for(&self, timeout: Duration) -> bool {
-        if self.state
+        let result = if self.state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok() {
-            return true;
+            true
+        } else {
+            self.lock_slow(Some(Instant::now() + timeout))
+        };
+        if result {
+            unsafe { deadlock::acquire_resource(self as *const _ as usize) };
         }
-        self.lock_slow(Some(Instant::now() + timeout))
+        result
     }
 
     #[inline]
@@ -84,7 +95,10 @@ impl RawMutex {
                                                    state | LOCKED_BIT,
                                                    Ordering::Acquire,
                                                    Ordering::Relaxed) {
-                Ok(_) => return true,
+                Ok(_) => {
+                    unsafe { deadlock::acquire_resource(self as *const _ as usize) };
+                    return true;
+                },
                 Err(x) => state = x,
             }
         }
@@ -92,6 +106,7 @@ impl RawMutex {
 
     #[inline]
     pub fn unlock(&self, force_fair: bool) {
+        unsafe { deadlock::release_resource(self as *const _ as usize) };
         if self.state
             .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok() {
@@ -103,7 +118,7 @@ impl RawMutex {
     // Used by Condvar when requeuing threads to us, must be called while
     // holding the queue lock.
     #[inline]
-    pub fn mark_parked_if_locked(&self) -> bool {
+    pub(crate) fn mark_parked_if_locked(&self) -> bool {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             if state & LOCKED_BIT == 0 {
@@ -122,7 +137,7 @@ impl RawMutex {
     // Used by Condvar when requeuing threads to us, must be called while
     // holding the queue lock.
     #[inline]
-    pub fn mark_parked(&self) {
+    pub(crate) fn mark_parked(&self) {
         self.state.fetch_or(PARKED_BIT, Ordering::Relaxed);
     }
 

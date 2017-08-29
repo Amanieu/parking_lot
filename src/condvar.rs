@@ -11,6 +11,7 @@ use std::ptr;
 use parking_lot_core::{self, ParkResult, UnparkResult, RequeueOp, DEFAULT_PARK_TOKEN};
 use mutex::{MutexGuard, guard_lock};
 use raw_mutex::{RawMutex, TOKEN_NORMAL, TOKEN_HANDOFF};
+use deadlock;
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.
@@ -301,7 +302,9 @@ impl Condvar {
             }
 
             // ... and re-lock it once we are done sleeping
-            if result != ParkResult::Unparked(TOKEN_HANDOFF) {
+            if result == ParkResult::Unparked(TOKEN_HANDOFF) {
+                deadlock::acquire_resource(mutex as *const _ as usize);
+            } else {
                 mutex.lock();
             }
 
