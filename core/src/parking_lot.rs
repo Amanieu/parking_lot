@@ -204,10 +204,12 @@ unsafe fn get_hashtable() -> *const HashTable {
 
         // If this fails then it means some other thread created the hash
         // table first.
-        match HASHTABLE.compare_exchange(0,
-                                         new_table as usize,
-                                         Ordering::Release,
-                                         Ordering::Relaxed) {
+        match HASHTABLE.compare_exchange(
+            0,
+            new_table as usize,
+            Ordering::Release,
+            Ordering::Relaxed,
+        ) {
             Ok(_) => return new_table,
             Err(x) => table = x,
         }
@@ -229,8 +231,10 @@ unsafe fn grow_hashtable(num_threads: usize) {
 
         // If this fails then it means some other thread created the hash
         // table first.
-        if HASHTABLE.compare_exchange(0, new_table as usize, Ordering::Release, Ordering::Relaxed)
-            .is_ok() {
+        if HASHTABLE
+            .compare_exchange(0, new_table as usize, Ordering::Release, Ordering::Relaxed)
+            .is_ok()
+        {
             return;
         }
 
@@ -277,7 +281,9 @@ unsafe fn grow_hashtable(num_threads: usize) {
             if new_table.entries[hash].queue_tail.get().is_null() {
                 new_table.entries[hash].queue_head.set(current);
             } else {
-                (*new_table.entries[hash].queue_tail.get()).next_in_queue.set(current);
+                (*new_table.entries[hash].queue_tail.get())
+                    .next_in_queue
+                    .set(current);
             }
             new_table.entries[hash].queue_tail.set(current);
             (*current).next_in_queue.set(ptr::null());
@@ -347,7 +353,8 @@ unsafe fn lock_bucket_checked<'a>(key: &AtomicUsize) -> (usize, &'a Bucket) {
         // is locked. Note that the key can't change once we locked the proper
         // bucket for it, so we just keep trying until we have the correct key.
         if HASHTABLE.load(Ordering::Relaxed) == hashtable as usize &&
-           key.load(Ordering::Relaxed) == current_key {
+            key.load(Ordering::Relaxed) == current_key
+        {
             return (current_key, bucket);
         }
 
@@ -518,36 +525,41 @@ pub const DEFAULT_PARK_TOKEN: ParkToken = ParkToken(0);
 /// to call `unpark_one`, `unpark_all`, `unpark_requeue` or `unpark_filter`, but
 /// it is not allowed to call `park` or panic.
 #[inline]
-pub unsafe fn park<V, B, T>(key: usize,
-                            validate: V,
-                            before_sleep: B,
-                            timed_out: T,
-                            park_token: ParkToken,
-                            timeout: Option<Instant>)
-                            -> ParkResult
-    where V: FnOnce() -> bool,
-          B: FnOnce(),
-          T: FnOnce(usize, bool)
+pub unsafe fn park<V, B, T>(
+    key: usize,
+    validate: V,
+    before_sleep: B,
+    timed_out: T,
+    park_token: ParkToken,
+    timeout: Option<Instant>,
+) -> ParkResult
+where
+    V: FnOnce() -> bool,
+    B: FnOnce(),
+    T: FnOnce(usize, bool),
 {
     let mut v = Some(validate);
     let mut b = Some(before_sleep);
     let mut t = Some(timed_out);
-    park_internal(key,
-                  &mut || v.take().unchecked_unwrap()(),
-                  &mut || b.take().unchecked_unwrap()(),
-                  &mut |key, was_last_thread| t.take().unchecked_unwrap()(key, was_last_thread),
-                  park_token,
-                  timeout)
+    park_internal(
+        key,
+        &mut || v.take().unchecked_unwrap()(),
+        &mut || b.take().unchecked_unwrap()(),
+        &mut |key, was_last_thread| t.take().unchecked_unwrap()(key, was_last_thread),
+        park_token,
+        timeout,
+    )
 }
 
 // Non-generic version to reduce monomorphization cost
-unsafe fn park_internal(key: usize,
-                        validate: &mut FnMut() -> bool,
-                        before_sleep: &mut FnMut(),
-                        timed_out: &mut FnMut(usize, bool),
-                        park_token: ParkToken,
-                        timeout: Option<Instant>)
-                        -> ParkResult {
+unsafe fn park_internal(
+    key: usize,
+    validate: &mut FnMut() -> bool,
+    before_sleep: &mut FnMut(),
+    timed_out: &mut FnMut(usize, bool),
+    park_token: ParkToken,
+    timeout: Option<Instant>,
+) -> ParkResult {
     // Grab our thread data, this also ensures that the hash table exists
     let mut thread_data = None;
     let thread_data = get_thread_data(&mut thread_data);
@@ -672,16 +684,18 @@ unsafe fn park_internal(key: usize,
 /// panic or call into any function in `parking_lot`.
 #[inline]
 pub unsafe fn unpark_one<C>(key: usize, callback: C) -> UnparkResult
-    where C: FnOnce(UnparkResult) -> UnparkToken
+where
+    C: FnOnce(UnparkResult) -> UnparkToken,
 {
     let mut c = Some(callback);
     unpark_one_internal(key, &mut |result| c.take().unchecked_unwrap()(result))
 }
 
 // Non-generic version to reduce monomorphization cost
-unsafe fn unpark_one_internal(key: usize,
-                              callback: &mut FnMut(UnparkResult) -> UnparkToken)
-                              -> UnparkResult {
+unsafe fn unpark_one_internal(
+    key: usize,
+    callback: &mut FnMut(UnparkResult) -> UnparkToken,
+) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -831,28 +845,33 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
 /// The `validate` and `callback` functions are called while the queue is locked
 /// and must not panic or call into any function in `parking_lot`.
 #[inline]
-pub unsafe fn unpark_requeue<V, C>(key_from: usize,
-                                   key_to: usize,
-                                   validate: V,
-                                   callback: C)
-                                   -> UnparkResult
-    where V: FnOnce() -> RequeueOp,
-          C: FnOnce(RequeueOp, UnparkResult) -> UnparkToken
+pub unsafe fn unpark_requeue<V, C>(
+    key_from: usize,
+    key_to: usize,
+    validate: V,
+    callback: C,
+) -> UnparkResult
+where
+    V: FnOnce() -> RequeueOp,
+    C: FnOnce(RequeueOp, UnparkResult) -> UnparkToken,
 {
     let mut v = Some(validate);
     let mut c = Some(callback);
-    unpark_requeue_internal(key_from,
-                            key_to,
-                            &mut || v.take().unchecked_unwrap()(),
-                            &mut |op, r| c.take().unchecked_unwrap()(op, r))
+    unpark_requeue_internal(
+        key_from,
+        key_to,
+        &mut || v.take().unchecked_unwrap()(),
+        &mut |op, r| c.take().unchecked_unwrap()(op, r),
+    )
 }
 
 // Non-generic version to reduce monomorphization cost
-unsafe fn unpark_requeue_internal(key_from: usize,
-                                  key_to: usize,
-                                  validate: &mut FnMut() -> RequeueOp,
-                                  callback: &mut FnMut(RequeueOp, UnparkResult) -> UnparkToken)
-                                  -> UnparkResult {
+unsafe fn unpark_requeue_internal(
+    key_from: usize,
+    key_to: usize,
+    validate: &mut FnMut() -> RequeueOp,
+    callback: &mut FnMut(RequeueOp, UnparkResult) -> UnparkToken,
+) -> UnparkResult {
     // Lock the two buckets for the given key
     let (bucket_from, bucket_to) = lock_bucket_pair(key_from, key_to);
 
@@ -910,7 +929,9 @@ unsafe fn unpark_requeue_internal(key_from: usize,
     if !requeue_threads.is_null() {
         (*requeue_threads_tail).next_in_queue.set(ptr::null());
         if !bucket_to.queue_head.get().is_null() {
-            (*bucket_to.queue_tail.get()).next_in_queue.set(requeue_threads);
+            (*bucket_to.queue_tail.get()).next_in_queue.set(
+                requeue_threads,
+            );
         } else {
             bucket_to.queue_head.set(requeue_threads);
         }
@@ -964,18 +985,20 @@ unsafe fn unpark_requeue_internal(key_from: usize,
 /// and must not panic or call into any function in `parking_lot`.
 #[inline]
 pub unsafe fn unpark_filter<F, C>(key: usize, mut filter: F, callback: C) -> UnparkResult
-    where F: FnMut(ParkToken) -> FilterOp,
-          C: FnOnce(UnparkResult) -> UnparkToken
+where
+    F: FnMut(ParkToken) -> FilterOp,
+    C: FnOnce(UnparkResult) -> UnparkToken,
 {
     let mut c = Some(callback);
     unpark_filter_internal(key, &mut filter, &mut |r| c.take().unchecked_unwrap()(r))
 }
 
 // Non-generic version to reduce monomorphization cost
-unsafe fn unpark_filter_internal(key: usize,
-                                 filter: &mut FnMut(ParkToken) -> FilterOp,
-                                 callback: &mut FnMut(UnparkResult) -> UnparkToken)
-                                 -> UnparkResult {
+unsafe fn unpark_filter_internal(
+    key: usize,
+    filter: &mut FnMut(ParkToken) -> FilterOp,
+    callback: &mut FnMut(UnparkResult) -> UnparkToken,
+) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -1074,8 +1097,7 @@ pub mod deadlock {
     /// Note: Call after the resource is acquired
     #[inline]
     pub unsafe fn acquire_resource(_key: usize) {
-        #[cfg(feature = "deadlock_detection")]
-        deadlock_impl::acquire_resource(_key);
+        #[cfg(feature = "deadlock_detection")] deadlock_impl::acquire_resource(_key);
     }
 
     /// Release a resource identified by key in the deadlock detector
@@ -1083,8 +1105,7 @@ pub mod deadlock {
     /// Note: Call before the resource is released
     #[inline]
     pub unsafe fn release_resource(_key: usize) {
-        #[cfg(feature = "deadlock_detection")]
-        deadlock_impl::release_resource(_key);
+        #[cfg(feature = "deadlock_detection")] deadlock_impl::release_resource(_key);
     }
 
     /// Returns all deadlocks detected *since* the last call.
@@ -1097,8 +1118,7 @@ pub mod deadlock {
 
     #[inline]
     pub(super) unsafe fn on_unpark(_td: &super::ThreadData) {
-        #[cfg(feature = "deadlock_detection")]
-        deadlock_impl::on_unpark(_td);
+        #[cfg(feature = "deadlock_detection")] deadlock_impl::on_unpark(_td);
     }
 }
 
@@ -1160,10 +1180,12 @@ mod deadlock_impl {
     pub(super) unsafe fn on_unpark(td: &ThreadData) {
         if td.deadlock_data.deadlocked.get() {
             let sender = (*td.deadlock_data.backtrace_sender.get()).take().unwrap();
-            sender.send(DeadlockedThread {
-                thread_id: td.deadlock_data.thread_id,
-                backtrace: Backtrace::new(),
-            }).unwrap();
+            sender
+                .send(DeadlockedThread {
+                    thread_id: td.deadlock_data.thread_id,
+                    backtrace: Backtrace::new(),
+                })
+                .unwrap();
             // make sure to close this sender
             drop(sender);
 
@@ -1206,17 +1228,15 @@ mod deadlock_impl {
     unsafe fn check_wait_graph_fast() -> bool {
         let table = get_hashtable();
         let thread_count = NUM_THREADS.load(Ordering::Relaxed);
-        let mut graph = DiGraphMap::<usize, ()>::with_capacity(
-            thread_count * 2,
-            thread_count * 2,
-        );
+        let mut graph = DiGraphMap::<usize, ()>::with_capacity(thread_count * 2, thread_count * 2);
 
         for b in &(*table).entries[..] {
             b.mutex.lock();
             let mut current = b.queue_head.get();
             while !current.is_null() {
-                if !(*current).parked_with_timeout.get()  &&
-                        !(*current).deadlock_data.deadlocked.get() {
+                if !(*current).parked_with_timeout.get() &&
+                    !(*current).deadlock_data.deadlocked.get()
+                {
                     // .resources are waiting for their owner
                     for &resource in &(*(*current).deadlock_data.resources.get()) {
                         graph.add_edge(resource, current as usize, ());
@@ -1267,23 +1287,18 @@ mod deadlock_impl {
         }
 
         let thread_count = NUM_THREADS.load(Ordering::Relaxed);
-        let mut graph = DiGraphMap::<WaitGraphNode, ()>::with_capacity(
-            thread_count * 2,
-            thread_count * 2,
-        );
+        let mut graph =
+            DiGraphMap::<WaitGraphNode, ()>::with_capacity(thread_count * 2, thread_count * 2);
 
         for b in &(*table).entries[..] {
             let mut current = b.queue_head.get();
             while !current.is_null() {
                 if !(*current).parked_with_timeout.get() &&
-                        !(*current).deadlock_data.deadlocked.get() {
+                    !(*current).deadlock_data.deadlocked.get()
+                {
                     // .resources are waiting for their owner
                     for &resource in &(*(*current).deadlock_data.resources.get()) {
-                        graph.add_edge(
-                            Resource(resource),
-                            Thread(current),
-                            (),
-                        );
+                        graph.add_edge(Resource(resource), Thread(current), ());
                     }
                     // owner waits for resource .key
                     graph.add_edge(
@@ -1327,12 +1342,19 @@ mod deadlock_impl {
 
     // normalize a cycle to start with the "smallest" node
     fn normalize_cycle<T: Ord + Copy + Clone>(input: &[T]) -> Vec<T> {
-        let min_pos = input.iter()
+        let min_pos = input
+            .iter()
             .enumerate()
             .min_by_key(|&(_, &t)| t)
             .map(|(p, _)| p)
             .unwrap_or(0);
-        input.iter().cycle().skip(min_pos).take(input.len()).cloned().collect()
+        input
+            .iter()
+            .cycle()
+            .skip(min_pos)
+            .take(input.len())
+            .cloned()
+            .collect()
     }
 
     // returns all thread cycles in the wait graph
@@ -1344,19 +1366,20 @@ mod deadlock_impl {
         let mut cycles = HashSet::new();
         let mut path = Vec::with_capacity(g.node_bound());
         // start from threads to get the correct threads cycle
-        let threads = g.nodes()
-            .filter(|n| if let &Thread(_) = n { true } else { false });
+        let threads = g.nodes().filter(
+            |n| if let &Thread(_) = n { true } else { false },
+        );
 
-        depth_first_search(g, threads, |e| {
-            match e {
-                DfsEvent::Discover(Thread(n), _) => path.push(n),
-                DfsEvent::Finish(Thread(_), _) => { path.pop(); },
-                DfsEvent::BackEdge(_, Thread(n))  => {
-                    let from = path.iter().rposition(|&i| i == n).unwrap();
-                    cycles.insert(normalize_cycle(&path[from..]));
-                }
-                _ => ()
+        depth_first_search(g, threads, |e| match e {
+            DfsEvent::Discover(Thread(n), _) => path.push(n),
+            DfsEvent::Finish(Thread(_), _) => {
+                path.pop();
             }
+            DfsEvent::BackEdge(_, Thread(n)) => {
+                let from = path.iter().rposition(|&i| i == n).unwrap();
+                cycles.insert(normalize_cycle(&path[from..]));
+            }
+            _ => (),
         });
 
         cycles.iter().cloned().collect()

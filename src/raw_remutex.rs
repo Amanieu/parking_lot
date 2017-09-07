@@ -50,10 +50,11 @@ impl RawReentrantMutex {
     fn lock_internal<F: FnOnce() -> bool>(&self, try_lock: F) -> bool {
         let id = get_thread_id();
         if self.owner.load(Ordering::Relaxed) == id {
-            self.lock_count.set(self.lock_count
-                .get()
-                .checked_add(1)
-                .expect("ReentrantMutex lock count overflow"));
+            self.lock_count.set(
+                self.lock_count.get().checked_add(1).expect(
+                    "ReentrantMutex lock count overflow",
+                ),
+            );
         } else {
             if !try_lock() {
                 return false;

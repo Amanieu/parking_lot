@@ -239,10 +239,11 @@ impl Condvar {
     /// This function will panic if another thread is waiting on the `Condvar`
     /// with a different `Mutex` object.
     #[inline]
-    pub fn wait_until<T: ?Sized>(&self,
-                                 mutex_guard: &mut MutexGuard<T>,
-                                 timeout: Instant)
-                                 -> WaitTimeoutResult {
+    pub fn wait_until<T: ?Sized>(
+        &self,
+        mutex_guard: &mut MutexGuard<T>,
+        timeout: Instant,
+    ) -> WaitTimeoutResult {
         self.wait_until_internal(guard_lock(mutex_guard), Some(timeout))
     }
 
@@ -286,12 +287,14 @@ impl Condvar {
                         self.state.store(ptr::null_mut(), Ordering::Relaxed);
                     }
                 };
-                result = parking_lot_core::park(addr,
-                                                validate,
-                                                before_sleep,
-                                                timed_out,
-                                                DEFAULT_PARK_TOKEN,
-                                                timeout);
+                result = parking_lot_core::park(
+                    addr,
+                    validate,
+                    before_sleep,
+                    timed_out,
+                    DEFAULT_PARK_TOKEN,
+                    timeout,
+                );
             }
 
             // Panic if we tried to use multiple mutexes with a Condvar. Note
@@ -331,10 +334,11 @@ impl Condvar {
     /// Like `wait`, the lock specified will be re-acquired when this function
     /// returns, regardless of whether the timeout elapsed or not.
     #[inline]
-    pub fn wait_for<T: ?Sized>(&self,
-                               guard: &mut MutexGuard<T>,
-                               timeout: Duration)
-                               -> WaitTimeoutResult {
+    pub fn wait_for<T: ?Sized>(
+        &self,
+        guard: &mut MutexGuard<T>,
+        timeout: Duration,
+    ) -> WaitTimeoutResult {
         self.wait_until(guard, Instant::now() + timeout)
     }
 }
@@ -445,9 +449,10 @@ mod tests {
             let _g = m2.lock();
             c2.notify_one();
         });
-        let timeout_res = c.wait_until(&mut g,
-                                       Instant::now() +
-                                       Duration::from_millis(u32::max_value() as u64));
+        let timeout_res = c.wait_until(
+            &mut g,
+            Instant::now() + Duration::from_millis(u32::max_value() as u64),
+        );
         assert!(!timeout_res.timed_out());
         drop(g);
     }

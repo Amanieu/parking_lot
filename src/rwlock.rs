@@ -718,10 +718,9 @@ mod tests {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
         let _: Result<(), _> = thread::spawn(move || {
-                let _lock = arc2.write();
-                panic!();
-            })
-            .join();
+            let _lock = arc2.write();
+            panic!();
+        }).join();
         let lock = arc.read();
         assert_eq!(*lock, 1);
     }
@@ -731,10 +730,9 @@ mod tests {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
         let _: Result<(), _> = thread::spawn(move || {
-                let _lock = arc2.write();
-                panic!();
-            })
-            .join();
+            let _lock = arc2.write();
+            panic!();
+        }).join();
         let lock = arc.write();
         assert_eq!(*lock, 1);
     }
@@ -744,10 +742,9 @@ mod tests {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
         let _: Result<(), _> = thread::spawn(move || {
-                let _lock = arc2.read();
-                panic!();
-            })
-            .join();
+            let _lock = arc2.read();
+            panic!();
+        }).join();
         let lock = arc.read();
         assert_eq!(*lock, 1);
     }
@@ -756,10 +753,9 @@ mod tests {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
         let _: Result<(), _> = thread::spawn(move || {
-                let _lock = arc2.read();
-                panic!()
-            })
-            .join();
+            let _lock = arc2.read();
+            panic!()
+        }).join();
         let lock = arc.write();
         assert_eq!(*lock, 1);
     }
@@ -807,19 +803,18 @@ mod tests {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
         let _ = thread::spawn(move || -> () {
-                struct Unwinder {
-                    i: Arc<RwLock<isize>>,
+            struct Unwinder {
+                i: Arc<RwLock<isize>>,
+            }
+            impl Drop for Unwinder {
+                fn drop(&mut self) {
+                    let mut lock = self.i.write();
+                    *lock += 1;
                 }
-                impl Drop for Unwinder {
-                    fn drop(&mut self) {
-                        let mut lock = self.i.write();
-                        *lock += 1;
-                    }
-                }
-                let _u = Unwinder { i: arc2 };
-                panic!();
-            })
-            .join();
+            }
+            let _u = Unwinder { i: arc2 };
+            panic!();
+        }).join();
         let lock = arc.read();
         assert_eq!(*lock, 2);
     }
@@ -845,8 +840,10 @@ mod tests {
         match write_result {
             None => (),
             Some(_) => {
-                assert!(false,
-                        "try_write should not succeed while read_guard is in scope")
+                assert!(
+                    false,
+                    "try_write should not succeed while read_guard is in scope"
+                )
             }
         }
 

@@ -477,18 +477,17 @@ mod tests {
         let arc = Arc::new(Mutex::new(1));
         let arc2 = arc.clone();
         let _ = thread::spawn(move || -> () {
-                struct Unwinder {
-                    i: Arc<Mutex<i32>>,
+            struct Unwinder {
+                i: Arc<Mutex<i32>>,
+            }
+            impl Drop for Unwinder {
+                fn drop(&mut self) {
+                    *self.i.lock() += 1;
                 }
-                impl Drop for Unwinder {
-                    fn drop(&mut self) {
-                        *self.i.lock() += 1;
-                    }
-                }
-                let _u = Unwinder { i: arc2 };
-                panic!();
-            })
-            .join();
+            }
+            let _u = Unwinder { i: arc2 };
+            panic!();
+        }).join();
         let lock = arc.lock();
         assert_eq!(*lock, 2);
     }
