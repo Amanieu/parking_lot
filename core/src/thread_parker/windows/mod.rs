@@ -36,8 +36,10 @@ impl Backend {
         } else if let Some(keyed_event) = keyed_event::KeyedEvent::create() {
             backend = Backend::KeyedEvent(keyed_event);
         } else {
-            panic!("parking_lot requires either NT Keyed Events (WinXP+) or \
-                    WaitOnAddress/WakeByAddress (Win8+)");
+            panic!(
+                "parking_lot requires either NT Keyed Events (WinXP+) or \
+                    WaitOnAddress/WakeByAddress (Win8+)"
+            );
         }
 
         // Try to create a new object

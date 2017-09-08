@@ -50,8 +50,10 @@ impl ThreadParker {
             let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, 0);
             debug_assert!(r == 0 || r == -1);
             if r == -1 {
-                debug_assert!(*libc::__errno_location() == libc::EINTR ||
-                              *libc::__errno_location() == libc::EAGAIN);
+                debug_assert!(
+                    *libc::__errno_location() == libc::EINTR ||
+                        *libc::__errno_location() == libc::EAGAIN
+                );
             }
         }
     }
@@ -78,9 +80,11 @@ impl ThreadParker {
             let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, &ts);
             debug_assert!(r == 0 || r == -1);
             if r == -1 {
-                debug_assert!(*libc::__errno_location() == libc::EINTR ||
-                              *libc::__errno_location() == libc::EAGAIN ||
-                              *libc::__errno_location() == libc::ETIMEDOUT);
+                debug_assert!(
+                    *libc::__errno_location() == libc::EINTR ||
+                        *libc::__errno_location() == libc::EAGAIN ||
+                        *libc::__errno_location() == libc::ETIMEDOUT
+                );
             }
         }
         true

@@ -18,3 +18,4 @@ path = "src/rwlock.rs"
 
 [features]
 nightly = ["parking_lot/nightly"]
+deadlock_detection = ["parking_lot/deadlock_detection"]

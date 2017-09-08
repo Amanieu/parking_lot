@@ -44,6 +44,13 @@
 extern crate smallvec;
 extern crate rand;
 
+#[cfg(feature = "deadlock_detection")]
+extern crate petgraph;
+#[cfg(feature = "deadlock_detection")]
+extern crate thread_id;
+#[cfg(feature = "deadlock_detection")]
+extern crate backtrace;
+
 #[cfg(unix)]
 extern crate libc;
 
@@ -77,3 +84,4 @@ pub use parking_lot::{ParkResult, UnparkResult, RequeueOp, UnparkToken, ParkToke
 pub use parking_lot::{DEFAULT_UNPARK_TOKEN, DEFAULT_PARK_TOKEN};
 pub use parking_lot::{park, unpark_one, unpark_all, unpark_requeue, unpark_filter};
 pub use spinwait::SpinWait;
+pub use parking_lot::deadlock;

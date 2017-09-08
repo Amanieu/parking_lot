@@ -58,9 +58,8 @@ fn cpu_relax(iterations: u32) {
         }
     }
 }
-#[cfg(all(feature = "nightly", not(any(target_arch = "x86",
-                                       target_arch = "x86_64",
-                                       target_arch = "aarch64"))))]
+#[cfg(all(feature = "nightly",
+            not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))))]
 #[inline]
 fn cpu_relax(iterations: u32) {
     for _ in 0..iterations {

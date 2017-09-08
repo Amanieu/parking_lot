@@ -33,6 +33,11 @@ mod remutex;
 mod rwlock;
 mod once;
 
+#[cfg(feature = "deadlock_detection")]
+pub mod deadlock;
+#[cfg(not(feature = "deadlock_detection"))]
+mod deadlock;
+
 pub use once::{Once, ONCE_INIT, OnceState};
 pub use mutex::{Mutex, MutexGuard};
 pub use remutex::{ReentrantMutex, ReentrantMutexGuard};

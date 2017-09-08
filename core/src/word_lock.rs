@@ -96,7 +96,8 @@ impl WordLock {
     pub unsafe fn lock(&self) {
         if self.state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
-            .is_ok() {
+            .is_ok()
+        {
             return;
         }
         self.lock_slow();
@@ -119,11 +120,12 @@ impl WordLock {
         loop {
             // Grab the lock if it isn't locked, even if there is a queue on it
             if state & LOCKED_BIT == 0 {
-                match self.state
-                    .compare_exchange_weak(state,
-                                           state | LOCKED_BIT,
-                                           Ordering::Acquire,
-                                           Ordering::Relaxed) {
+                match self.state.compare_exchange_weak(
+                    state,
+                    state | LOCKED_BIT,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                ) {
                     Ok(_) => return,
                     Err(x) => state = x,
                 }
@@ -152,11 +154,13 @@ impl WordLock {
                 thread_data.prev.set(ptr::null());
                 thread_data.next.set(queue_head);
             }
-            if let Err(x) = self.state
-                .compare_exchange_weak(state,
-                                       (state & !QUEUE_MASK) | thread_data as *const _ as usize,
-                                       Ordering::Release,
-                                       Ordering::Relaxed) {
+            if let Err(x) = self.state.compare_exchange_weak(
+                state,
+                (state & !QUEUE_MASK) | thread_data as *const _ as usize,
+                Ordering::Release,
+                Ordering::Relaxed,
+            )
+            {
                 state = x;
                 continue;
             }
@@ -183,10 +187,12 @@ impl WordLock {
             }
 
             // Try to grab the queue lock
-            match self.state.compare_exchange_weak(state,
-                                                   state | QUEUE_LOCKED_BIT,
-                                                   Ordering::Acquire,
-                                                   Ordering::Relaxed) {
+            match self.state.compare_exchange_weak(
+                state,
+                state | QUEUE_LOCKED_BIT,
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ) {
                 Ok(_) => break,
                 Err(x) => state = x,
             }
@@ -218,10 +224,12 @@ impl WordLock {
             // thread now. Instead we let the next unlocker take care of waking
             // up a thread.
             if state & LOCKED_BIT != 0 {
-                match self.state.compare_exchange_weak(state,
-                                                       state & !QUEUE_LOCKED_BIT,
-                                                       Ordering::Release,
-                                                       Ordering::Relaxed) {
+                match self.state.compare_exchange_weak(
+                    state,
+                    state & !QUEUE_LOCKED_BIT,
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                ) {
                     Ok(_) => return,
                     Err(x) => state = x,
                 }
@@ -235,10 +243,12 @@ impl WordLock {
             let new_tail = (*queue_tail).prev.get();
             if new_tail.is_null() {
                 loop {
-                    match self.state.compare_exchange_weak(state,
-                                                           state & LOCKED_BIT,
-                                                           Ordering::Release,
-                                                           Ordering::Relaxed) {
+                    match self.state.compare_exchange_weak(
+                        state,
+                        state & LOCKED_BIT,
+                        Ordering::Release,
+                        Ordering::Relaxed,
+                    ) {
                         Ok(_) => break,
                         Err(x) => state = x,
                     }
