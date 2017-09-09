@@ -1093,26 +1093,28 @@ pub mod deadlock {
     }
 
     /// Acquire a resource identified by key in the deadlock detector
-    /// Noop if deadlock_detection feature isn't enabled
+    /// Noop if deadlock_detection feature isn't enabled.
     /// Note: Call after the resource is acquired
     #[inline]
     pub unsafe fn acquire_resource(_key: usize) {
         #[cfg(feature = "deadlock_detection")] deadlock_impl::acquire_resource(_key);
     }
 
-    /// Release a resource identified by key in the deadlock detector
-    /// Noop if deadlock_detection feature isn't enabled
+    /// Release a resource identified by key in the deadlock detector.
+    /// Noop if deadlock_detection feature isn't enabled.
     /// Note: Call before the resource is released
+    /// # Panics
+    /// Panics if the resource was already released or wasn't acquired in this thread.
     #[inline]
     pub unsafe fn release_resource(_key: usize) {
         #[cfg(feature = "deadlock_detection")] deadlock_impl::release_resource(_key);
     }
 
     /// Returns all deadlocks detected *since* the last call.
-    /// Cycles consist of a vector of (system thread id, backtrace).
+    /// Each cycle consist of a vector of `DeadlockedThread`.
     #[cfg(feature = "deadlock_detection")]
     #[inline]
-    pub unsafe fn check_deadlock() -> Vec<Vec<deadlock_impl::DeadlockedThread>> {
+    pub fn check_deadlock() -> Vec<Vec<deadlock_impl::DeadlockedThread>> {
         deadlock_impl::check_deadlock()
     }
 
@@ -1152,7 +1154,7 @@ mod deadlock_impl {
         }
     }
 
-    pub(super) struct DeadlockData {
+    pub struct DeadlockData {
         // Currently owned resources (keys)
         resources: UnsafeCell<Vec<usize>>,
 
@@ -1167,7 +1169,7 @@ mod deadlock_impl {
     }
 
     impl DeadlockData {
-        pub(super) fn new() -> Self {
+        pub fn new() -> Self {
             DeadlockData {
                 resources: UnsafeCell::new(Vec::new()),
                 deadlocked: Cell::new(false),
@@ -1212,13 +1214,15 @@ mod deadlock_impl {
         };
     }
 
-    pub unsafe fn check_deadlock() -> Vec<Vec<DeadlockedThread>> {
-        // fast pass
-        if check_wait_graph_fast() {
-            // double check
-            check_wait_graph_slow()
-        } else {
-            Vec::new()
+    pub fn check_deadlock() -> Vec<Vec<DeadlockedThread>> {
+        unsafe {
+            // fast pass
+            if check_wait_graph_fast() {
+                // double check
+                check_wait_graph_slow()
+            } else {
+                Vec::new()
+            }
         }
     }
 

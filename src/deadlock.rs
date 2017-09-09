@@ -3,8 +3,7 @@
 //! This feature is optional and can be enabled via the `deadlock_detection` feature flag.
 //!
 //! Enabling this feature will *remove* the `Send` marker from `Mutex` and `RwLock` Guards
-//! as locking/unlocking in different threads may trigger undefined behavior in the deadlock
-//! detector.
+//! as locking/unlocking in different threads is incompatible with the deadlock detector.
 //!
 //! # Example
 //!
@@ -19,7 +18,7 @@
 //! thread::spawn(move || {
 //!     loop {
 //!         thread::sleep(Duration::from_secs(10));
-//!         let deadlocks = unsafe { deadlock::check_deadlock() };
+//!         let deadlocks = deadlock::check_deadlock();
 //!         if deadlocks.is_empty() {
 //!             continue;
 //!         }
@@ -62,10 +61,8 @@ mod tests {
     use {Mutex, RwLock, ReentrantMutex};
 
     fn check_deadlock() -> bool {
-        unsafe {
-            use parking_lot_core::deadlock::check_deadlock;
-            !check_deadlock().is_empty()
-        }
+        use parking_lot_core::deadlock::check_deadlock;
+        !check_deadlock().is_empty()
     }
 
     #[test]
