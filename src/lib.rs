@@ -11,6 +11,12 @@
 
 #![warn(missing_docs)]
 #![cfg_attr(feature = "nightly", feature(const_fn))]
+#![cfg_attr(feature = "nightly", feature(const_atomic_u8_new))]
+#![cfg_attr(feature = "nightly", feature(const_atomic_usize_new))]
+#![cfg_attr(feature = "nightly", feature(const_cell_new))]
+#![cfg_attr(feature = "nightly", feature(const_ptr_null_mut))]
+#![cfg_attr(feature = "nightly", feature(const_atomic_ptr_new))]
+#![cfg_attr(feature = "nightly", feature(const_unsafe_cell_new))]
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
 #![cfg_attr(feature = "nightly", feature(asm))]
 
