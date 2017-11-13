@@ -108,16 +108,18 @@ unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
 /// dropped.
 #[must_use]
 pub struct RwLockReadGuard<'a, T: ?Sized + 'a> {
-    rwlock: &'a RwLock<T>,
-    marker: PhantomData<(&'a T, DeadlockDetectionMarker)>,
+    raw: &'a RawRwLock,
+    borrow: &'a T,
+    marker: PhantomData<DeadlockDetectionMarker>,
 }
 
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
 #[must_use]
 pub struct RwLockWriteGuard<'a, T: ?Sized + 'a> {
-    rwlock: &'a RwLock<T>,
-    marker: PhantomData<(&'a mut T, DeadlockDetectionMarker)>,
+    raw: &'a RawRwLock,
+    borrow: &'a mut T,
+    marker: PhantomData<DeadlockDetectionMarker>,
 }
 
 impl<T> RwLock<T> {
@@ -165,6 +167,22 @@ impl<T> RwLock<T> {
 }
 
 impl<T: ?Sized> RwLock<T> {
+    fn read_guard(&self) -> RwLockReadGuard<T> {
+        RwLockReadGuard {
+            raw: &self.raw,
+            borrow: unsafe { &*self.data.get() },
+            marker: PhantomData,
+        }
+    }
+
+    fn write_guard(&self) -> RwLockWriteGuard<T> {
+        RwLockWriteGuard {
+            raw: &self.raw,
+            borrow: unsafe { &mut *self.data.get() },
+            marker: PhantomData,
+        }
+    }
+
     /// Locks this rwlock with shared read access, blocking the current thread
     /// until it can be acquired.
     ///
@@ -180,10 +198,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn read(&self) -> RwLockReadGuard<T> {
         self.raw.lock_shared(false);
-        RwLockReadGuard {
-            rwlock: self,
-            marker: PhantomData,
-        }
+        self.read_guard()
     }
 
     /// Attempts to acquire this rwlock with shared read access.
@@ -196,10 +211,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_read(&self) -> Option<RwLockReadGuard<T>> {
         if self.raw.try_lock_shared(false) {
-            Some(RwLockReadGuard {
-                rwlock: self,
-                marker: PhantomData,
-            })
+            Some(self.read_guard())
         } else {
             None
         }
@@ -214,10 +226,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_read_for(&self, timeout: Duration) -> Option<RwLockReadGuard<T>> {
         if self.raw.try_lock_shared_for(false, timeout) {
-            Some(RwLockReadGuard {
-                rwlock: self,
-                marker: PhantomData,
-            })
+            Some(self.read_guard())
         } else {
             None
         }
@@ -232,10 +241,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_read_until(&self, timeout: Instant) -> Option<RwLockReadGuard<T>> {
         if self.raw.try_lock_shared_until(false, timeout) {
-            Some(RwLockReadGuard {
-                rwlock: self,
-                marker: PhantomData,
-            })
+            Some(self.read_guard())
         } else {
             None
         }
@@ -259,10 +265,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn read_recursive(&self) -> RwLockReadGuard<T> {
         self.raw.lock_shared(true);
-        RwLockReadGuard {
-            rwlock: self,
-            marker: PhantomData,
-        }
+        self.read_guard()
     }
 
     /// Attempts to acquire this rwlock with shared read access.
@@ -278,10 +281,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_read_recursive(&self) -> Option<RwLockReadGuard<T>> {
         if self.raw.try_lock_shared(true) {
-            Some(RwLockReadGuard {
-                rwlock: self,
-                marker: PhantomData,
-            })
+            Some(self.read_guard())
         } else {
             None
         }
@@ -300,10 +300,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_read_recursive_for(&self, timeout: Duration) -> Option<RwLockReadGuard<T>> {
         if self.raw.try_lock_shared_for(true, timeout) {
-            Some(RwLockReadGuard {
-                rwlock: self,
-                marker: PhantomData,
-            })
+            Some(self.read_guard())
         } else {
             None
         }
@@ -318,10 +315,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_read_recursive_until(&self, timeout: Instant) -> Option<RwLockReadGuard<T>> {
         if self.raw.try_lock_shared_until(true, timeout) {
-            Some(RwLockReadGuard {
-                rwlock: self,
-                marker: PhantomData,
-            })
+            Some(self.read_guard())
         } else {
             None
         }
@@ -338,10 +332,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn write(&self) -> RwLockWriteGuard<T> {
         self.raw.lock_exclusive();
-        RwLockWriteGuard {
-            rwlock: self,
-            marker: PhantomData,
-        }
+        self.write_guard()
     }
 
     /// Attempts to lock this rwlock with exclusive write access.
@@ -354,10 +345,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_write(&self) -> Option<RwLockWriteGuard<T>> {
         if self.raw.try_lock_exclusive() {
-            Some(RwLockWriteGuard {
-                rwlock: self,
-                marker: PhantomData,
-            })
+            Some(self.write_guard())
         } else {
             None
         }
@@ -372,10 +360,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_write_for(&self, timeout: Duration) -> Option<RwLockWriteGuard<T>> {
         if self.raw.try_lock_exclusive_for(timeout) {
-            Some(RwLockWriteGuard {
-                rwlock: self,
-                marker: PhantomData,
-            })
+            Some(self.write_guard())
         } else {
             None
         }
@@ -390,10 +375,7 @@ impl<T: ?Sized> RwLock<T> {
     #[inline]
     pub fn try_write_until(&self, timeout: Instant) -> Option<RwLockWriteGuard<T>> {
         if self.raw.try_lock_exclusive_until(timeout) {
-            Some(RwLockWriteGuard {
-                rwlock: self,
-                marker: PhantomData,
-            })
+            Some(self.write_guard())
         } else {
             None
         }
@@ -579,8 +561,27 @@ impl<'a, T: ?Sized + 'a> RwLockReadGuard<'a, T> {
     /// using this method instead of dropping the `RwLockReadGuard` normally.
     #[inline]
     pub fn unlock_fair(self) {
-        self.rwlock.raw.unlock_shared(true);
+        self.raw.unlock_shared(true);
         mem::forget(self);
+    }
+
+    /// Make a new `RwLockReadGuard` for a component of the locked data.
+    ///
+    /// This operation cannot fail as the `RwLockReadGuard` passed
+    /// in already locked the data.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `RwLockReadGuard::map(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn map<U: ?Sized, F>(orig: Self, f: F) -> RwLockReadGuard<'a, U>
+        where F: FnOnce(&T) -> &U
+    {
+        RwLockReadGuard {
+            borrow: f(orig.borrow),
+            raw: orig.raw,
+            marker: orig.marker,
+        }
     }
 }
 
@@ -588,14 +589,14 @@ impl<'a, T: ?Sized + 'a> Deref for RwLockReadGuard<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.rwlock.data.get() }
+        self.borrow
     }
 }
 
 impl<'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.raw.unlock_shared(false);
+        self.raw.unlock_shared(false);
     }
 }
 
@@ -610,12 +611,35 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
     /// then other readers may not be able to acquire the lock even if it was
     /// downgraded.
     pub fn downgrade(self) -> RwLockReadGuard<'a, T> {
-        self.rwlock.raw.downgrade();
-        let rwlock = self.rwlock;
+        self.raw.downgrade();
+        let raw = self.raw;
+        // Reborrow the value to avoid moving self.borrow,
+        // which isn't allow for types with destructors
+        let borrow = unsafe { &mut *(self.borrow as *mut T) };
         mem::forget(self);
         RwLockReadGuard {
-            rwlock: rwlock,
+            raw,
+            borrow,
             marker: PhantomData,
+        }
+    }
+
+    /// Make a new `RwLockWriteGuard` for a component of the locked data.
+    ///
+    /// This operation cannot fail as the `RwLockWriteGuard` passed
+    /// in already locked the data.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `RwLockWriteGuard::map(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn map<U: ?Sized, F>(orig: Self, f: F) -> RwLockWriteGuard<'a, U>
+        where F: FnOnce(&mut T) -> &mut U
+    {
+        RwLockWriteGuard {
+            borrow: f(orig.borrow),
+            raw: orig.raw,
+            marker: orig.marker,
         }
     }
 
@@ -633,7 +657,7 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
     /// using this method instead of dropping the `RwLockWriteGuard` normally.
     #[inline]
     pub fn unlock_fair(self) {
-        self.rwlock.raw.unlock_exclusive(true);
+        self.raw.unlock_exclusive(true);
         mem::forget(self);
     }
 }
@@ -642,21 +666,21 @@ impl<'a, T: ?Sized + 'a> Deref for RwLockWriteGuard<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.rwlock.data.get() }
+        self.borrow
     }
 }
 
 impl<'a, T: ?Sized + 'a> DerefMut for RwLockWriteGuard<'a, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.rwlock.data.get() }
+        self.borrow
     }
 }
 
 impl<'a, T: ?Sized + 'a> Drop for RwLockWriteGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.raw.unlock_exclusive(false);
+        self.raw.unlock_exclusive(false);
     }
 }
 
