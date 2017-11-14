@@ -144,6 +144,7 @@ impl<T> Mutex<T> {
 }
 
 impl<T: ?Sized> Mutex<T> {
+    #[inline]
     fn guard(&self) -> MutexGuard<T> {
         MutexGuard {
             raw: &self.raw,
@@ -314,10 +315,13 @@ impl<'a, T: ?Sized + 'a> MutexGuard<'a, T> {
     pub fn map<U: ?Sized, F>(orig: Self, f: F) -> MutexGuard<'a, U>
         where F: FnOnce(&mut T) -> &mut U
     {
+        let raw = orig.raw;
+        let borrow = f(unsafe { &mut *(orig.borrow as *mut T) });
+        mem::forget(orig);
         MutexGuard {
-            borrow: f(orig.borrow),
-            raw: orig.raw,
-            marker: orig.marker,
+            borrow,
+            raw,
+            marker: PhantomData,
         }
     }
 }

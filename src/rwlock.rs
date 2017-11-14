@@ -167,6 +167,7 @@ impl<T> RwLock<T> {
 }
 
 impl<T: ?Sized> RwLock<T> {
+    #[inline]
     fn read_guard(&self) -> RwLockReadGuard<T> {
         RwLockReadGuard {
             raw: &self.raw,
@@ -175,6 +176,7 @@ impl<T: ?Sized> RwLock<T> {
         }
     }
 
+    #[inline]
     fn write_guard(&self) -> RwLockWriteGuard<T> {
         RwLockWriteGuard {
             raw: &self.raw,
@@ -577,10 +579,13 @@ impl<'a, T: ?Sized + 'a> RwLockReadGuard<'a, T> {
     pub fn map<U: ?Sized, F>(orig: Self, f: F) -> RwLockReadGuard<'a, U>
         where F: FnOnce(&T) -> &U
     {
+        let raw = orig.raw;
+        let borrow = f(unsafe { &*(orig.borrow as *const T) });
+        mem::forget(orig);
         RwLockReadGuard {
-            borrow: f(orig.borrow),
-            raw: orig.raw,
-            marker: orig.marker,
+            borrow,
+            raw,
+            marker: PhantomData,
         }
     }
 }
@@ -636,10 +641,13 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
     pub fn map<U: ?Sized, F>(orig: Self, f: F) -> RwLockWriteGuard<'a, U>
         where F: FnOnce(&mut T) -> &mut U
     {
+        let raw = orig.raw;
+        let borrow = f(unsafe { &mut *(orig.borrow as *mut T) });
+        mem::forget(orig);
         RwLockWriteGuard {
-            borrow: f(orig.borrow),
-            raw: orig.raw,
-            marker: orig.marker,
+            borrow,
+            raw,
+            marker: PhantomData,
         }
     }
 
