@@ -110,8 +110,9 @@ unsafe impl<T: Send> Sync for Mutex<T> {}
 /// `Deref` and `DerefMut` implementations.
 #[must_use]
 pub struct MutexGuard<'a, T: ?Sized + 'a> {
-    mutex: &'a Mutex<T>,
-    marker: PhantomData<(&'a mut T, DeadlockDetectionMarker)>,
+    raw: &'a RawMutex,
+    borrow: &'a mut T,
+    marker: PhantomData<DeadlockDetectionMarker>,
 }
 
 impl<T> Mutex<T> {
@@ -143,6 +144,15 @@ impl<T> Mutex<T> {
 }
 
 impl<T: ?Sized> Mutex<T> {
+    #[inline]
+    fn guard(&self) -> MutexGuard<T> {
+        MutexGuard {
+            raw: &self.raw,
+            borrow: unsafe { &mut *self.data.get() },
+            marker: PhantomData,
+        }
+    }
+
     /// Acquires a mutex, blocking the current thread until it is able to do so.
     ///
     /// This function will block the local thread until it is available to acquire
@@ -155,10 +165,7 @@ impl<T: ?Sized> Mutex<T> {
     #[inline]
     pub fn lock(&self) -> MutexGuard<T> {
         self.raw.lock();
-        MutexGuard {
-            mutex: self,
-            marker: PhantomData,
-        }
+        self.guard()
     }
 
     /// Attempts to acquire this lock.
@@ -171,10 +178,7 @@ impl<T: ?Sized> Mutex<T> {
     #[inline]
     pub fn try_lock(&self) -> Option<MutexGuard<T>> {
         if self.raw.try_lock() {
-            Some(MutexGuard {
-                mutex: self,
-                marker: PhantomData,
-            })
+            Some(self.guard())
         } else {
             None
         }
@@ -188,10 +192,7 @@ impl<T: ?Sized> Mutex<T> {
     #[inline]
     pub fn try_lock_for(&self, timeout: Duration) -> Option<MutexGuard<T>> {
         if self.raw.try_lock_for(timeout) {
-            Some(MutexGuard {
-                mutex: self,
-                marker: PhantomData,
-            })
+            Some(self.guard())
         } else {
             None
         }
@@ -205,10 +206,7 @@ impl<T: ?Sized> Mutex<T> {
     #[inline]
     pub fn try_lock_until(&self, timeout: Instant) -> Option<MutexGuard<T>> {
         if self.raw.try_lock_until(timeout) {
-            Some(MutexGuard {
-                mutex: self,
-                marker: PhantomData,
-            })
+            Some(self.guard())
         } else {
             None
         }
@@ -301,8 +299,30 @@ impl<'a, T: ?Sized + 'a> MutexGuard<'a, T> {
     /// using this method instead of dropping the `MutexGuard` normally.
     #[inline]
     pub fn unlock_fair(self) {
-        self.mutex.raw.unlock(true);
+        self.raw.unlock(true);
         mem::forget(self);
+    }
+
+    /// Make a new `MutexGuard` for a component of the locked data.
+    ///
+    /// This operation cannot fail as the `MutexGuard` passed
+    /// in already locked the mutex.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `MutexGuard::map(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn map<U: ?Sized, F>(orig: Self, f: F) -> MutexGuard<'a, U>
+        where F: FnOnce(&mut T) -> &mut U
+    {
+        let raw = orig.raw;
+        let borrow = f(unsafe { &mut *(orig.borrow as *mut T) });
+        mem::forget(orig);
+        MutexGuard {
+            borrow,
+            raw,
+            marker: PhantomData,
+        }
     }
 }
 
@@ -310,21 +330,21 @@ impl<'a, T: ?Sized + 'a> Deref for MutexGuard<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.mutex.data.get() }
+        self.borrow
     }
 }
 
 impl<'a, T: ?Sized + 'a> DerefMut for MutexGuard<'a, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.mutex.data.get() }
+        self.borrow
     }
 }
 
 impl<'a, T: ?Sized + 'a> Drop for MutexGuard<'a, T> {
     #[inline]
     fn drop(&mut self) {
-        self.mutex.raw.unlock(false);
+        self.raw.unlock(false);
     }
 }
 
@@ -334,7 +354,7 @@ unsafe impl<'a, T: ?Sized> StableAddress for MutexGuard<'a, T> {}
 // Helper function used by Condvar, not publicly exported
 #[inline]
 pub(crate) fn guard_lock<'a, T: ?Sized>(guard: &MutexGuard<'a, T>) -> &'a RawMutex {
-    &guard.mutex.raw
+    &guard.raw
 }
 
 #[cfg(test)]
