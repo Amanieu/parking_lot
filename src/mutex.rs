@@ -12,7 +12,6 @@ use std::fmt;
 use std::mem;
 use std::marker::PhantomData;
 use raw_mutex::RawMutex;
-use deadlock::DeadlockDetectionMarker;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -51,7 +50,6 @@ use owning_ref::StableAddress;
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 byte of space, whereas the standard library boxes the
 ///   `Mutex` due to platform limitations.
-/// - A `MutexGuard` can be sent to another thread and unlocked there.
 /// - Can be statically constructed (requires the `const_fn` nightly feature).
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
@@ -111,9 +109,11 @@ unsafe impl<T: Send> Sync for Mutex<T> {}
 #[must_use]
 pub struct MutexGuard<'a, T: ?Sized + 'a> {
     raw: &'a RawMutex,
-    borrow: &'a mut T,
-    marker: PhantomData<DeadlockDetectionMarker>,
+    data: *mut T,
+    marker: PhantomData<&'a mut T>,
 }
+
+unsafe impl<'a, T: ?Sized + Sync + 'a> Sync for MutexGuard<'a, T> {}
 
 impl<T> Mutex<T> {
     /// Creates a new mutex in an unlocked state ready for use.
@@ -148,7 +148,7 @@ impl<T: ?Sized> Mutex<T> {
     fn guard(&self) -> MutexGuard<T> {
         MutexGuard {
             raw: &self.raw,
-            borrow: unsafe { &mut *self.data.get() },
+            data: self.data.get(),
             marker: PhantomData,
         }
     }
@@ -316,11 +316,11 @@ impl<'a, T: ?Sized + 'a> MutexGuard<'a, T> {
         where F: FnOnce(&mut T) -> &mut U
     {
         let raw = orig.raw;
-        let borrow = f(unsafe { &mut *(orig.borrow as *mut T) });
+        let data = f(unsafe { &mut *orig.data });
         mem::forget(orig);
         MutexGuard {
-            borrow,
             raw,
+            data,
             marker: PhantomData,
         }
     }
@@ -330,14 +330,14 @@ impl<'a, T: ?Sized + 'a> Deref for MutexGuard<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        self.borrow
+        unsafe { &*self.data }
     }
 }
 
 impl<'a, T: ?Sized + 'a> DerefMut for MutexGuard<'a, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        self.borrow
+        unsafe { &mut *self.data }
     }
 }
 
@@ -522,15 +522,6 @@ mod tests {
         }
         let comp: &[i32] = &[4, 2, 5];
         assert_eq!(&*mutex.lock(), comp);
-    }
-
-    #[cfg(not(feature = "deadlock_detection"))]
-    #[test]
-    fn test_mutexguard_send() {
-        fn send<T: Send>(_: T) {}
-
-        let mutex = Mutex::new(());
-        send(mutex.lock());
     }
 
     #[test]

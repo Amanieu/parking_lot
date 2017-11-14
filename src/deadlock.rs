@@ -2,9 +2,6 @@
 //!
 //! This feature is optional and can be enabled via the `deadlock_detection` feature flag.
 //!
-//! Enabling this feature will *remove* the `Send` marker from `Mutex` and `RwLock` Guards
-//! as locking/unlocking in different threads is incompatible with the deadlock detector.
-//!
 //! # Example
 //!
 //! ```
@@ -40,17 +37,6 @@
 #[cfg(feature = "deadlock_detection")]
 pub use parking_lot_core::deadlock::check_deadlock;
 pub(crate) use parking_lot_core::deadlock::{acquire_resource, release_resource};
-
-#[cfg(not(feature = "deadlock_detection"))]
-pub(crate) struct DeadlockDetectionMarker;
-
-// when deadlock detector is enabled we want the marker to be !Send + Sync
-#[cfg(feature = "deadlock_detection")]
-use std::marker::PhantomData;
-#[cfg(feature = "deadlock_detection")]
-pub(crate) struct DeadlockDetectionMarker(PhantomData<*mut ()>); // !Send
-#[cfg(feature = "deadlock_detection")]
-unsafe impl Sync for DeadlockDetectionMarker {} // Sync
 
 #[cfg(test)]
 #[cfg(feature = "deadlock_detection")]

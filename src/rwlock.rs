@@ -12,7 +12,6 @@ use std::fmt;
 use std::mem;
 use std::marker::PhantomData;
 use raw_rwlock::RawRwLock;
-use deadlock::DeadlockDetectionMarker;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -64,7 +63,6 @@ use owning_ref::StableAddress;
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 word of space, whereas the standard library boxes the
 ///   `RwLock` due to platform limitations.
-/// - A lock guard can be sent to another thread and unlocked there.
 /// - Can be statically constructed (requires the `const_fn` nightly feature).
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
@@ -109,18 +107,22 @@ unsafe impl<T: ?Sized + Send + Sync> Sync for RwLock<T> {}
 #[must_use]
 pub struct RwLockReadGuard<'a, T: ?Sized + 'a> {
     raw: &'a RawRwLock,
-    borrow: &'a T,
-    marker: PhantomData<DeadlockDetectionMarker>,
+    data: *const T,
+    marker: PhantomData<&'a T>,
 }
+
+unsafe impl<'a, T: ?Sized + Sync + 'a> Sync for RwLockReadGuard<'a, T> {}
 
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
 #[must_use]
 pub struct RwLockWriteGuard<'a, T: ?Sized + 'a> {
     raw: &'a RawRwLock,
-    borrow: &'a mut T,
-    marker: PhantomData<DeadlockDetectionMarker>,
+    data: *mut T,
+    marker: PhantomData<&'a mut T>,
 }
+
+unsafe impl<'a, T: ?Sized + Sync + 'a> Sync for RwLockWriteGuard<'a, T> {}
 
 impl<T> RwLock<T> {
     /// Creates a new instance of an `RwLock<T>` which is unlocked.
@@ -171,7 +173,7 @@ impl<T: ?Sized> RwLock<T> {
     fn read_guard(&self) -> RwLockReadGuard<T> {
         RwLockReadGuard {
             raw: &self.raw,
-            borrow: unsafe { &*self.data.get() },
+            data: self.data.get(),
             marker: PhantomData,
         }
     }
@@ -180,7 +182,7 @@ impl<T: ?Sized> RwLock<T> {
     fn write_guard(&self) -> RwLockWriteGuard<T> {
         RwLockWriteGuard {
             raw: &self.raw,
-            borrow: unsafe { &mut *self.data.get() },
+            data: self.data.get(),
             marker: PhantomData,
         }
     }
@@ -580,11 +582,11 @@ impl<'a, T: ?Sized + 'a> RwLockReadGuard<'a, T> {
         where F: FnOnce(&T) -> &U
     {
         let raw = orig.raw;
-        let borrow = f(unsafe { &*(orig.borrow as *const T) });
+        let data = f(unsafe { &*orig.data });
         mem::forget(orig);
         RwLockReadGuard {
-            borrow,
             raw,
+            data,
             marker: PhantomData,
         }
     }
@@ -594,7 +596,7 @@ impl<'a, T: ?Sized + 'a> Deref for RwLockReadGuard<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        self.borrow
+        unsafe { &*self.data }
     }
 }
 
@@ -620,11 +622,11 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
         let raw = self.raw;
         // Reborrow the value to avoid moving self.borrow,
         // which isn't allow for types with destructors
-        let borrow = unsafe { &mut *(self.borrow as *mut T) };
+        let data = unsafe { &*self.data };
         mem::forget(self);
         RwLockReadGuard {
             raw,
-            borrow,
+            data,
             marker: PhantomData,
         }
     }
@@ -642,11 +644,11 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
         where F: FnOnce(&mut T) -> &mut U
     {
         let raw = orig.raw;
-        let borrow = f(unsafe { &mut *(orig.borrow as *mut T) });
+        let data = f(unsafe { &mut *orig.data });
         mem::forget(orig);
         RwLockWriteGuard {
-            borrow,
             raw,
+            data,
             marker: PhantomData,
         }
     }
@@ -674,14 +676,14 @@ impl<'a, T: ?Sized + 'a> Deref for RwLockWriteGuard<'a, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        self.borrow
+        unsafe { &*self.data }
     }
 }
 
 impl<'a, T: ?Sized + 'a> DerefMut for RwLockWriteGuard<'a, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        self.borrow
+        unsafe { &mut *self.data }
     }
 }
 
@@ -911,16 +913,6 @@ mod tests {
         let mut m = RwLock::new(NonCopy(10));
         *m.get_mut() = NonCopy(20);
         assert_eq!(m.into_inner(), NonCopy(20));
-    }
-
-    #[cfg(not(feature = "deadlock_detection"))]
-    #[test]
-    fn test_rwlockguard_send() {
-        fn send<T: Send>(_: T) {}
-
-        let rwlock = RwLock::new(());
-        send(rwlock.read());
-        send(rwlock.write());
     }
 
     #[test]
