@@ -14,6 +14,7 @@ use stable::{AtomicU8, ATOMIC_U8_INIT, Ordering, fence};
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use std::mem;
+use std::fmt;
 use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 use util::UncheckedOptionExt;
 
@@ -337,6 +338,12 @@ impl Default for Once {
     #[inline]
     fn default() -> Once {
         Once::new()
+    }
+}
+
+impl fmt::Debug for Once {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Once {{ state: {:?} }}", &self.state())
     }
 }
 
