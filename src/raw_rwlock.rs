@@ -21,11 +21,13 @@ use deadlock;
 const TOKEN_SHARED: ParkToken = ParkToken(0);
 const TOKEN_EXCLUSIVE: ParkToken = ParkToken(1);
 
-const PARKED_BIT: usize = 1;
-const LOCKED_BIT: usize = 2;
-const SHARED_COUNT_MASK: usize = !3;
-const SHARED_COUNT_INC: usize = 4;
-const SHARED_COUNT_SHIFT: usize = 2;
+const PARKED_BIT: usize = 0b01;
+// A shared guard acquires a single guard resource
+const SHARED_GUARD: usize = 0b10;
+const GUARD_COUNT_MASK: usize = !PARKED_BIT;
+const GUARD_COUNT_SHIFT: usize = 1;
+// An exclusive lock acquires all of guard resource (i.e. it is exclusive)
+const EXCLUSIVE_GUARD: usize = GUARD_COUNT_MASK;
 
 pub struct RawRwLock {
     state: AtomicUsize,
@@ -46,7 +48,7 @@ impl RawRwLock {
     #[inline]
     pub fn lock_exclusive(&self) {
         if self.state
-            .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange_weak(0, EXCLUSIVE_GUARD, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
             self.lock_exclusive_slow(None);
@@ -57,7 +59,7 @@ impl RawRwLock {
     #[inline]
     pub fn try_lock_exclusive_until(&self, timeout: Instant) -> bool {
         let result = if self.state
-            .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange_weak(0, EXCLUSIVE_GUARD, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
             true
@@ -73,7 +75,7 @@ impl RawRwLock {
     #[inline]
     pub fn try_lock_exclusive_for(&self, timeout: Duration) -> bool {
         let result = if self.state
-            .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange_weak(0, EXCLUSIVE_GUARD, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
             true
@@ -89,7 +91,7 @@ impl RawRwLock {
     #[inline]
     pub fn try_lock_exclusive(&self) -> bool {
         if self.state
-            .compare_exchange(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange(0, EXCLUSIVE_GUARD, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -103,7 +105,7 @@ impl RawRwLock {
     pub fn unlock_exclusive(&self, force_fair: bool) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
         if self.state
-            .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .compare_exchange_weak(EXCLUSIVE_GUARD, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
             return;
@@ -113,8 +115,8 @@ impl RawRwLock {
 
     #[inline]
     pub fn downgrade(&self) {
-        let state = self.state.fetch_add(
-            SHARED_COUNT_INC - LOCKED_BIT,
+        let state = self.state.fetch_sub(
+            EXCLUSIVE_GUARD - SHARED_GUARD,
             Ordering::Release,
         );
 
@@ -128,29 +130,26 @@ impl RawRwLock {
     fn try_lock_shared_fast(&self, recursive: bool) -> bool {
         let state = self.state.load(Ordering::Relaxed);
 
-        if !recursive {
-            // Even if there are no exclusive locks, we can't allow grabbing a
-            // shared lock while there are parked threads since that could lead to
-            // writer starvation.
-            if state & (LOCKED_BIT | PARKED_BIT) != 0 {
-                return false;
-            }
-        } else {
-            // Allow acquiring a lock even if a thread is parked to avoid
-            // deadlocks for recursive read locks.
-            if state & LOCKED_BIT != 0 {
-                return false;
-            }
+        // We can't allow grabbing a
+        // shared lock while there are parked threads since that could lead to
+        // writer starvation.
+        if !recursive && state & PARKED_BIT != 0 {
+            return false;
         }
 
         // Use hardware lock elision to avoid cache conflicts when multiple
         // readers try to acquire the lock. We only do this if the lock is
         // completely empty since elision handles conflicts poorly.
         if have_elision() && state == 0 {
-            self.state.elision_acquire(0, SHARED_COUNT_INC).is_ok()
-        } else if let Some(new_state) = state.checked_add(SHARED_COUNT_INC) {
+            self.state.elision_acquire(0, SHARED_GUARD).is_ok()
+        } else if let Some(new_state) = state.checked_add(SHARED_GUARD) {
             self.state
-                .compare_exchange_weak(state, new_state, Ordering::Acquire, Ordering::Relaxed)
+                .compare_exchange_weak(
+                    state,
+                    new_state,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
                 .is_ok()
         } else {
             false
@@ -208,10 +207,10 @@ impl RawRwLock {
     pub fn unlock_shared(&self, force_fair: bool) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
         let state = self.state.load(Ordering::Relaxed);
-        if state & PARKED_BIT == 0 || state & SHARED_COUNT_MASK != SHARED_COUNT_INC {
+        if state & PARKED_BIT == 0 || state & GUARD_COUNT_MASK != SHARED_GUARD {
             if have_elision() {
                 if self.state
-                    .elision_release(state, state - SHARED_COUNT_INC)
+                    .elision_release(state, state - SHARED_GUARD)
                     .is_ok()
                 {
                     return;
@@ -220,7 +219,7 @@ impl RawRwLock {
                 if self.state
                     .compare_exchange_weak(
                         state,
-                        state - SHARED_COUNT_INC,
+                        state - SHARED_GUARD,
                         Ordering::Release,
                         Ordering::Relaxed,
                     )
@@ -241,10 +240,10 @@ impl RawRwLock {
         loop {
             // Grab the lock if it isn't locked, even if there are other
             // threads parked.
-            if state & (LOCKED_BIT | SHARED_COUNT_MASK) == 0 {
+            if let Some(new_state) = state.checked_add(EXCLUSIVE_GUARD) {
                 match self.state.compare_exchange_weak(
                     state,
-                    state | LOCKED_BIT,
+                    new_state,
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 ) {
@@ -256,10 +255,7 @@ impl RawRwLock {
 
             // If there are no parked threads and only one reader or writer, try
             // spinning a few times.
-            if state & PARKED_BIT == 0 &&
-                (state & LOCKED_BIT != 0 || state & SHARED_COUNT_MASK == SHARED_COUNT_INC) &&
-                spinwait.spin()
-            {
+            if (state == EXCLUSIVE_GUARD || state == SHARED_GUARD) && spinwait.spin() {
                 state = self.state.load(Ordering::Relaxed);
                 continue;
             }
@@ -272,7 +268,7 @@ impl RawRwLock {
                     loop {
                         // If the rwlock is free, abort the park and try to grab
                         // it immediately.
-                        if state & (LOCKED_BIT | SHARED_COUNT_MASK) == 0 {
+                        if state & GUARD_COUNT_MASK == 0 {
                             return false;
                         }
 
@@ -334,7 +330,7 @@ impl RawRwLock {
     fn unlock_exclusive_slow(&self, force_fair: bool) {
         // Unlock directly if there are no parked threads
         if self.state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .compare_exchange(EXCLUSIVE_GUARD, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
             return;
@@ -365,19 +361,19 @@ impl RawRwLock {
                         // If we unparked an exclusive thread, just clear the
                         // parked bit if there are no more parked threads.
                         if !result.have_more_threads {
-                            self.state.store(LOCKED_BIT, Ordering::Relaxed);
+                            self.state.store(EXCLUSIVE_GUARD, Ordering::Relaxed);
                         }
                     } else {
                         // If we unparked shared threads then we need to set
                         // the shared count accordingly.
                         if result.have_more_threads {
                             self.state.store(
-                                (result.unparked_threads << SHARED_COUNT_SHIFT) | PARKED_BIT,
+                                (result.unparked_threads << GUARD_COUNT_SHIFT) | PARKED_BIT,
                                 Ordering::Release,
                             );
                         } else {
                             self.state.store(
-                                result.unparked_threads << SHARED_COUNT_SHIFT,
+                                result.unparked_threads << GUARD_COUNT_SHIFT,
                                 Ordering::Release,
                             );
                         }
@@ -434,7 +430,7 @@ impl RawRwLock {
             // readers try to acquire the lock. We only do this if the lock is
             // completely empty since elision handles conflicts poorly.
             if have_elision() && state == 0 {
-                match self.state.elision_acquire(0, SHARED_COUNT_INC) {
+                match self.state.elision_acquire(0, SHARED_GUARD) {
                     Ok(_) => return true,
                     Err(x) => state = x,
                 }
@@ -443,23 +439,27 @@ impl RawRwLock {
             // Grab the lock if there are no exclusive threads locked or
             // waiting. However if we were unparked then we are allowed to grab
             // the lock even if there are pending exclusive threads.
-            if state & LOCKED_BIT == 0 && (unparked || recursive || state & PARKED_BIT == 0) {
-                let new = state.checked_add(SHARED_COUNT_INC).expect(
-                    "RwLock shared count overflow",
-                );
-                if self.state
-                    .compare_exchange_weak(state, new, Ordering::Acquire, Ordering::Relaxed)
-                    .is_ok()
-                {
-                    return true;
-                }
+            if unparked || recursive || state & PARKED_BIT == 0 {
+                if let Some(new_state) = state.checked_add(SHARED_GUARD) {
+                    if self.state
+                        .compare_exchange_weak(
+                            state,
+                            new_state,
+                            Ordering::Acquire,
+                            Ordering::Relaxed,
+                        )
+                        .is_ok()
+                    {
+                        return true;
+                    }
 
-                // If there is high contention on the reader count then we want
-                // to leave some time between attempts to acquire the lock to
-                // let other threads make progress.
-                spinwait_shared.spin_no_yield();
-                state = self.state.load(Ordering::Relaxed);
-                continue;
+                    // If there is high contention on the reader count then we want
+                    // to leave some time between attempts to acquire the lock to
+                    // let other threads make progress.
+                    spinwait_shared.spin_no_yield();
+                    state = self.state.load(Ordering::Relaxed);
+                    continue;
+                }
             }
 
             // If there are no parked threads, try spinning a few times
@@ -480,10 +480,10 @@ impl RawRwLock {
                         }
 
                         // If the parked bit is not set then it means we are at
-                        // the front of the queue. If there is no exclusive lock
-                        // then we should abort the park and try acquiring the
-                        // lock again.
-                        if state & LOCKED_BIT == 0 {
+                        // the front of the queue. If there is space for another
+                        // lock then we should abort the park and try acquiring
+                        // the lock again.
+                        if state & GUARD_COUNT_MASK != GUARD_COUNT_MASK {
                             return false;
                         }
 
@@ -542,31 +542,28 @@ impl RawRwLock {
     fn try_lock_shared_slow(&self, recursive: bool) -> bool {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
-            let mask = if recursive {
-                LOCKED_BIT
-            } else {
-                LOCKED_BIT | PARKED_BIT
-            };
-            if state & mask != 0 {
+            if !recursive && state & PARKED_BIT != 0 {
                 return false;
             }
             if have_elision() && state == 0 {
-                match self.state.elision_acquire(0, SHARED_COUNT_INC) {
+                match self.state.elision_acquire(0, SHARED_GUARD) {
                     Ok(_) => return true,
                     Err(x) => state = x,
                 }
             } else {
-                let new = state.checked_add(SHARED_COUNT_INC).expect(
-                    "RwLock shared count overflow",
-                );
-                match self.state.compare_exchange_weak(
-                    state,
-                    new,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => return true,
-                    Err(x) => state = x,
+                match state.checked_add(SHARED_GUARD) {
+                    Some(new_state) => {
+                        match self.state.compare_exchange_weak(
+                            state,
+                            new_state,
+                            Ordering::Acquire,
+                            Ordering::Relaxed,
+                        ) {
+                            Ok(_) => return true,
+                            Err(x) => state = x,
+                        }
+                    },
+                    None => return false,
                 }
             }
         }
@@ -579,10 +576,10 @@ impl RawRwLock {
         loop {
             // Just release the lock if there are no parked thread or if we are
             // not the last shared thread.
-            if state & PARKED_BIT == 0 || state & SHARED_COUNT_MASK != SHARED_COUNT_INC {
+            if state & PARKED_BIT == 0 || state & GUARD_COUNT_MASK != SHARED_GUARD {
                 match self.state.compare_exchange_weak(
                     state,
-                    state - SHARED_COUNT_INC,
+                    state - SHARED_GUARD,
                     Ordering::Release,
                     Ordering::Relaxed,
                 ) {
@@ -615,25 +612,25 @@ impl RawRwLock {
                     let mut state = self.state.load(Ordering::Relaxed);
                     loop {
                         // Release our shared lock
-                        let mut new = state - SHARED_COUNT_INC;
+                        let mut new_state = state - SHARED_GUARD;
 
                         // Clear the parked bit if there are no more threads in
                         // the queue
                         if !result.have_more_threads {
-                            new &= !PARKED_BIT;
+                            new_state &= !PARKED_BIT;
                         }
 
                         // If we are the last shared thread and we unparked an
                         // exclusive thread then we can consider using fair
-                        // unlocking. If we are then we should set the exclusive
-                        // locked bit and tell the thread that we are handing it
-                        // the lock directly.
+                        // unlocking. If we are then we should set the state to
+                        // the exclusive value and tell the thread that we are handing
+                        // it the lock directly.
                         let token = if result.unparked_threads != 0 &&
-                            new & SHARED_COUNT_MASK == 0 &&
+                            new_state & GUARD_COUNT_MASK == 0 &&
                             first_token.get().unchecked_unwrap() == TOKEN_EXCLUSIVE &&
                             (force_fair || result.be_fair)
                         {
-                            new |= LOCKED_BIT;
+                            new_state += EXCLUSIVE_GUARD;
                             TOKEN_HANDOFF
                         } else {
                             TOKEN_NORMAL
@@ -641,7 +638,7 @@ impl RawRwLock {
 
                         match self.state.compare_exchange_weak(
                             state,
-                            new,
+                            new_state,
                             Ordering::Release,
                             Ordering::Relaxed,
                         ) {
