@@ -22,3 +22,4 @@ nightly = ["parking_lot_core/nightly"]
 deadlock_detection = ["parking_lot_core/deadlock_detection"]
 
 [workspace]
+exclude = ["benchmark"]
