@@ -354,7 +354,7 @@ impl RawRwLock {
     pub fn upgradable_to_shared(&self) {
         let state = self.state.fetch_sub(
             UPGRADABLE_GUARD - SHARED_GUARD,
-            Ordering::Release,
+            Ordering::Relaxed,
         );
 
         // Wake up parked shared and upgradable threads if there are any
@@ -369,7 +369,7 @@ impl RawRwLock {
             .compare_exchange_weak(
                 UPGRADABLE_GUARD,
                 EXCLUSIVE_GUARD,
-                Ordering::Acquire,
+                Ordering::Relaxed,
                 Ordering::Relaxed,
             )
             .is_err()
@@ -385,7 +385,7 @@ impl RawRwLock {
             .compare_exchange_weak(
                 UPGRADABLE_GUARD,
                 EXCLUSIVE_GUARD,
-                Ordering::Acquire,
+                Ordering::Relaxed,
                 Ordering::Relaxed,
             )
             .is_ok()
@@ -402,7 +402,7 @@ impl RawRwLock {
             .compare_exchange_weak(
                 UPGRADABLE_GUARD,
                 EXCLUSIVE_GUARD,
-                Ordering::Acquire,
+                Ordering::Relaxed,
                 Ordering::Relaxed,
             )
             .is_ok()
@@ -419,7 +419,7 @@ impl RawRwLock {
             .compare_exchange_weak(
                 UPGRADABLE_GUARD,
                 EXCLUSIVE_GUARD,
-                Ordering::Acquire,
+                Ordering::Relaxed,
                 Ordering::Relaxed,
             )
             .is_ok()
