@@ -38,6 +38,9 @@ const GUARD_COUNT_MASK: usize = USABLE_BITS_MASK & !(SHARED_GUARD - 1);
 // An exclusive lock acquires all of guard resource (i.e. it is exclusive)
 const EXCLUSIVE_GUARD: usize = GUARD_COUNT_MASK;
 // An upgradable lock acquires just over half of the guard resource
+// This should be (GUARD_COUNT_MASK + SHARED_GUARD) >> 1, however this might
+// overflow, so we shift before adding (which is okay since the least
+// significant bit is zero for both GUARD_COUNT_MASK and SHARED_GUARD)
 const UPGRADABLE_GUARD: usize = (GUARD_COUNT_MASK >> 1) + (SHARED_GUARD >> 1);
 
 // Token indicating what type of lock queued threads are trying to acquire
