@@ -415,7 +415,7 @@ impl RawRwLock {
     #[inline]
     pub fn try_upgradable_to_exclusive(&self) -> bool {
         self.state
-            .compare_exchange_weak(
+            .compare_exchange(
                 UPGRADABLE_GUARD,
                 EXCLUSIVE_GUARD,
                 Ordering::Relaxed,
