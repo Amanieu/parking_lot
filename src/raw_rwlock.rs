@@ -166,7 +166,7 @@ impl RawRwLock {
     fn try_lock_shared_fast(&self, recursive: bool) -> bool {
         let state = self.state.load(Ordering::Relaxed);
 
-        // We can't allow grabbing a shared lock while there are porked threads
+        // We can't allow grabbing a shared lock while there are parked threads
         // since that could lead to writer starvation.
         if !recursive && state & PARKED_BIT != 0 {
             return false;
@@ -781,7 +781,7 @@ impl RawRwLock {
 
         // There are threads to unpark. If there is a thread waiting to be
         // upgraded, we find that thread and let it upgrade, otherwise we
-        // unpark threads up to the guard capacity. Note thatthere is a
+        // unpark threads up to the guard capacity. Note that there is a
         // potential race condition here: another thread might grab a shared
         // lock between now and when we actually release our lock.
         let additional_guards = Cell::new(0);
