@@ -244,8 +244,7 @@ impl RawRwLock {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
         let state = self.state.load(Ordering::Relaxed);
         if state & PARKED_BIT == 0 ||
-            (state & UPGRADING_BIT == 0 && state & GUARD_COUNT_MASK != SHARED_GUARD) ||
-            (state & UPGRADING_BIT != 0 && state & GUARD_COUNT_MASK != UPGRADABLE_GUARD + SHARED_GUARD)
+            (state & UPGRADING_BIT == 0 && state & GUARD_COUNT_MASK != SHARED_GUARD)
         {
             if have_elision() {
                 if self.state
