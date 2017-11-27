@@ -64,6 +64,8 @@ in the Rust standard library:
 16. An *experimental* deadlock detector that works for `Mutex`,
     `RwLock` and `ReentrantMutex`. This feature is disabled by default and
     can be enabled via the `deadlock_detection` feature.
+17. `RwLock` supports atomically upgrading an "upgradable" read lock into a
+    write lock.
 
 ## The parking lot
 
