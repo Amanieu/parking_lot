@@ -10,7 +10,7 @@
 use std::sync::atomic;
 
 // Re-export this for convenience
-pub use std::sync::atomic::{Ordering, fence};
+pub use std::sync::atomic::{fence, Ordering};
 
 // Wrapper around AtomicUsize for non-nightly which has usable compare_exchange
 // and compare_exchange_weak methods.
@@ -63,7 +63,11 @@ impl AtomicUsize {
         _: Ordering,
     ) -> Result<usize, usize> {
         let res = self.0.compare_and_swap(old, new, order);
-        if res == old { Ok(res) } else { Err(res) }
+        if res == old {
+            Ok(res)
+        } else {
+            Err(res)
+        }
     }
     #[inline]
     pub fn compare_exchange_weak(
@@ -74,6 +78,10 @@ impl AtomicUsize {
         _: Ordering,
     ) -> Result<usize, usize> {
         let res = self.0.compare_and_swap(old, new, order);
-        if res == old { Ok(res) } else { Err(res) }
+        if res == old {
+            Ok(res)
+        } else {
+            Err(res)
+        }
     }
 }

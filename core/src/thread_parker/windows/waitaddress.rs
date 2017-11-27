@@ -16,11 +16,12 @@ use kernel32;
 
 #[allow(non_snake_case)]
 pub struct WaitAddress {
-    WaitOnAddress: extern "system" fn(Address: winapi::PVOID,
-                                      CompareAddress: winapi::PVOID,
-                                      AddressSize: winapi::SIZE_T,
-                                      dwMilliseconds: winapi::DWORD)
-                                      -> winapi::BOOL,
+    WaitOnAddress: extern "system" fn(
+        Address: winapi::PVOID,
+        CompareAddress: winapi::PVOID,
+        AddressSize: winapi::SIZE_T,
+        dwMilliseconds: winapi::DWORD,
+    ) -> winapi::BOOL,
     WakeByAddressSingle: extern "system" fn(Address: winapi::PVOID),
 }
 
@@ -29,9 +30,8 @@ impl WaitAddress {
     pub unsafe fn create() -> Option<WaitAddress> {
         // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
         // located in kernel32.dll, but they are lying...
-        let synch_dll = kernel32::GetModuleHandleA(
-            b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr() as winapi::LPCSTR,
-        );
+        let synch_dll = kernel32::GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr()
+            as winapi::LPCSTR);
         if synch_dll.is_null() {
             return None;
         }
@@ -87,10 +87,12 @@ impl WaitAddress {
                 .and_then(|x| {
                     x.checked_add((diff.subsec_nanos() as u64 + 999999) / 1000000)
                 })
-                .map(|ms| if ms > <winapi::DWORD>::max_value() as u64 {
-                    winapi::INFINITE
-                } else {
-                    ms as winapi::DWORD
+                .map(|ms| {
+                    if ms > <winapi::DWORD>::max_value() as u64 {
+                        winapi::INFINITE
+                    } else {
+                        ms as winapi::DWORD
+                    }
                 })
                 .unwrap_or(winapi::INFINITE);
             let cmp = 1usize;

@@ -6,11 +6,11 @@
 // copied, modified, or distributed except according to those terms.
 
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{AtomicU8, ATOMIC_U8_INIT, Ordering, fence};
+use std::sync::atomic::{fence, ATOMIC_U8_INIT, AtomicU8, Ordering};
 #[cfg(feature = "nightly")]
 type U8 = u8;
 #[cfg(not(feature = "nightly"))]
-use stable::{AtomicU8, ATOMIC_U8_INIT, Ordering, fence};
+use stable::{fence, ATOMIC_U8_INIT, AtomicU8, Ordering};
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use std::mem;
@@ -268,8 +268,7 @@ impl Once {
                     state | PARKED_BIT,
                     Ordering::Relaxed,
                     Ordering::Relaxed,
-                )
-                {
+                ) {
                     state = x;
                     continue;
                 }
@@ -407,11 +406,15 @@ mod tests {
         static O: Once = ONCE_INIT;
 
         // poison the once
-        let t = panic::catch_unwind(|| { O.call_once(|| panic!()); });
+        let t = panic::catch_unwind(|| {
+            O.call_once(|| panic!());
+        });
         assert!(t.is_err());
 
         // poisoning propagates
-        let t = panic::catch_unwind(|| { O.call_once(|| {}); });
+        let t = panic::catch_unwind(|| {
+            O.call_once(|| {});
+        });
         assert!(t.is_err());
 
         // we can subvert poisoning, however
@@ -432,7 +435,9 @@ mod tests {
         static O: Once = ONCE_INIT;
 
         // poison the once
-        let t = panic::catch_unwind(|| { O.call_once(|| panic!()); });
+        let t = panic::catch_unwind(|| {
+            O.call_once(|| panic!());
+        });
         assert!(t.is_err());
 
         // make sure someone's waiting inside the once via a force
@@ -451,7 +456,9 @@ mod tests {
         // put another waiter on the once
         let t2 = thread::spawn(|| {
             let mut called = false;
-            O.call_once(|| { called = true; });
+            O.call_once(|| {
+                called = true;
+            });
             assert!(!called);
         });
 
@@ -459,6 +466,5 @@ mod tests {
 
         assert!(t1.join().is_ok());
         assert!(t2.join().is_ok());
-
     }
 }

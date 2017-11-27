@@ -6,10 +6,10 @@
 // copied, modified, or distributed except according to those terms.
 
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 #[cfg(not(feature = "nightly"))]
-use stable::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
-use std::time::{Instant, Duration};
+use stable::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::time::{Duration, Instant};
 use std::cell::{Cell, UnsafeCell};
 use std::ptr;
 use std::mem;
@@ -17,7 +17,7 @@ use std::thread::LocalKey;
 #[cfg(not(feature = "nightly"))]
 use std::panic;
 use smallvec::SmallVec;
-use rand::{self, XorShiftRng, Rng};
+use rand::{self, Rng, XorShiftRng};
 use thread_parker::ThreadParker;
 use word_lock::WordLock;
 use util::UncheckedOptionExt;
@@ -138,8 +138,7 @@ struct ThreadData {
 
     // Extra data for deadlock detection
     // TODO: once supported in stable replace with #[cfg...] & remove dummy struct/impl
-    #[allow(dead_code)]
-    deadlock_data: deadlock::DeadlockData,
+    #[allow(dead_code)] deadlock_data: deadlock::DeadlockData,
 }
 
 impl ThreadData {
@@ -352,8 +351,8 @@ unsafe fn lock_bucket_checked<'a>(key: &AtomicUsize) -> (usize, &'a Bucket) {
         // Check that both the hash table and key are correct while the bucket
         // is locked. Note that the key can't change once we locked the proper
         // bucket for it, so we just keep trying until we have the correct key.
-        if HASHTABLE.load(Ordering::Relaxed) == hashtable as usize &&
-            key.load(Ordering::Relaxed) == current_key
+        if HASHTABLE.load(Ordering::Relaxed) == hashtable as usize
+            && key.load(Ordering::Relaxed) == current_key
         {
             return (current_key, bucket);
         }
@@ -929,9 +928,9 @@ unsafe fn unpark_requeue_internal(
     if !requeue_threads.is_null() {
         (*requeue_threads_tail).next_in_queue.set(ptr::null());
         if !bucket_to.queue_head.get().is_null() {
-            (*bucket_to.queue_tail.get()).next_in_queue.set(
-                requeue_threads,
-            );
+            (*bucket_to.queue_tail.get())
+                .next_in_queue
+                .set(requeue_threads);
         } else {
             bucket_to.queue_head.set(requeue_threads);
         }
@@ -1097,7 +1096,8 @@ pub mod deadlock {
     /// Note: Call after the resource is acquired
     #[inline]
     pub unsafe fn acquire_resource(_key: usize) {
-        #[cfg(feature = "deadlock_detection")] deadlock_impl::acquire_resource(_key);
+        #[cfg(feature = "deadlock_detection")]
+        deadlock_impl::acquire_resource(_key);
     }
 
     /// Release a resource identified by key in the deadlock detector.
@@ -1107,7 +1107,8 @@ pub mod deadlock {
     /// Panics if the resource was already released or wasn't acquired in this thread.
     #[inline]
     pub unsafe fn release_resource(_key: usize) {
-        #[cfg(feature = "deadlock_detection")] deadlock_impl::release_resource(_key);
+        #[cfg(feature = "deadlock_detection")]
+        deadlock_impl::release_resource(_key);
     }
 
     /// Returns all deadlocks detected *since* the last call.
@@ -1120,13 +1121,14 @@ pub mod deadlock {
 
     #[inline]
     pub(super) unsafe fn on_unpark(_td: &super::ThreadData) {
-        #[cfg(feature = "deadlock_detection")] deadlock_impl::on_unpark(_td);
+        #[cfg(feature = "deadlock_detection")]
+        deadlock_impl::on_unpark(_td);
     }
 }
 
 #[cfg(feature = "deadlock_detection")]
 mod deadlock_impl {
-    use super::{get_hashtable, lock_bucket, ThreadData, get_thread_data, NUM_THREADS};
+    use super::{get_hashtable, get_thread_data, lock_bucket, ThreadData, NUM_THREADS};
     use std::cell::{Cell, UnsafeCell};
     use std::sync::mpsc;
     use std::sync::atomic::Ordering;
@@ -1238,8 +1240,8 @@ mod deadlock_impl {
             b.mutex.lock();
             let mut current = b.queue_head.get();
             while !current.is_null() {
-                if !(*current).parked_with_timeout.get() &&
-                    !(*current).deadlock_data.deadlocked.get()
+                if !(*current).parked_with_timeout.get()
+                    && !(*current).deadlock_data.deadlocked.get()
                 {
                     // .resources are waiting for their owner
                     for &resource in &(*(*current).deadlock_data.resources.get()) {
@@ -1297,8 +1299,8 @@ mod deadlock_impl {
         for b in &(*table).entries[..] {
             let mut current = b.queue_head.get();
             while !current.is_null() {
-                if !(*current).parked_with_timeout.get() &&
-                    !(*current).deadlock_data.deadlocked.get()
+                if !(*current).parked_with_timeout.get()
+                    && !(*current).deadlock_data.deadlocked.get()
                 {
                     // .resources are waiting for their owner
                     for &resource in &(*(*current).deadlock_data.resources.get()) {
@@ -1370,9 +1372,8 @@ mod deadlock_impl {
         let mut cycles = HashSet::new();
         let mut path = Vec::with_capacity(g.node_bound());
         // start from threads to get the correct threads cycle
-        let threads = g.nodes().filter(
-            |n| if let &Thread(_) = n { true } else { false },
-        );
+        let threads = g.nodes()
+            .filter(|n| if let &Thread(_) = n { true } else { false });
 
         depth_first_search(g, threads, |e| match e {
             DfsEvent::Discover(Thread(n), _) => path.push(n),

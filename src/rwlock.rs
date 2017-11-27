@@ -443,7 +443,10 @@ impl<T: ?Sized> RwLock<T> {
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the shared access when it is dropped.
     #[inline]
-    pub fn try_upgradable_read_for(&self, timeout: Duration) -> Option<RwLockUpgradableReadGuard<T>> {
+    pub fn try_upgradable_read_for(
+        &self,
+        timeout: Duration,
+    ) -> Option<RwLockUpgradableReadGuard<T>> {
         if self.raw.try_lock_upgradable_for(timeout) {
             Some(self.upgradable_guard())
         } else {
@@ -458,7 +461,10 @@ impl<T: ?Sized> RwLock<T> {
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the shared access when it is dropped.
     #[inline]
-    pub fn try_upgradable_read_until(&self, timeout: Instant) -> Option<RwLockUpgradableReadGuard<T>> {
+    pub fn try_upgradable_read_until(
+        &self,
+        timeout: Instant,
+    ) -> Option<RwLockUpgradableReadGuard<T>> {
         if self.raw.try_lock_upgradable_until(timeout) {
             Some(self.upgradable_guard())
         } else {
@@ -578,7 +584,7 @@ impl<T: ?Sized> RwLock<T> {
         self.raw.exclusive_to_shared();
     }
 
-    /// Atomically downgrades an upgradable read lock into a shared read lock 
+    /// Atomically downgrades an upgradable read lock into a shared read lock
     /// without allowing any writers to take exclusive access of the lock in
     /// the meantime.
     ///
@@ -594,7 +600,6 @@ impl<T: ?Sized> RwLock<T> {
     pub unsafe fn raw_downgrade_upgradable_read(&self) {
         self.raw.upgradable_to_shared();
     }
-
 }
 
 impl RwLock<()> {
@@ -686,7 +691,7 @@ impl RwLock<()> {
     /// blocking the current thread until it can be acquired.
     ///
     /// See `RwLockUpgradableReadGuard::upgrade`.
-    /// 
+    ///
     /// # Safety
     ///
     /// This function must only be called if the rwlock was locked using
@@ -702,7 +707,7 @@ impl RwLock<()> {
     /// write access.
     ///
     /// See `RwLockUpgradableReadGuard::try_upgrade`.
-    /// 
+    ///
     /// # Safety
     ///
     /// This function must only be called if the rwlock was locked using
@@ -760,7 +765,8 @@ impl<'a, T: ?Sized + 'a> RwLockReadGuard<'a, T> {
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn map<U: ?Sized, F>(orig: Self, f: F) -> RwLockReadGuard<'a, U>
-        where F: FnOnce(&T) -> &U
+    where
+        F: FnOnce(&T) -> &U,
     {
         let raw = orig.raw;
         let data = f(unsafe { &*orig.data });
@@ -822,7 +828,8 @@ impl<'a, T: ?Sized + 'a> RwLockWriteGuard<'a, T> {
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn map<U: ?Sized, F>(orig: Self, f: F) -> RwLockWriteGuard<'a, U>
-        where F: FnOnce(&mut T) -> &mut U
+    where
+        F: FnOnce(&mut T) -> &mut U,
     {
         let raw = orig.raw;
         let data = f(unsafe { &mut *orig.data });
@@ -917,7 +924,7 @@ impl<'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a, T> {
     }
 
     /// Tries to atomically upgrade an upgradable read lock into a exclusive write lock.
-    /// 
+    ///
     /// If the access could not be granted at this time, then the current guard is returned.
     pub fn try_upgrade(self) -> Result<RwLockWriteGuard<'a, T>, Self> {
         if self.raw.try_upgradable_to_exclusive() {
@@ -938,7 +945,7 @@ impl<'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a, T> {
 
     /// Tries to atomically upgrade an upgradable read lock into a exclusive
     /// write lock, until a timeout is reached.
-    /// 
+    ///
     /// If the access could not be granted before the timeout expires, then
     /// the current guard is returned.
     pub fn try_upgrade_for(self, timeout: Duration) -> Result<RwLockWriteGuard<'a, T>, Self> {
@@ -960,7 +967,7 @@ impl<'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a, T> {
 
     /// Tries to atomically upgrade an upgradable read lock into a exclusive
     /// write lock, until a timeout is reached.
-    /// 
+    ///
     /// If the access could not be granted before the timeout expires, then
     /// the current guard is returned.
     #[inline]
@@ -1252,7 +1259,10 @@ mod tests {
             let read_guard = lock.read();
 
             let read_result = lock.try_read();
-            assert!(read_result.is_some(), "try_read should succeed while read_guard is in scope");
+            assert!(
+                read_result.is_some(),
+                "try_read should succeed while read_guard is in scope"
+            );
 
             drop(read_guard);
         }
@@ -1260,7 +1270,10 @@ mod tests {
             let upgrade_guard = lock.upgradable_read();
 
             let read_result = lock.try_read();
-            assert!(read_result.is_some(), "try_read should succeed while upgrade_guard is in scope");
+            assert!(
+                read_result.is_some(),
+                "try_read should succeed while upgrade_guard is in scope"
+            );
 
             drop(upgrade_guard);
         }
@@ -1268,7 +1281,10 @@ mod tests {
             let write_guard = lock.write();
 
             let read_result = lock.try_read();
-            assert!(read_result.is_none(), "try_read should fail while write_guard is in scope");
+            assert!(
+                read_result.is_none(),
+                "try_read should fail while write_guard is in scope"
+            );
 
             drop(write_guard);
         }
@@ -1281,7 +1297,10 @@ mod tests {
             let read_guard = lock.read();
 
             let write_result = lock.try_write();
-            assert!(write_result.is_none(), "try_write should fail while read_guard is in scope");
+            assert!(
+                write_result.is_none(),
+                "try_write should fail while read_guard is in scope"
+            );
 
             drop(read_guard);
         }
@@ -1289,7 +1308,10 @@ mod tests {
             let upgrade_guard = lock.upgradable_read();
 
             let write_result = lock.try_write();
-            assert!(write_result.is_none(), "try_write should fail while upgrade_guard is in scope");
+            assert!(
+                write_result.is_none(),
+                "try_write should fail while upgrade_guard is in scope"
+            );
 
             drop(upgrade_guard);
         }
@@ -1297,7 +1319,10 @@ mod tests {
             let write_guard = lock.write();
 
             let write_result = lock.try_write();
-            assert!(write_result.is_none(), "try_write should fail while write_guard is in scope");
+            assert!(
+                write_result.is_none(),
+                "try_write should fail while write_guard is in scope"
+            );
 
             drop(write_guard);
         }
@@ -1310,7 +1335,10 @@ mod tests {
             let read_guard = lock.read();
 
             let upgrade_result = lock.try_upgradable_read();
-            assert!(upgrade_result.is_some(), "try_upgradable_read should succeed while read_guard is in scope");
+            assert!(
+                upgrade_result.is_some(),
+                "try_upgradable_read should succeed while read_guard is in scope"
+            );
 
             drop(read_guard);
         }
@@ -1318,7 +1346,10 @@ mod tests {
             let upgrade_guard = lock.upgradable_read();
 
             let upgrade_result = lock.try_upgradable_read();
-            assert!(upgrade_result.is_none(), "try_upgradable_read should fail while upgrade_guard is in scope");
+            assert!(
+                upgrade_result.is_none(),
+                "try_upgradable_read should fail while upgrade_guard is in scope"
+            );
 
             drop(upgrade_guard);
         }
@@ -1326,7 +1357,10 @@ mod tests {
             let write_guard = lock.write();
 
             let upgrade_result = lock.try_upgradable_read();
-            assert!(upgrade_result.is_none(), "try_upgradable should fail while write_guard is in scope");
+            assert!(
+                upgrade_result.is_none(),
+                "try_upgradable should fail while write_guard is in scope"
+            );
 
             drop(write_guard);
         }
@@ -1378,12 +1412,14 @@ mod tests {
         let mut handles = Vec::new();
         for _ in 0..8 {
             let x = x.clone();
-            handles.push(thread::spawn(move || for _ in 0..100 {
-                let mut writer = x.write();
-                *writer += 1;
-                let cur_val = *writer;
-                let reader = writer.downgrade();
-                assert_eq!(cur_val, *reader);
+            handles.push(thread::spawn(move || {
+                for _ in 0..100 {
+                    let mut writer = x.write();
+                    *writer += 1;
+                    let cur_val = *writer;
+                    let reader = writer.downgrade();
+                    assert_eq!(cur_val, *reader);
+                }
             }));
         }
         for handle in handles {
@@ -1397,7 +1433,9 @@ mod tests {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
         let _lock1 = arc.read();
-        thread::spawn(move || { let _lock = arc2.write(); });
+        thread::spawn(move || {
+            let _lock = arc2.write();
+        });
         thread::sleep(Duration::from_millis(100));
 
         // A normal read would block here since there is a pending writer

@@ -6,9 +6,9 @@
 // copied, modified, or distributed except according to those terms.
 
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 #[cfg(not(feature = "nightly"))]
-use stable::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+use stable::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::time::Instant;
 
 mod keyed_event;
@@ -38,7 +38,7 @@ impl Backend {
         } else {
             panic!(
                 "parking_lot requires either NT Keyed Events (WinXP+) or \
-                    WaitOnAddress/WakeByAddress (Win8+)"
+                 WaitOnAddress/WakeByAddress (Win8+)"
             );
         }
 

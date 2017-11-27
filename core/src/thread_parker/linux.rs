@@ -29,7 +29,9 @@ pub struct ThreadParker {
 
 impl ThreadParker {
     pub fn new() -> ThreadParker {
-        ThreadParker { futex: AtomicI32::new(0) }
+        ThreadParker {
+            futex: AtomicI32::new(0),
+        }
     }
 
     // Prepares the parker. This should be called before adding it to the queue.
@@ -51,8 +53,8 @@ impl ThreadParker {
             debug_assert!(r == 0 || r == -1);
             if r == -1 {
                 debug_assert!(
-                    *libc::__errno_location() == libc::EINTR ||
-                        *libc::__errno_location() == libc::EAGAIN
+                    *libc::__errno_location() == libc::EINTR
+                        || *libc::__errno_location() == libc::EAGAIN
                 );
             }
         }
@@ -81,9 +83,9 @@ impl ThreadParker {
             debug_assert!(r == 0 || r == -1);
             if r == -1 {
                 debug_assert!(
-                    *libc::__errno_location() == libc::EINTR ||
-                        *libc::__errno_location() == libc::EAGAIN ||
-                        *libc::__errno_location() == libc::ETIMEDOUT
+                    *libc::__errno_location() == libc::EINTR
+                        || *libc::__errno_location() == libc::EAGAIN
+                        || *libc::__errno_location() == libc::ETIMEDOUT
                 );
             }
         }

@@ -22,16 +22,18 @@ const STATE_TIMED_OUT: usize = 2;
 #[allow(non_snake_case)]
 pub struct KeyedEvent {
     handle: winapi::HANDLE,
-    NtReleaseKeyedEvent: extern "system" fn(EventHandle: winapi::HANDLE,
-                                            Key: winapi::PVOID,
-                                            Alertable: winapi::BOOLEAN,
-                                            Timeout: winapi::PLARGE_INTEGER)
-                                            -> winapi::NTSTATUS,
-    NtWaitForKeyedEvent: extern "system" fn(EventHandle: winapi::HANDLE,
-                                            Key: winapi::PVOID,
-                                            Alertable: winapi::BOOLEAN,
-                                            Timeout: winapi::PLARGE_INTEGER)
-                                            -> winapi::NTSTATUS,
+    NtReleaseKeyedEvent: extern "system" fn(
+        EventHandle: winapi::HANDLE,
+        Key: winapi::PVOID,
+        Alertable: winapi::BOOLEAN,
+        Timeout: winapi::PLARGE_INTEGER,
+    ) -> winapi::NTSTATUS,
+    NtWaitForKeyedEvent: extern "system" fn(
+        EventHandle: winapi::HANDLE,
+        Key: winapi::PVOID,
+        Alertable: winapi::BOOLEAN,
+        Timeout: winapi::PLARGE_INTEGER,
+    ) -> winapi::NTSTATUS,
 }
 
 impl KeyedEvent {
@@ -70,12 +72,12 @@ impl KeyedEvent {
             return None;
         }
 
-        let NtCreateKeyedEvent: extern "system" fn(KeyedEventHandle: winapi::PHANDLE,
-                                                   DesiredAccess: winapi::ACCESS_MASK,
-                                                   ObjectAttributes: winapi::PVOID,
-                                                   Flags: winapi::ULONG)
-                                                   -> winapi::NTSTATUS =
-            mem::transmute(NtCreateKeyedEvent);
+        let NtCreateKeyedEvent: extern "system" fn(
+            KeyedEventHandle: winapi::PHANDLE,
+            DesiredAccess: winapi::ACCESS_MASK,
+            ObjectAttributes: winapi::PVOID,
+            Flags: winapi::ULONG,
+        ) -> winapi::NTSTATUS = mem::transmute(NtCreateKeyedEvent);
         let mut handle = mem::uninitialized();
         let status = NtCreateKeyedEvent(
             &mut handle,

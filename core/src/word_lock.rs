@@ -6,9 +6,9 @@
 // copied, modified, or distributed except according to those terms.
 
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{AtomicUsize, Ordering, fence};
+use std::sync::atomic::{fence, AtomicUsize, Ordering};
 #[cfg(not(feature = "nightly"))]
-use stable::{AtomicUsize, Ordering, fence};
+use stable::{fence, AtomicUsize, Ordering};
 use std::ptr;
 use std::mem;
 use std::cell::Cell;
@@ -89,7 +89,9 @@ pub struct WordLock {
 impl WordLock {
     #[inline]
     pub fn new() -> WordLock {
-        WordLock { state: AtomicUsize::new(0) }
+        WordLock {
+            state: AtomicUsize::new(0),
+        }
     }
 
     #[inline]
@@ -159,8 +161,7 @@ impl WordLock {
                 (state & !QUEUE_MASK) | thread_data as *const _ as usize,
                 Ordering::Release,
                 Ordering::Relaxed,
-            )
-            {
+            ) {
                 state = x;
                 continue;
             }

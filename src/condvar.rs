@@ -8,9 +8,9 @@
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 use std::ptr;
-use parking_lot_core::{self, ParkResult, UnparkResult, RequeueOp, DEFAULT_PARK_TOKEN};
-use mutex::{MutexGuard, guard_lock};
-use raw_mutex::{RawMutex, TOKEN_NORMAL, TOKEN_HANDOFF};
+use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
+use mutex::{guard_lock, MutexGuard};
+use raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
 use deadlock;
 
 /// A type indicating whether a timed wait on a condition variable returned
@@ -89,7 +89,9 @@ impl Condvar {
     #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> Condvar {
-        Condvar { state: AtomicPtr::new(ptr::null_mut()) }
+        Condvar {
+            state: AtomicPtr::new(ptr::null_mut()),
+        }
     }
 
     /// Creates a new condition variable which is ready to be waited on and
@@ -97,7 +99,9 @@ impl Condvar {
     #[cfg(not(feature = "nightly"))]
     #[inline]
     pub fn new() -> Condvar {
-        Condvar { state: AtomicPtr::new(ptr::null_mut()) }
+        Condvar {
+            state: AtomicPtr::new(ptr::null_mut()),
+        }
     }
 
     /// Wakes up one blocked thread on this condvar.

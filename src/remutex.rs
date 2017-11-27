@@ -249,7 +249,8 @@ impl<'a, T: ?Sized + 'a> ReentrantMutexGuard<'a, T> {
     /// methods of the same name on the contents of the locked data.
     #[inline]
     pub fn map<U: ?Sized, F>(orig: Self, f: F) -> ReentrantMutexGuard<'a, U>
-        where F: FnOnce(&T) -> &U
+    where
+        F: FnOnce(&T) -> &U,
     {
         let raw = orig.raw;
         let data = f(unsafe { &*orig.data });

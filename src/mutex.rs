@@ -313,7 +313,8 @@ impl<'a, T: ?Sized + 'a> MutexGuard<'a, T> {
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn map<U: ?Sized, F>(orig: Self, f: F) -> MutexGuard<'a, U>
-        where F: FnOnce(&mut T) -> &mut U
+    where
+        F: FnOnce(&mut T) -> &mut U,
     {
         let raw = orig.raw;
         let data = f(unsafe { &mut *orig.data });
@@ -363,7 +364,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
-    use {Mutex, Condvar};
+    use {Condvar, Mutex};
 
     struct Packet<T>(Arc<(Mutex<T>, Condvar)>);
 

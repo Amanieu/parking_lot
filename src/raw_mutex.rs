@@ -14,7 +14,7 @@ use stable::{AtomicU8, Ordering};
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use std::time::{Duration, Instant};
-use parking_lot_core::{self, ParkResult, UnparkResult, SpinWait, UnparkToken, DEFAULT_PARK_TOKEN};
+use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
 use deadlock;
 
 // UnparkToken used to indicate that that the target thread should attempt to
@@ -36,12 +36,16 @@ impl RawMutex {
     #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> RawMutex {
-        RawMutex { state: AtomicU8::new(0) }
+        RawMutex {
+            state: AtomicU8::new(0),
+        }
     }
     #[cfg(not(feature = "nightly"))]
     #[inline]
     pub fn new() -> RawMutex {
-        RawMutex { state: AtomicU8::new(0) }
+        RawMutex {
+            state: AtomicU8::new(0),
+        }
     }
 
     #[inline]
@@ -182,8 +186,7 @@ impl RawMutex {
                     state | PARKED_BIT,
                     Ordering::Relaxed,
                     Ordering::Relaxed,
-                )
-                {
+                ) {
                     state = x;
                     continue;
                 }

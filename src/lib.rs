@@ -45,7 +45,7 @@ pub mod deadlock;
 #[cfg(not(feature = "deadlock_detection"))]
 mod deadlock;
 
-pub use once::{Once, ONCE_INIT, OnceState};
+pub use once::{Once, OnceState, ONCE_INIT};
 pub use mutex::{Mutex, MutexGuard};
 pub use remutex::{ReentrantMutex, ReentrantMutexGuard};
 pub use condvar::{Condvar, WaitTimeoutResult};

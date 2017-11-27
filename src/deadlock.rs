@@ -44,7 +44,7 @@ mod tests {
     use std::thread::{self, sleep};
     use std::sync::{Arc, Barrier};
     use std::time::Duration;
-    use {Mutex, RwLock, ReentrantMutex};
+    use {Mutex, ReentrantMutex, RwLock};
 
     fn check_deadlock() -> bool {
         use parking_lot_core::deadlock::check_deadlock;

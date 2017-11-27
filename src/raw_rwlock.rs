@@ -11,13 +11,14 @@ use std::cell::Cell;
 #[cfg(not(feature = "nightly"))]
 use stable::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use parking_lot_core::{self, ParkResult, UnparkResult, SpinWait, ParkToken, FilterOp};
+use parking_lot_core::{self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult};
 use elision::{have_elision, AtomicElisionExt};
-use raw_mutex::{TOKEN_NORMAL, TOKEN_HANDOFF};
+use raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use deadlock;
 
 const USABLE_BITS_MASK: usize = {
-    #[cfg(feature = "nightly")] {
+    #[cfg(feature = "nightly")]
+    {
         const TOTAL_BITS: usize = ::std::mem::size_of::<usize>() * 8;
         // specifies the number of usable bits, useful to test the
         // implementation with fewer bits (the current implementation
@@ -25,7 +26,8 @@ const USABLE_BITS_MASK: usize = {
         const USABLE_BITS: usize = TOTAL_BITS;
         (!0) >> (TOTAL_BITS - USABLE_BITS)
     }
-    #[cfg(not(feature = "nightly"))] {
+    #[cfg(not(feature = "nightly"))]
+    {
         !0
     }
 };
@@ -72,12 +74,16 @@ impl RawRwLock {
     #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> RawRwLock {
-        RawRwLock { state: AtomicUsize::new(0) }
+        RawRwLock {
+            state: AtomicUsize::new(0),
+        }
     }
     #[cfg(not(feature = "nightly"))]
     #[inline]
     pub fn new() -> RawRwLock {
-        RawRwLock { state: AtomicUsize::new(0) }
+        RawRwLock {
+            state: AtomicUsize::new(0),
+        }
     }
 
     #[inline]
@@ -151,10 +157,8 @@ impl RawRwLock {
 
     #[inline]
     pub fn exclusive_to_shared(&self) {
-        let state = self.state.fetch_sub(
-            EXCLUSIVE_GUARD - SHARED_GUARD,
-            Ordering::Release,
-        );
+        let state = self.state
+            .fetch_sub(EXCLUSIVE_GUARD - SHARED_GUARD, Ordering::Release);
 
         // Wake up parked shared and upgradable threads if there are any
         if state & PARKED_BIT != 0 {
@@ -179,12 +183,7 @@ impl RawRwLock {
             self.state.elision_acquire(0, SHARED_GUARD).is_ok()
         } else if let Some(new_state) = checked_add(state, SHARED_GUARD) {
             self.state
-                .compare_exchange_weak(
-                    state,
-                    new_state,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                )
+                .compare_exchange_weak(state, new_state, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok()
         } else {
             false
@@ -243,8 +242,8 @@ impl RawRwLock {
     pub fn unlock_shared(&self, force_fair: bool) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
         let state = self.state.load(Ordering::Relaxed);
-        if state & PARKED_BIT == 0 ||
-            (state & UPGRADING_BIT == 0 && state & GUARD_COUNT_MASK != SHARED_GUARD)
+        if state & PARKED_BIT == 0
+            || (state & UPGRADING_BIT == 0 && state & GUARD_COUNT_MASK != SHARED_GUARD)
         {
             if have_elision() {
                 if self.state
@@ -351,10 +350,8 @@ impl RawRwLock {
 
     #[inline]
     pub fn upgradable_to_shared(&self) {
-        let state = self.state.fetch_sub(
-            UPGRADABLE_GUARD - SHARED_GUARD,
-            Ordering::Relaxed,
-        );
+        let state = self.state
+            .fetch_sub(UPGRADABLE_GUARD - SHARED_GUARD, Ordering::Relaxed);
 
         // Wake up parked shared and upgradable threads if there are any
         if state & PARKED_BIT != 0 {
@@ -447,9 +444,8 @@ impl RawRwLock {
 
             // If there are no parked threads and only one reader or writer, try
             // spinning a few times.
-            if (state == EXCLUSIVE_GUARD ||
-                state == SHARED_GUARD ||
-                state == UPGRADABLE_GUARD) && spinwait.spin()
+            if (state == EXCLUSIVE_GUARD || state == SHARED_GUARD || state == UPGRADABLE_GUARD)
+                && spinwait.spin()
             {
                 state = self.state.load(Ordering::Relaxed);
                 continue;
@@ -528,7 +524,7 @@ impl RawRwLock {
             .compare_exchange(EXCLUSIVE_GUARD, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
-                return;
+            return;
         };
 
         // There are threads to unpark. We unpark threads up to the guard capacity.
@@ -540,7 +536,7 @@ impl RawRwLock {
                     Some(new_guard_count) => {
                         guard_count.set(new_guard_count);
                         FilterOp::Unpark
-                    },
+                    }
                     None => FilterOp::Stop,
                 }
             };
@@ -566,7 +562,6 @@ impl RawRwLock {
                     }
                     TOKEN_NORMAL
                 }
-
             };
             parking_lot_core::unpark_filter(addr, filter, callback);
         }
@@ -583,7 +578,7 @@ impl RawRwLock {
                     Some(new_guard_count) => {
                         guard_count = new_guard_count;
                         FilterOp::Unpark
-                    },
+                    }
                     None => FilterOp::Stop,
                 }
             };
@@ -735,16 +730,14 @@ impl RawRwLock {
                 }
             } else {
                 match checked_add(state, SHARED_GUARD) {
-                    Some(new_state) => {
-                        match self.state.compare_exchange_weak(
-                            state,
-                            new_state,
-                            Ordering::Acquire,
-                            Ordering::Relaxed,
-                        ) {
-                            Ok(_) => return true,
-                            Err(x) => state = x,
-                        }
+                    Some(new_state) => match self.state.compare_exchange_weak(
+                        state,
+                        new_state,
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    ) {
+                        Ok(_) => return true,
+                        Err(x) => state = x,
                     },
                     None => return false,
                 }
@@ -759,9 +752,10 @@ impl RawRwLock {
         loop {
             // Just release the lock if there are no parked thread or if we are
             // not the last shared thread.
-            if state & PARKED_BIT == 0 ||
-                (state & UPGRADING_BIT == 0 && state & GUARD_COUNT_MASK != SHARED_GUARD) ||
-                (state & UPGRADING_BIT != 0 && state & GUARD_COUNT_MASK != UPGRADABLE_GUARD + SHARED_GUARD)
+            if state & PARKED_BIT == 0
+                || (state & UPGRADING_BIT == 0 && state & GUARD_COUNT_MASK != SHARED_GUARD)
+                || (state & UPGRADING_BIT != 0
+                    && state & GUARD_COUNT_MASK != UPGRADABLE_GUARD + SHARED_GUARD)
             {
                 match self.state.compare_exchange_weak(
                     state,
@@ -784,28 +778,28 @@ impl RawRwLock {
         // potential race condition here: another thread might grab a shared
         // lock between now and when we actually release our lock.
         let additional_guards = Cell::new(0);
-        let has_upgraded = Cell::new(if state & UPGRADING_BIT == 0 { None } else { Some(false) });
+        let has_upgraded = Cell::new(if state & UPGRADING_BIT == 0 {
+            None
+        } else {
+            Some(false)
+        });
         unsafe {
             let addr = self as *const _ as usize;
             let filter = |ParkToken(token)| -> FilterOp {
                 match has_upgraded.get() {
-                    None => {
-                        match checked_add(additional_guards.get(), token) {
-                            Some(x) => {
-                                additional_guards.set(x);
-                                FilterOp::Unpark
-                            },
-                            None => FilterOp::Stop,
-                        }
-                    },
-                    Some(false) => {
-                        if token & UPGRADING_BIT != 0 {
-                            additional_guards.set(token & !UPGRADING_BIT);
-                            has_upgraded.set(Some(true));
+                    None => match checked_add(additional_guards.get(), token) {
+                        Some(x) => {
+                            additional_guards.set(x);
                             FilterOp::Unpark
-                        } else {
-                            FilterOp::Skip
                         }
+                        None => FilterOp::Stop,
+                    },
+                    Some(false) => if token & UPGRADING_BIT != 0 {
+                        additional_guards.set(token & !UPGRADING_BIT);
+                        has_upgraded.set(Some(true));
+                        FilterOp::Unpark
+                    } else {
+                        FilterOp::Skip
                     },
                     Some(true) => FilterOp::Stop,
                 }
@@ -835,7 +829,7 @@ impl RawRwLock {
                             Some(x) => {
                                 new_state = x;
                                 TOKEN_HANDOFF
-                            },
+                            }
                             None => TOKEN_NORMAL,
                         }
                     } else {
@@ -979,16 +973,14 @@ impl RawRwLock {
             }
 
             match checked_add(state, UPGRADABLE_GUARD) {
-                Some(new_state) => {
-                    match self.state.compare_exchange_weak(
-                        state,
-                        new_state,
-                        Ordering::Acquire,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => return true,
-                        Err(x) => state = x,
-                    }
+                Some(new_state) => match self.state.compare_exchange_weak(
+                    state,
+                    new_state,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => return true,
+                    Err(x) => state = x,
                 },
                 None => return false,
             }
@@ -1026,7 +1018,7 @@ impl RawRwLock {
                     Some(x) => {
                         additional_guards.set(x);
                         FilterOp::Unpark
-                    },
+                    }
                     None => FilterOp::Stop,
                 }
             };
@@ -1050,7 +1042,7 @@ impl RawRwLock {
                             Some(x) => {
                                 new_state = x;
                                 TOKEN_HANDOFF
-                            },
+                            }
                             None => TOKEN_NORMAL,
                         }
                     } else {
@@ -1083,7 +1075,7 @@ impl RawRwLock {
                     Some(x) => {
                         guard_count = x;
                         FilterOp::Unpark
-                    },
+                    }
                     None => FilterOp::Stop,
                 }
             };
@@ -1121,8 +1113,7 @@ impl RawRwLock {
 
             // If there are no parked threads and only one other reader, try
             // spinning a few times.
-            if state == UPGRADABLE_GUARD + SHARED_GUARD && spinwait.spin()
-            {
+            if state == UPGRADABLE_GUARD + SHARED_GUARD && spinwait.spin() {
                 state = self.state.load(Ordering::Relaxed);
                 continue;
             }
