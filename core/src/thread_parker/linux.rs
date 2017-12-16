@@ -9,15 +9,6 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::time::Instant;
 use libc;
 
-#[cfg(target_arch = "x86")]
-const SYS_FUTEX: libc::c_long = 240;
-#[cfg(target_arch = "x86_64")]
-const SYS_FUTEX: libc::c_long = 202;
-#[cfg(target_arch = "arm")]
-const SYS_FUTEX: libc::c_long = 240;
-#[cfg(target_arch = "aarch64")]
-const SYS_FUTEX: libc::c_long = 98;
-
 const FUTEX_WAIT: i32 = 0;
 const FUTEX_WAKE: i32 = 1;
 const FUTEX_PRIVATE: i32 = 128;
@@ -49,7 +40,7 @@ impl ThreadParker {
     // been added to the queue, after unlocking the queue.
     pub unsafe fn park(&self) {
         while self.futex.load(Ordering::Acquire) != 0 {
-            let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, 0);
+            let r = libc::syscall(libc::SYS_futex, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, 0);
             debug_assert!(r == 0 || r == -1);
             if r == -1 {
                 debug_assert!(
@@ -79,7 +70,7 @@ impl ThreadParker {
                 tv_sec: diff.as_secs() as libc::time_t,
                 tv_nsec: diff.subsec_nanos() as libc::c_long,
             };
-            let r = libc::syscall(SYS_FUTEX, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, &ts);
+            let r = libc::syscall(libc::SYS_futex, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, &ts);
             debug_assert!(r == 0 || r == -1);
             if r == -1 {
                 debug_assert!(
@@ -116,7 +107,7 @@ impl UnparkHandle {
     pub unsafe fn unpark(self) {
         // The thread data may have been freed at this point, but it doesn't
         // matter since the syscall will just return EFAULT in that case.
-        let r = libc::syscall(SYS_FUTEX, self.futex, FUTEX_WAKE | FUTEX_PRIVATE, 1);
+        let r = libc::syscall(libc::SYS_futex, self.futex, FUTEX_WAKE | FUTEX_PRIVATE, 1);
         debug_assert!(r == 0 || r == 1 || r == -1);
         if r == -1 {
             debug_assert_eq!(*libc::__errno_location(), libc::EFAULT);
