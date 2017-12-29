@@ -890,7 +890,7 @@ unsafe fn unpark_requeue_internal(
     let mut link = &bucket_from.queue_head;
     let mut current = bucket_from.queue_head.get();
     let mut previous = ptr::null();
-    let mut requeue_threads = ptr::null();
+    let mut requeue_threads: *const ThreadData = ptr::null();
     let mut requeue_threads_tail: *const ThreadData = ptr::null();
     let mut wakeup_thread = None;
     while !current.is_null() {
