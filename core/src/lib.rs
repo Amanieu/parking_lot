@@ -11,15 +11,16 @@
 //! # The parking lot
 //!
 //! To keep synchronization primitives small, all thread queuing and suspending
-//! functionality is offloaded to the *parking lot*. The idea behind this is
-//! based on the Webkit [`WTF::ParkingLot`]
-//! (https://webkit.org/blog/6161/locking-in-webkit/) class, which essentially
-//! consists of a hash table mapping of lock addresses to queues of parked
-//! (sleeping) threads. The Webkit parking lot was itself inspired by Linux
-//! [futexes](http://man7.org/linux/man-pages/man2/futex.2.html), but it is more
-//! powerful since it allows invoking callbacks while holding a queue lock.
+//! functionality is offloaded to the *parking lot*. The idea behind this is based
+//! on the Webkit [`WTF::ParkingLot`](https://webkit.org/blog/6161/locking-in-webkit/)
+//! class, which essentially consists of a hash table mapping of lock addresses
+//! to queues of parked (sleeping) threads. The Webkit parking lot was itself
+//! inspired by Linux [futexes](http://man7.org/linux/man-pages/man2/futex.2.html),
+//! but it is more powerful since it allows invoking callbacks while holding a
+//! queue lock.
 //!
 //! There are two main operations that can be performed on the parking lot:
+//!
 //!  - *Parking* refers to suspending the thread while simultaneously enqueuing it
 //! on a queue keyed by some address.
 //! - *Unparking* refers to dequeuing a thread from a queue keyed by some address
