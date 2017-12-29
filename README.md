@@ -90,6 +90,9 @@ There are a few restrictions when using this library on stable Rust:
 - Slightly less efficient code may be generated for `compare_exchange`
   operations. This should not affect architectures like x86 though.
 
+To enable nightly-only functionality, you need to enable the `nightly` feature
+in Cargo (see below).
+
 ## Usage
 
 Add this to your `Cargo.toml`:
@@ -111,6 +114,9 @@ To enable nightly-only features, add this to your `Cargo.toml` instead:
 [dependencies]
 parking_lot = {version = "0.5", features = ["nightly"]}
 ```
+
+The experimental deadlock detector can be enabled with the
+`deadlock_detection` Cargo feature.
 
 The core parking lot API is provided by the `parking_lot_core` crate. It is
 separate from the synchronization primitives in the `parking_lot` crate so that
