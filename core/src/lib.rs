@@ -56,8 +56,6 @@ extern crate thread_id;
 extern crate libc;
 
 #[cfg(windows)]
-extern crate kernel32;
-#[cfg(windows)]
 extern crate winapi;
 
 #[cfg(all(feature = "nightly", target_os = "linux"))]

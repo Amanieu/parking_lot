@@ -11,18 +11,24 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use stable::{AtomicUsize, Ordering};
 use std::time::Instant;
 use std::mem;
-use winapi;
-use kernel32;
+
+use winapi::shared::basetsd::SIZE_T;
+use winapi::shared::minwindef::{BOOL, DWORD, FALSE, TRUE};
+use winapi::shared::winerror::ERROR_TIMEOUT;
+use winapi::um::errhandlingapi::GetLastError;
+use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
+use winapi::um::winbase::INFINITE;
+use winapi::um::winnt::{LPCSTR, PVOID};
 
 #[allow(non_snake_case)]
 pub struct WaitAddress {
     WaitOnAddress: extern "system" fn(
-        Address: winapi::PVOID,
-        CompareAddress: winapi::PVOID,
-        AddressSize: winapi::SIZE_T,
-        dwMilliseconds: winapi::DWORD,
-    ) -> winapi::BOOL,
-    WakeByAddressSingle: extern "system" fn(Address: winapi::PVOID),
+        Address: PVOID,
+        CompareAddress: PVOID,
+        AddressSize: SIZE_T,
+        dwMilliseconds: DWORD,
+    ) -> BOOL,
+    WakeByAddressSingle: extern "system" fn(Address: PVOID),
 }
 
 impl WaitAddress {
@@ -30,20 +36,20 @@ impl WaitAddress {
     pub unsafe fn create() -> Option<WaitAddress> {
         // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
         // located in kernel32.dll, but they are lying...
-        let synch_dll = kernel32::GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr()
-            as winapi::LPCSTR);
+        let synch_dll = GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr()
+            as LPCSTR);
         if synch_dll.is_null() {
             return None;
         }
 
         let WaitOnAddress =
-            kernel32::GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as winapi::LPCSTR);
+            GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as LPCSTR);
         if WaitOnAddress.is_null() {
             return None;
         }
-        let WakeByAddressSingle = kernel32::GetProcAddress(
+        let WakeByAddressSingle = GetProcAddress(
             synch_dll,
-            b"WakeByAddressSingle\0".as_ptr() as winapi::LPCSTR,
+            b"WakeByAddressSingle\0".as_ptr() as LPCSTR,
         );
         if WakeByAddressSingle.is_null() {
             return None;
@@ -66,12 +72,12 @@ impl WaitAddress {
         while key.load(Ordering::Acquire) != 0 {
             let cmp = 1usize;
             let r = (self.WaitOnAddress)(
-                key as *const _ as winapi::PVOID,
-                &cmp as *const _ as winapi::PVOID,
-                mem::size_of::<usize>() as winapi::SIZE_T,
-                winapi::INFINITE,
+                key as *const _ as PVOID,
+                &cmp as *const _ as PVOID,
+                mem::size_of::<usize>() as SIZE_T,
+                INFINITE,
             );
-            debug_assert!(r == winapi::TRUE);
+            debug_assert!(r == TRUE);
         }
     }
 
@@ -88,22 +94,22 @@ impl WaitAddress {
                     x.checked_add((diff.subsec_nanos() as u64 + 999999) / 1000000)
                 })
                 .map(|ms| {
-                    if ms > <winapi::DWORD>::max_value() as u64 {
-                        winapi::INFINITE
+                    if ms > <DWORD>::max_value() as u64 {
+                        INFINITE
                     } else {
-                        ms as winapi::DWORD
+                        ms as DWORD
                     }
                 })
-                .unwrap_or(winapi::INFINITE);
+                .unwrap_or(INFINITE);
             let cmp = 1usize;
             let r = (self.WaitOnAddress)(
-                key as *const _ as winapi::PVOID,
-                &cmp as *const _ as winapi::PVOID,
-                mem::size_of::<usize>() as winapi::SIZE_T,
+                key as *const _ as PVOID,
+                &cmp as *const _ as PVOID,
+                mem::size_of::<usize>() as SIZE_T,
                 timeout,
             );
-            if r == winapi::FALSE {
-                debug_assert_eq!(kernel32::GetLastError(), winapi::ERROR_TIMEOUT);
+            if r == FALSE {
+                debug_assert_eq!(GetLastError(), ERROR_TIMEOUT);
             }
         }
         true
@@ -133,6 +139,6 @@ impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
     pub unsafe fn unpark(self) {
-        (self.waitaddress.WakeByAddressSingle)(self.key as winapi::PVOID);
+        (self.waitaddress.WakeByAddressSingle)(self.key as PVOID);
     }
 }
