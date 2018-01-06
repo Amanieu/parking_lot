@@ -5,10 +5,10 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-#[cfg(windows)]
-use kernel32;
 #[cfg(unix)]
 use libc;
+#[cfg(windows)]
+use winapi;
 #[cfg(not(any(windows, unix)))]
 use std::thread;
 #[cfg(not(feature = "nightly"))]
@@ -22,7 +22,7 @@ fn thread_yield() {
         // We don't use SwitchToThread here because it doesn't consider all
         // threads in the system and the thread we are waiting for may not get
         // selected.
-        kernel32::Sleep(0);
+        winapi::um::synchapi::Sleep(0);
     }
 }
 #[cfg(unix)]
