@@ -33,7 +33,6 @@
 //! } // only for #[cfg]
 //! ```
 
-
 #[cfg(feature = "deadlock_detection")]
 pub use parking_lot_core::deadlock::check_deadlock;
 pub(crate) use parking_lot_core::deadlock::{acquire_resource, release_resource};

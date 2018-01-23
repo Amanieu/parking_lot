@@ -33,21 +33,17 @@ impl WaitAddress {
     pub unsafe fn create() -> Option<WaitAddress> {
         // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
         // located in kernel32.dll, but they are lying...
-        let synch_dll = GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr()
-            as LPCSTR);
+        let synch_dll = GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr() as LPCSTR);
         if synch_dll.is_null() {
             return None;
         }
 
-        let WaitOnAddress =
-            GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as LPCSTR);
+        let WaitOnAddress = GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as LPCSTR);
         if WaitOnAddress.is_null() {
             return None;
         }
-        let WakeByAddressSingle = GetProcAddress(
-            synch_dll,
-            b"WakeByAddressSingle\0".as_ptr() as LPCSTR,
-        );
+        let WakeByAddressSingle =
+            GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr() as LPCSTR);
         if WakeByAddressSingle.is_null() {
             return None;
         }
@@ -87,9 +83,7 @@ impl WaitAddress {
             let diff = timeout - now;
             let timeout = diff.as_secs()
                 .checked_mul(1000)
-                .and_then(|x| {
-                    x.checked_add((diff.subsec_nanos() as u64 + 999999) / 1000000)
-                })
+                .and_then(|x| x.checked_add((diff.subsec_nanos() as u64 + 999999) / 1000000))
                 .map(|ms| {
                     if ms > <DWORD>::max_value() as u64 {
                         INFINITE
@@ -122,7 +116,6 @@ impl WaitAddress {
         }
     }
 }
-
 
 // Handle for a thread that is about to be unparked. We need to mark the thread
 // as unparked while holding the queue lock, but we delay the actual unparking

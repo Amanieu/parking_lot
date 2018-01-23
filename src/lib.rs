@@ -39,7 +39,7 @@ pub use once::{Once, OnceState, ONCE_INIT};
 pub use mutex::{Mutex, MutexGuard};
 pub use remutex::{ReentrantMutex, ReentrantMutexGuard};
 pub use condvar::{Condvar, WaitTimeoutResult};
-pub use rwlock::{RwLock, RwLockReadGuard, RwLockWriteGuard, RwLockUpgradableReadGuard};
+pub use rwlock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::OwningRef;
@@ -62,4 +62,5 @@ pub type RwLockWriteGuardRef<'a, T, U = T> = OwningRef<RwLockWriteGuard<'a, T>, 
 
 /// Typedef of an owning reference that uses a `RwLockUpgradableReadGuard` as the owner.
 #[cfg(feature = "owning_ref")]
-pub type RwLockUpgradableReadGuardRef<'a, T, U = T> = OwningRef<RwLockUpgradableReadGuard<'a, T>, U>;
+pub type RwLockUpgradableReadGuardRef<'a, T, U = T> =
+    OwningRef<RwLockUpgradableReadGuard<'a, T>, U>;

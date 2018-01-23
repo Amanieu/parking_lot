@@ -40,7 +40,13 @@ impl ThreadParker {
     // been added to the queue, after unlocking the queue.
     pub unsafe fn park(&self) {
         while self.futex.load(Ordering::Acquire) != 0 {
-            let r = libc::syscall(libc::SYS_futex, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, 0);
+            let r = libc::syscall(
+                libc::SYS_futex,
+                &self.futex,
+                FUTEX_WAIT | FUTEX_PRIVATE,
+                1,
+                0,
+            );
             debug_assert!(r == 0 || r == -1);
             if r == -1 {
                 debug_assert!(
@@ -70,7 +76,13 @@ impl ThreadParker {
                 tv_sec: diff.as_secs() as libc::time_t,
                 tv_nsec: diff.subsec_nanos() as libc::c_long,
             };
-            let r = libc::syscall(libc::SYS_futex, &self.futex, FUTEX_WAIT | FUTEX_PRIVATE, 1, &ts);
+            let r = libc::syscall(
+                libc::SYS_futex,
+                &self.futex,
+                FUTEX_WAIT | FUTEX_PRIVATE,
+                1,
+                &ts,
+            );
             debug_assert!(r == 0 || r == -1);
             if r == -1 {
                 debug_assert!(

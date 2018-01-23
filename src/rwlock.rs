@@ -481,7 +481,6 @@ impl<T: ?Sized> RwLock<T> {
         unsafe { &mut *self.data.get() }
     }
 
-
     /// Releases shared read access of the rwlock.
     ///
     /// # Safety

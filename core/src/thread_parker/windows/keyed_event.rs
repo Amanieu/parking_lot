@@ -11,7 +11,7 @@ use std::ptr;
 use std::mem;
 
 use winapi::shared::minwindef::{TRUE, ULONG};
-use winapi::shared::ntdef::{NTSTATUS};
+use winapi::shared::ntdef::NTSTATUS;
 use winapi::shared::ntstatus::{STATUS_SUCCESS, STATUS_TIMEOUT};
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
@@ -40,11 +40,7 @@ pub struct KeyedEvent {
 }
 
 impl KeyedEvent {
-    unsafe fn wait_for(
-        &self,
-        key: PVOID,
-        timeout: PLARGE_INTEGER,
-    ) -> NTSTATUS {
+    unsafe fn wait_for(&self, key: PVOID, timeout: PLARGE_INTEGER) -> NTSTATUS {
         (self.NtWaitForKeyedEvent)(self.handle, key, 0, timeout)
     }
 
@@ -59,8 +55,7 @@ impl KeyedEvent {
             return None;
         }
 
-        let NtCreateKeyedEvent =
-            GetProcAddress(ntdll, b"NtCreateKeyedEvent\0".as_ptr() as LPCSTR);
+        let NtCreateKeyedEvent = GetProcAddress(ntdll, b"NtCreateKeyedEvent\0".as_ptr() as LPCSTR);
         if NtCreateKeyedEvent.is_null() {
             return None;
         }
@@ -131,9 +126,7 @@ impl KeyedEvent {
         let diff = timeout - now;
         let value = (diff.as_secs() as i64)
             .checked_mul(-10000000)
-            .and_then(|x| {
-                x.checked_sub((diff.subsec_nanos() as i64 + 99) / 100)
-            });
+            .and_then(|x| x.checked_sub((diff.subsec_nanos() as i64 + 99) / 100));
 
         match value {
             Some(x) => *nt_timeout.QuadPart_mut() = x,
