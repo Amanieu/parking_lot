@@ -5,12 +5,15 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use std::sync::atomic::Ordering;
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{ATOMIC_U8_INIT, AtomicU8};
 #[cfg(feature = "nightly")]
 type U8 = u8;
 #[cfg(not(feature = "nightly"))]
-use stable::{AtomicU8, Ordering};
+use std::sync::atomic::AtomicUsize as AtomicU8;
+#[cfg(not(feature = "nightly"))]
+use std::sync::atomic::ATOMIC_USIZE_INIT as ATOMIC_U8_INIT;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use std::time::{Duration, Instant};
@@ -37,14 +40,14 @@ impl RawMutex {
     #[inline]
     pub const fn new() -> RawMutex {
         RawMutex {
-            state: AtomicU8::new(0),
+            state: ATOMIC_U8_INIT,
         }
     }
     #[cfg(not(feature = "nightly"))]
     #[inline]
     pub fn new() -> RawMutex {
         RawMutex {
-            state: AtomicU8::new(0),
+            state: ATOMIC_U8_INIT,
         }
     }
 

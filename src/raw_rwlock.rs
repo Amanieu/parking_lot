@@ -5,11 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-#[cfg(feature = "nightly")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::cell::Cell;
-#[cfg(not(feature = "nightly"))]
-use stable::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use parking_lot_core::{self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult};
 use elision::{have_elision, AtomicElisionExt};

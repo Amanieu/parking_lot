@@ -71,9 +71,6 @@ mod thread_parker;
 #[path = "thread_parker/generic.rs"]
 mod thread_parker;
 
-#[cfg(not(feature = "nightly"))]
-mod stable;
-
 mod util;
 mod spinwait;
 mod word_lock;

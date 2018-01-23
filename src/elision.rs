@@ -5,10 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-#[cfg(feature = "nightly")]
 use std::sync::atomic::AtomicUsize;
-#[cfg(not(feature = "nightly"))]
-use stable::AtomicUsize;
 
 // Extension trait to add lock elision primitives to atomic types
 pub trait AtomicElisionExt {

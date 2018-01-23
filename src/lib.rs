@@ -19,9 +19,6 @@ extern crate owning_ref;
 
 extern crate parking_lot_core;
 
-#[cfg(not(feature = "nightly"))]
-mod stable;
-
 mod util;
 mod elision;
 mod raw_mutex;

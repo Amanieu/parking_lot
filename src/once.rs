@@ -5,12 +5,15 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use std::sync::atomic::{fence, Ordering};
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{fence, ATOMIC_U8_INIT, AtomicU8, Ordering};
+use std::sync::atomic::{ATOMIC_U8_INIT, AtomicU8};
 #[cfg(feature = "nightly")]
 type U8 = u8;
 #[cfg(not(feature = "nightly"))]
-use stable::{fence, ATOMIC_U8_INIT, AtomicU8, Ordering};
+use std::sync::atomic::AtomicUsize as AtomicU8;
+#[cfg(not(feature = "nightly"))]
+use std::sync::atomic::ATOMIC_USIZE_INIT as ATOMIC_U8_INIT;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use std::mem;
@@ -96,14 +99,14 @@ impl Once {
     #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> Once {
-        Once(AtomicU8::new(0))
+        Once(ATOMIC_U8_INIT)
     }
 
     /// Creates a new `Once` value.
     #[cfg(not(feature = "nightly"))]
     #[inline]
     pub fn new() -> Once {
-        Once(AtomicU8::new(0))
+        Once(ATOMIC_U8_INIT)
     }
 
     /// Returns the current state of this `Once`.
