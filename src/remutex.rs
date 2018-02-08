@@ -33,8 +33,8 @@ pub struct ReentrantMutex<T: ?Sized> {
     data: UnsafeCell<T>,
 }
 
-unsafe impl<T: Send> Send for ReentrantMutex<T> {}
-unsafe impl<T: Send> Sync for ReentrantMutex<T> {}
+unsafe impl<T: ?Sized + Send> Send for ReentrantMutex<T> {}
+unsafe impl<T: ?Sized + Send> Sync for ReentrantMutex<T> {}
 
 /// An RAII implementation of a "scoped lock" of a reentrant mutex. When this structure
 /// is dropped (falls out of scope), the lock will be unlocked.
