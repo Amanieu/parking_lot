@@ -132,7 +132,8 @@ struct ThreadData {
 
     // Extra data for deadlock detection
     // TODO: once supported in stable replace with #[cfg...] & remove dummy struct/impl
-    #[allow(dead_code)] deadlock_data: deadlock::DeadlockData,
+    #[allow(dead_code)]
+    deadlock_data: deadlock::DeadlockData,
 }
 
 impl ThreadData {

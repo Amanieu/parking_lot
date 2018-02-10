@@ -1,0 +1,16 @@
+[package]
+name = "parking_lot_wrappers"
+version = "0.1.0"
+authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
+description = "Wrappers to create fully-featured Mutex and RwLock types. Compatible with no_std."
+documentation = "https://amanieu.github.io/parking_lot/parking_lot_wrappers/index.html"
+license = "Apache-2.0/MIT"
+repository = "https://github.com/Amanieu/parking_lot"
+keywords = ["mutex", "rwlock", "wrapper", "no_std"]
+
+[dependencies]
+scopeguard = { version = "0.3", default-features = false }
+owning_ref = { version = "0.3", optional = true }
+
+[features]
+nightly = []

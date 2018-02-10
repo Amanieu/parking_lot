@@ -14,15 +14,12 @@
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
 #![cfg_attr(feature = "nightly", feature(asm))]
 
-#[cfg(feature = "owning_ref")]
-extern crate owning_ref;
-
 extern crate parking_lot_core;
+extern crate parking_lot_wrappers;
 
 mod util;
 mod elision;
 mod raw_mutex;
-mod raw_remutex;
 mod raw_rwlock;
 mod condvar;
 mod mutex;
@@ -40,27 +37,3 @@ pub use mutex::{Mutex, MutexGuard};
 pub use remutex::{ReentrantMutex, ReentrantMutexGuard};
 pub use condvar::{Condvar, WaitTimeoutResult};
 pub use rwlock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
-
-#[cfg(feature = "owning_ref")]
-use owning_ref::OwningRef;
-
-/// Typedef of an owning reference that uses a `MutexGuard` as the owner.
-#[cfg(feature = "owning_ref")]
-pub type MutexGuardRef<'a, T, U = T> = OwningRef<MutexGuard<'a, T>, U>;
-
-/// Typedef of an owning reference that uses a `ReentrantMutexGuard` as the owner.
-#[cfg(feature = "owning_ref")]
-pub type ReentrantMutexGuardRef<'a, T, U = T> = OwningRef<ReentrantMutexGuard<'a, T>, U>;
-
-/// Typedef of an owning reference that uses a `RwLockReadGuard` as the owner.
-#[cfg(feature = "owning_ref")]
-pub type RwLockReadGuardRef<'a, T, U = T> = OwningRef<RwLockReadGuard<'a, T>, U>;
-
-/// Typedef of an owning reference that uses a `RwLockWriteGuard` as the owner.
-#[cfg(feature = "owning_ref")]
-pub type RwLockWriteGuardRef<'a, T, U = T> = OwningRef<RwLockWriteGuard<'a, T>, U>;
-
-/// Typedef of an owning reference that uses a `RwLockUpgradableReadGuard` as the owner.
-#[cfg(feature = "owning_ref")]
-pub type RwLockUpgradableReadGuardRef<'a, T, U = T> =
-    OwningRef<RwLockUpgradableReadGuard<'a, T>, U>;

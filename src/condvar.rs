@@ -9,8 +9,9 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 use std::{ptr, fmt};
 use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
-use mutex::{guard_lock, MutexGuard};
-use raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
+use mutex::MutexGuard;
+use raw_mutex::{ParkingLotMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
+use parking_lot_wrappers::RawMutex;
 use deadlock;
 
 /// A type indicating whether a timed wait on a condition variable returned
@@ -80,7 +81,7 @@ impl WaitTimeoutResult {
 /// }
 /// ```
 pub struct Condvar {
-    state: AtomicPtr<RawMutex>,
+    state: AtomicPtr<ParkingLotMutex>,
 }
 
 impl Condvar {
@@ -158,7 +159,7 @@ impl Condvar {
 
     #[cold]
     #[inline(never)]
-    fn notify_all_slow(&self, mutex: *mut RawMutex) {
+    fn notify_all_slow(&self, mutex: *mut ParkingLotMutex) {
         unsafe {
             // Unpark one thread and requeue the rest onto the mutex
             let from = self as *const _ as usize;
@@ -216,7 +217,7 @@ impl Condvar {
     /// with a different `Mutex` object.
     #[inline]
     pub fn wait<T: ?Sized>(&self, mutex_guard: &mut MutexGuard<T>) {
-        self.wait_until_internal(guard_lock(mutex_guard), None);
+        self.wait_until_internal(unsafe { MutexGuard::raw(mutex_guard) }, None);
     }
 
     /// Waits on this condition variable for a notification, timing out after
@@ -248,12 +249,16 @@ impl Condvar {
         mutex_guard: &mut MutexGuard<T>,
         timeout: Instant,
     ) -> WaitTimeoutResult {
-        self.wait_until_internal(guard_lock(mutex_guard), Some(timeout))
+        self.wait_until_internal(unsafe { MutexGuard::raw(mutex_guard) }, Some(timeout))
     }
 
     // This is a non-generic function to reduce the monomorphization cost of
     // using `wait_until`.
-    fn wait_until_internal(&self, mutex: &RawMutex, timeout: Option<Instant>) -> WaitTimeoutResult {
+    fn wait_until_internal(
+        &self,
+        mutex: &ParkingLotMutex,
+        timeout: Option<Instant>,
+    ) -> WaitTimeoutResult {
         unsafe {
             let result;
             let mut bad_mutex = false;
@@ -276,7 +281,7 @@ impl Condvar {
                 };
                 let before_sleep = || {
                     // Unlock the mutex before sleeping...
-                    mutex.unlock(false);
+                    mutex.unlock();
                 };
                 let timed_out = |k, was_last_thread| {
                     // If we were requeued to a mutex, then we did not time out.
