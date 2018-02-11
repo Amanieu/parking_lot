@@ -16,7 +16,7 @@ use winapi::shared::ntstatus::{STATUS_SUCCESS, STATUS_TIMEOUT};
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
 use winapi::um::winnt::{ACCESS_MASK, GENERIC_READ, GENERIC_WRITE, LPCSTR};
-use winapi::um::winnt::{BOOLEAN, HANDLE, LARGE_INTEGER, PLARGE_INTEGER, PVOID};
+use winapi::um::winnt::{BOOLEAN, HANDLE, LARGE_INTEGER, PHANDLE, PLARGE_INTEGER, PVOID};
 
 const STATE_UNPARKED: usize = 0;
 const STATE_PARKED: usize = 1;
@@ -71,7 +71,7 @@ impl KeyedEvent {
         }
 
         let NtCreateKeyedEvent: extern "system" fn(
-            KeyedEventHandle: HANDLE,
+            KeyedEventHandle: PHANDLE,
             DesiredAccess: ACCESS_MASK,
             ObjectAttributes: PVOID,
             Flags: ULONG,
@@ -88,7 +88,7 @@ impl KeyedEvent {
         }
 
         Some(KeyedEvent {
-            handle: &mut handle,
+            handle,
             NtReleaseKeyedEvent: mem::transmute(NtReleaseKeyedEvent),
             NtWaitForKeyedEvent: mem::transmute(NtWaitForKeyedEvent),
         })
