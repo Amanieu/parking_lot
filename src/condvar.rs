@@ -217,7 +217,7 @@ impl Condvar {
     /// with a different `Mutex` object.
     #[inline]
     pub fn wait<T: ?Sized>(&self, mutex_guard: &mut MutexGuard<T>) {
-        self.wait_until_internal(unsafe { MutexGuard::raw(mutex_guard) }, None);
+        self.wait_until_internal(unsafe { MutexGuard::mutex(mutex_guard).raw() }, None);
     }
 
     /// Waits on this condition variable for a notification, timing out after
@@ -249,7 +249,10 @@ impl Condvar {
         mutex_guard: &mut MutexGuard<T>,
         timeout: Instant,
     ) -> WaitTimeoutResult {
-        self.wait_until_internal(unsafe { MutexGuard::raw(mutex_guard) }, Some(timeout))
+        self.wait_until_internal(
+            unsafe { MutexGuard::mutex(mutex_guard).raw() },
+            Some(timeout),
+        )
     }
 
     // This is a non-generic function to reduce the monomorphization cost of

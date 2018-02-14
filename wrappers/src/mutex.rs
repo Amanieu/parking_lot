@@ -92,20 +92,6 @@ pub struct Mutex<R: RawMutex, T: ?Sized> {
 unsafe impl<R: RawMutex + Send, T: ?Sized + Send> Send for Mutex<R, T> {}
 unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<R, T> {}
 
-/// An RAII implementation of a "scoped lock" of a mutex. When this structure is
-/// dropped (falls out of scope), the lock will be unlocked.
-///
-/// The data protected by the mutex can be accessed through this guard via its
-/// `Deref` and `DerefMut` implementations.
-#[must_use]
-pub struct MutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
-    raw: &'a R,
-    data: *mut T,
-    marker: PhantomData<&'a mut T>,
-}
-
-unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync for MutexGuard<'a, R, T> {}
-
 impl<R: RawMutex, T> Mutex<R, T> {
     /// Creates a new mutex in an unlocked state ready for use.
     #[cfg(feature = "nightly")]
@@ -139,8 +125,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     #[inline]
     fn guard(&self) -> MutexGuard<R, T> {
         MutexGuard {
-            raw: &self.raw,
-            data: self.data.get(),
+            mutex: self,
             marker: PhantomData,
         }
     }
@@ -251,18 +236,26 @@ impl<R: RawMutex, T: ?Sized + fmt::Debug> fmt::Debug for Mutex<R, T> {
     }
 }
 
+/// An RAII implementation of a "scoped lock" of a mutex. When this structure is
+/// dropped (falls out of scope), the lock will be unlocked.
+///
+/// The data protected by the mutex can be accessed through this guard via its
+/// `Deref` and `DerefMut` implementations.
+#[must_use]
+pub struct MutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
+    mutex: &'a Mutex<R, T>,
+    marker: PhantomData<(&'a mut T, *mut ())>,
+}
+
+unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync for MutexGuard<'a, R, T> {}
+
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
-    /// Returns the underlying raw mutex object.
-    ///
-    /// # Safety
-    ///
-    /// This method is unsafe because it allows unlocking a mutex while
-    /// still holding a reference to a `MutexGuard`.
-    pub unsafe fn raw(s: &Self) -> &R {
-        s.raw
+    /// Returns a reference to the original `Mutex` object.
+    pub fn mutex(s: &Self) -> &'a Mutex<R, T> {
+        s.mutex
     }
 
-    /// Makes a new `MutexGuard` for a component of the locked data.
+    /// Makes a new `MappedMutexGuard` for a component of the locked data.
     ///
     /// This operation cannot fail as the `MutexGuard` passed
     /// in already locked the mutex.
@@ -271,14 +264,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// used as `MutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MutexGuard<'a, R, U>
+    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
     where
         F: FnOnce(&mut T) -> &mut U,
     {
-        let raw = s.raw;
-        let data = f(unsafe { &mut *s.data });
+        let raw = &s.mutex.raw;
+        let data = f(unsafe { &mut *s.mutex.data.get() });
         mem::forget(s);
-        MutexGuard {
+        MappedMutexGuard {
             raw,
             data,
             marker: PhantomData,
@@ -294,8 +287,8 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        s.raw.unlock();
-        defer!(s.raw.lock());
+        s.mutex.raw.unlock();
+        defer!(s.mutex.raw.lock());
         f()
     }
 }
@@ -315,7 +308,7 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// using this method instead of dropping the `MutexGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.raw.unlock_fair();
+        s.mutex.raw.unlock_fair();
         mem::forget(s);
     }
 
@@ -329,8 +322,8 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        s.raw.unlock_fair();
-        defer!(s.raw.lock());
+        s.mutex.raw.unlock_fair();
+        defer!(s.mutex.raw.lock());
         f()
     }
 
@@ -341,7 +334,7 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// are no waiting threads.
     #[inline]
     pub fn bump(s: &mut Self) {
-        s.raw.bump();
+        s.mutex.raw.bump();
     }
 }
 
@@ -349,18 +342,107 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Deref for MutexGuard<'a, R, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data }
+        unsafe { &*self.mutex.data.get() }
     }
 }
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> DerefMut for MutexGuard<'a, R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data }
+        unsafe { &mut *self.mutex.data.get() }
     }
 }
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MutexGuard<'a, R, T> {
+    #[inline]
+    fn drop(&mut self) {
+        self.mutex.raw.unlock();
+    }
+}
+
+#[cfg(feature = "owning_ref")]
+unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'a, R, T> {}
+
+/// An RAII mutex guard returned by `MutexGuard::map`, which can point to a
+/// subfield of the protected data.
+///
+/// The main difference between `MappedMutexGuard` and `MutexGuard` is that the
+/// former doesn't support temporarily unlocking and re-locking, since that
+/// could introduce soundness issues if the locked object is modified by another
+/// thread.
+#[must_use]
+pub struct MappedMutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
+    raw: &'a R,
+    data: *mut T,
+    marker: PhantomData<&'a mut T>,
+}
+
+unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync
+    for MappedMutexGuard<'a, R, T>
+{
+}
+
+impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
+    /// Makes a new `MappedMutexGuard` for a component of the locked data.
+    ///
+    /// This operation cannot fail as the `MutexGuard` passed
+    /// in already locked the mutex.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `MutexGuard::map(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
+    where
+        F: FnOnce(&mut T) -> &mut U,
+    {
+        let raw = s.raw;
+        let data = f(unsafe { &mut *s.data });
+        mem::forget(s);
+        MappedMutexGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
+    /// Unlocks the mutex using a fair unlock protocol.
+    ///
+    /// By default, mutexes are unfair and allow the current thread to re-lock
+    /// the mutex before another has the chance to acquire the lock, even if
+    /// that thread has been blocked on the mutex for a long time. This is the
+    /// default because it allows much higher throughput as it avoids forcing a
+    /// context switch on every mutex unlock. This can result in one thread
+    /// acquiring a mutex many more times than other threads.
+    ///
+    /// However in some cases it can be beneficial to ensure fairness by forcing
+    /// the lock to pass on to a waiting thread if there is one. This is done by
+    /// using this method instead of dropping the `MutexGuard` normally.
+    #[inline]
+    pub fn unlock_fair(s: Self) {
+        s.raw.unlock_fair();
+        mem::forget(s);
+    }
+}
+
+impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Deref for MappedMutexGuard<'a, R, T> {
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T {
+        unsafe { &*self.data }
+    }
+}
+
+impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> DerefMut for MappedMutexGuard<'a, R, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe { &mut *self.data }
+    }
+}
+
+impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MappedMutexGuard<'a, R, T> {
     #[inline]
     fn drop(&mut self) {
         self.raw.unlock();
@@ -368,4 +450,4 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MutexGuard<'a, R, T> {
 }
 
 #[cfg(feature = "owning_ref")]
-unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'a, R, T> {}
+unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MappedMutexGuard<'a, R, T> {}

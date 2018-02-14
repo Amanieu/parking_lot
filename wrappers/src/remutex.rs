@@ -148,23 +148,6 @@ unsafe impl<R: RawMutex + Sync, G: GetThreadId + Sync, T: ?Sized + Send> Sync
 {
 }
 
-/// An RAII implementation of a "scoped lock" of a reentrant mutex. When this structure
-/// is dropped (falls out of scope), the lock will be unlocked.
-///
-/// The data protected by the mutex can be accessed through this guard via its
-/// `Deref` implementation.
-#[must_use]
-pub struct ReentrantMutexGuard<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> {
-    raw: &'a RawReentrantMutex<R, G>,
-    data: *const T,
-    marker: PhantomData<&'a T>,
-}
-
-unsafe impl<'a, R: RawMutex + Sync + 'a, G: GetThreadId + Sync + 'a, T: ?Sized + Sync + 'a> Sync
-    for ReentrantMutexGuard<'a, R, G, T>
-{
-}
-
 impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
     /// Creates a new reentrant mutex in an unlocked state ready for use.
     #[cfg(feature = "nightly")]
@@ -208,8 +191,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     #[inline]
     fn guard(&self) -> ReentrantMutexGuard<R, G, T> {
         ReentrantMutexGuard {
-            raw: &self.raw,
-            data: self.data.get(),
+            remutex: &self,
             marker: PhantomData,
         }
     }
@@ -321,18 +303,29 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized + fmt::Debug> fmt::Debug for Reentra
     }
 }
 
+/// An RAII implementation of a "scoped lock" of a reentrant mutex. When this structure
+/// is dropped (falls out of scope), the lock will be unlocked.
+///
+/// The data protected by the mutex can be accessed through this guard via its
+/// `Deref` implementation.
+#[must_use]
+pub struct ReentrantMutexGuard<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> {
+    remutex: &'a ReentrantMutex<R, G, T>,
+    marker: PhantomData<(&'a T, *mut ())>,
+}
+
+unsafe impl<'a, R: RawMutex + Sync + 'a, G: GetThreadId + Sync + 'a, T: ?Sized + Sync + 'a> Sync
+    for ReentrantMutexGuard<'a, R, G, T>
+{
+}
+
 impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGuard<'a, R, G, T> {
-    /// Returns the underlying raw mutex object.
-    ///
-    /// # Safety
-    ///
-    /// This method is unsafe because it allows unlocking a mutex while
-    /// still holding a reference to a `ReentrantMutexGuard`.
-    pub unsafe fn raw(s: &Self) -> &R {
-        &s.raw.mutex
+    /// Returns a reference to the original `ReentrantMutex` object.
+    pub fn remutex(s: &Self) -> &'a ReentrantMutex<R, G, T> {
+        s.remutex
     }
 
-    /// Makes a new `ReentrantMutexGuard` for a component of the locked data.
+    /// Makes a new `MappedReentrantMutexGuard` for a component of the locked data.
     ///
     /// This operation cannot fail as the `ReentrantMutexGuard` passed
     /// in already locked the mutex.
@@ -341,14 +334,14 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     /// used as `ReentrantMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> ReentrantMutexGuard<'a, R, G, U>
+    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedReentrantMutexGuard<'a, R, G, U>
     where
         F: FnOnce(&T) -> &U,
     {
-        let raw = s.raw;
-        let data = f(unsafe { &*s.data });
+        let raw = &s.remutex.raw;
+        let data = f(unsafe { &*s.remutex.data.get() });
         mem::forget(s);
-        ReentrantMutexGuard {
+        MappedReentrantMutexGuard {
             raw,
             data,
             marker: PhantomData,
@@ -364,8 +357,8 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     where
         F: FnOnce() -> U,
     {
-        s.raw.unlock();
-        defer!(s.raw.lock());
+        s.remutex.raw.unlock();
+        defer!(s.remutex.raw.lock());
         f()
     }
 }
@@ -387,7 +380,7 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// using this method instead of dropping the `ReentrantMutexGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.raw.unlock_fair();
+        s.remutex.raw.unlock_fair();
         mem::forget(s);
     }
 
@@ -401,8 +394,8 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     where
         F: FnOnce() -> U,
     {
-        s.raw.unlock_fair();
-        defer!(s.raw.lock());
+        s.remutex.raw.unlock_fair();
+        defer!(s.remutex.raw.lock());
         f()
     }
 
@@ -413,7 +406,7 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// are no waiting threads.
     #[inline]
     pub fn bump(s: &mut Self) {
-        s.raw.bump();
+        s.remutex.raw.bump();
     }
 }
 
@@ -423,12 +416,105 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Deref
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data }
+        unsafe { &*self.remutex.data.get() }
     }
 }
 
 impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Drop
     for ReentrantMutexGuard<'a, R, G, T>
+{
+    #[inline]
+    fn drop(&mut self) {
+        self.remutex.raw.unlock();
+    }
+}
+
+#[cfg(feature = "owning_ref")]
+unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAddress
+    for ReentrantMutexGuard<'a, R, G, T>
+{
+}
+
+/// An RAII mutex guard returned by `ReentrantMutexGuard::map`, which can point to a
+/// subfield of the protected data.
+///
+/// The main difference between `MappedReentrantMutexGuard` and `ReentrantMutexGuard` is that the
+/// former doesn't support temporarily unlocking and re-locking, since that
+/// could introduce soundness issues if the locked object is modified by another
+/// thread.
+#[must_use]
+pub struct MappedReentrantMutexGuard<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> {
+    raw: &'a RawReentrantMutex<R, G>,
+    data: *const T,
+    marker: PhantomData<&'a T>,
+}
+
+unsafe impl<'a, R: RawMutex + Sync + 'a, G: GetThreadId + Sync + 'a, T: ?Sized + Sync + 'a> Sync
+    for MappedReentrantMutexGuard<'a, R, G, T>
+{
+}
+
+impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
+    MappedReentrantMutexGuard<'a, R, G, T>
+{
+    /// Makes a new `MappedReentrantMutexGuard` for a component of the locked data.
+    ///
+    /// This operation cannot fail as the `ReentrantMutexGuard` passed
+    /// in already locked the mutex.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `ReentrantMutexGuard::map(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedReentrantMutexGuard<'a, R, G, U>
+    where
+        F: FnOnce(&T) -> &U,
+    {
+        let raw = s.raw;
+        let data = f(unsafe { &*s.data });
+        mem::forget(s);
+        MappedReentrantMutexGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
+    MappedReentrantMutexGuard<'a, R, G, T>
+{
+    /// Unlocks the mutex using a fair unlock protocol.
+    ///
+    /// By default, mutexes are unfair and allow the current thread to re-lock
+    /// the mutex before another has the chance to acquire the lock, even if
+    /// that thread has been blocked on the mutex for a long time. This is the
+    /// default because it allows much higher throughput as it avoids forcing a
+    /// context switch on every mutex unlock. This can result in one thread
+    /// acquiring a mutex many more times than other threads.
+    ///
+    /// However in some cases it can be beneficial to ensure fairness by forcing
+    /// the lock to pass on to a waiting thread if there is one. This is done by
+    /// using this method instead of dropping the `ReentrantMutexGuard` normally.
+    #[inline]
+    pub fn unlock_fair(s: Self) {
+        s.raw.unlock_fair();
+        mem::forget(s);
+    }
+}
+
+impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Deref
+    for MappedReentrantMutexGuard<'a, R, G, T>
+{
+    type Target = T;
+    #[inline]
+    fn deref(&self) -> &T {
+        unsafe { &*self.data }
+    }
+}
+
+impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Drop
+    for MappedReentrantMutexGuard<'a, R, G, T>
 {
     #[inline]
     fn drop(&mut self) {
@@ -438,6 +524,6 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Drop
 
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAddress
-    for ReentrantMutexGuard<'a, R, G, T>
+    for MappedReentrantMutexGuard<'a, R, G, T>
 {
 }
