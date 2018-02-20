@@ -13,6 +13,13 @@ const FUTEX_WAIT: i32 = 0;
 const FUTEX_WAKE: i32 = 1;
 const FUTEX_PRIVATE: i32 = 128;
 
+// x32 Linux uses a non-standard type for tv_nsec in timespec.
+// See https://sourceware.org/bugzilla/show_bug.cgi?id=16437
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+type tv_nsec_t = libc::i64;
+#[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
+type tv_nsec_t = libc::c_long;
+
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {
     futex: AtomicI32,
@@ -74,7 +81,7 @@ impl ThreadParker {
             }
             let ts = libc::timespec {
                 tv_sec: diff.as_secs() as libc::time_t,
-                tv_nsec: diff.subsec_nanos() as libc::c_long,
+                tv_nsec: diff.subsec_nanos() as tv_nsec_t,
             };
             let r = libc::syscall(
                 libc::SYS_futex,
