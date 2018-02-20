@@ -90,7 +90,46 @@ impl AtomicElisionExt for AtomicUsize {
     }
 }
 
-#[cfg(all(feature = "nightly", target_arch = "x86_64"))]
+#[cfg(all(feature = "nightly", target_arch = "x86_64", target_pointer_width = "32"))]
+impl AtomicElisionExt for AtomicUsize {
+    type IntType = usize;
+
+    #[inline]
+    fn elision_acquire(&self, current: usize, new: usize) -> Result<usize, usize> {
+        unsafe {
+            let prev: usize;
+            asm!("xacquire; lock; cmpxchgl $2, $1"
+                 : "={rax}" (prev), "+*m" (self)
+                 : "r" (new), "{rax}" (current)
+                 : "memory"
+                 : "volatile");
+            if prev == current {
+                Ok(prev)
+            } else {
+                Err(prev)
+            }
+        }
+    }
+
+    #[inline]
+    fn elision_release(&self, current: usize, new: usize) -> Result<usize, usize> {
+        unsafe {
+            let prev: usize;
+            asm!("xrelease; lock; cmpxchgl $2, $1"
+                 : "={rax}" (prev), "+*m" (self)
+                 : "r" (new), "{rax}" (current)
+                 : "memory"
+                 : "volatile");
+            if prev == current {
+                Ok(prev)
+            } else {
+                Err(prev)
+            }
+        }
+    }
+}
+
+#[cfg(all(feature = "nightly", target_arch = "x86_64", target_pointer_width = "64"))]
 impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 
