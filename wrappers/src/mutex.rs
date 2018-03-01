@@ -27,6 +27,10 @@ pub unsafe trait RawMutex {
     /// Initial value for an unlocked mutex.
     const INIT: Self;
 
+    /// Marker type which determines whether a lock guard should be `Send`. Use
+    /// one of the `GuardSend` or `GuardNoSend` helper types here.
+    type GuardMarker;
+
     /// Acquires this mutex, blocking the current thread until it is able to do so.
     fn lock(&self);
 
@@ -244,7 +248,7 @@ impl<R: RawMutex, T: ?Sized + fmt::Debug> fmt::Debug for Mutex<R, T> {
 #[must_use]
 pub struct MutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
     mutex: &'a Mutex<R, T>,
-    marker: PhantomData<(&'a mut T, *mut ())>,
+    marker: PhantomData<(&'a mut T, R::GuardMarker)>,
 }
 
 unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync for MutexGuard<'a, R, T> {}
@@ -379,6 +383,11 @@ pub struct MappedMutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
 
 unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync
     for MappedMutexGuard<'a, R, T>
+{
+}
+unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Send for MappedMutexGuard<'a, R, T>
+where
+    R::GuardMarker: Send,
 {
 }
 

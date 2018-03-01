@@ -12,6 +12,7 @@ use core::mem;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use mutex::{RawMutex, RawMutexFair, RawMutexTimed};
+use GuardNoSend;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -311,7 +312,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized + fmt::Debug> fmt::Debug for Reentra
 #[must_use]
 pub struct ReentrantMutexGuard<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> {
     remutex: &'a ReentrantMutex<R, G, T>,
-    marker: PhantomData<(&'a T, *mut ())>,
+    marker: PhantomData<(&'a T, GuardNoSend)>,
 }
 
 unsafe impl<'a, R: RawMutex + Sync + 'a, G: GetThreadId + Sync + 'a, T: ?Sized + Sync + 'a> Sync

@@ -29,6 +29,10 @@ pub unsafe trait RawRwLock {
     /// Initial value for an unlocked `RwLock`.
     const INIT: Self;
 
+    /// Marker type which determines whether a lock guard should be `Send`. Use
+    /// one of the `GuardSend` or `GuardNoSend` helper types here.
+    type GuardMarker;
+
     /// Acquires a shared lock, blocking the current thread until it is able to do so.
     fn lock_shared(&self);
 
@@ -609,7 +613,7 @@ impl<R: RawRwLock, T: ?Sized + fmt::Debug> fmt::Debug for RwLock<R, T> {
 #[must_use]
 pub struct RwLockReadGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
     rwlock: &'a RwLock<R, T>,
-    marker: PhantomData<&'a T>,
+    marker: PhantomData<(&'a T, R::GuardMarker)>,
 }
 
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync for RwLockReadGuard<'a, R, T> {}
@@ -726,7 +730,7 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress for RwLockReadG
 #[must_use]
 pub struct RwLockWriteGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
     rwlock: &'a RwLock<R, T>,
-    marker: PhantomData<&'a mut T>,
+    marker: PhantomData<(&'a mut T, R::GuardMarker)>,
 }
 
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync for RwLockWriteGuard<'a, R, T> {}
@@ -886,7 +890,7 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress for RwLockWrite
 #[must_use]
 pub struct RwLockUpgradableReadGuard<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> {
     rwlock: &'a RwLock<R, T>,
-    marker: PhantomData<(&'a T, *mut ())>,
+    marker: PhantomData<(&'a T, R::GuardMarker)>,
 }
 
 unsafe impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + Sync + 'a> Sync
@@ -1084,10 +1088,15 @@ unsafe impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> StableAddress
 pub struct MappedRwLockReadGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
     raw: &'a R,
     data: *const T,
-    marker: PhantomData<(&'a T, *mut ())>,
+    marker: PhantomData<&'a T>,
 }
 
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync for MappedRwLockReadGuard<'a, R, T> {}
+unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Send for MappedRwLockReadGuard<'a, R, T>
+where
+    R::GuardMarker: Send,
+{
+}
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
     /// Make a new `MappedRwLockReadGuard` for a component of the locked data.
@@ -1166,11 +1175,16 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress
 pub struct MappedRwLockWriteGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
     raw: &'a R,
     data: *mut T,
-    marker: PhantomData<(&'a mut T, *mut ())>,
+    marker: PhantomData<&'a mut T>,
 }
 
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync
     for MappedRwLockWriteGuard<'a, R, T>
+{
+}
+unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Send for MappedRwLockWriteGuard<'a, R, T>
+where
+    R::GuardMarker: Send,
 {
 }
 

@@ -19,7 +19,7 @@ type U8 = usize;
 use std::time::{Duration, Instant};
 use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
 use deadlock;
-use parking_lot_wrappers::{RawMutex, RawMutexFair, RawMutexTimed};
+use parking_lot_wrappers::{GuardNoSend, RawMutex, RawMutexFair, RawMutexTimed};
 
 // UnparkToken used to indicate that that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.
@@ -41,6 +41,8 @@ unsafe impl RawMutex for ParkingLotMutex {
     const INIT: ParkingLotMutex = ParkingLotMutex {
         state: ATOMIC_U8_INIT,
     };
+
+    type GuardMarker = GuardNoSend;
 
     #[inline]
     fn lock(&self) {

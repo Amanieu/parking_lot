@@ -90,6 +90,12 @@ extern crate scopeguard;
 #[cfg(feature = "owning_ref")]
 extern crate owning_ref;
 
+/// Marker type which indicates that the Guard type for a lock is `Send`.
+pub struct GuardSend(());
+
+/// Marker type which indicates that the Guard type for a lock is not `Send`.
+pub struct GuardNoSend(*mut ());
+
 mod mutex;
 pub use mutex::*;
 
