@@ -345,7 +345,9 @@ impl Default for Once {
 
 impl fmt::Debug for Once {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Once {{ state: {:?} }}", &self.state())
+        f.debug_struct("Once")
+            .field("state", &self.state())
+            .finish()
     }
 }
 
@@ -469,5 +471,17 @@ mod tests {
 
         assert!(t1.join().is_ok());
         assert!(t2.join().is_ok());
+    }
+
+    #[test]
+    fn test_once_debug() {
+        static O: Once = ONCE_INIT;
+
+        assert_eq!(format!("{:?}", O), "Once { state: New }");
+        assert_eq!(format!("{:#?}", O),
+"Once {
+    state: New
+}"
+        );
     }
 }

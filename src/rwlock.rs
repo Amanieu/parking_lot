@@ -729,7 +729,9 @@ impl<T: ?Sized + Default> Default for RwLock<T> {
 impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_read() {
-            Some(guard) => write!(f, "RwLock {{ data: {:?} }}", &*guard),
+            Some(guard) => f.debug_struct("RwLock")
+                .field("data", &&*guard)
+                .finish(),
             None => write!(f, "RwLock {{ <locked> }}"),
         }
     }
@@ -1439,5 +1441,22 @@ mod tests {
 
         // A normal read would block here since there is a pending writer
         let _lock2 = arc.read_recursive();
+    }
+
+    #[test]
+    fn test_rwlock_debug() {
+        let x = RwLock::new(vec![0u8, 10]);
+
+        assert_eq!(format!("{:?}", x), "RwLock { data: [0, 10] }");
+        assert_eq!(format!("{:#?}", x),
+"RwLock {
+    data: [
+        0,
+        10
+    ]
+}"
+        );
+        let _lock = x.write();
+        assert_eq!(format!("{:?}", x), "RwLock { <locked> }");
     }
 }

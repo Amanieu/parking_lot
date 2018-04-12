@@ -214,7 +214,9 @@ impl<T: ?Sized + Default> Default for ReentrantMutex<T> {
 impl<T: ?Sized + fmt::Debug> fmt::Debug for ReentrantMutex<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_lock() {
-            Some(guard) => write!(f, "ReentrantMutex {{ data: {:?} }}", &*guard),
+            Some(guard) => f.debug_struct("ReentrantMutex")
+                .field("data", &&*guard)
+                .finish(),
             None => write!(f, "ReentrantMutex {{ <locked> }}"),
         }
     }
@@ -334,5 +336,20 @@ mod tests {
         }).join()
             .unwrap();
         let _lock3 = m.try_lock();
+    }
+
+    #[test]
+    fn test_reentrant_mutex_debug() {
+        let mutex = ReentrantMutex::new(vec![0u8, 10]);
+
+        assert_eq!(format!("{:?}", mutex), "ReentrantMutex { data: [0, 10] }");
+        assert_eq!(format!("{:#?}", mutex),
+"ReentrantMutex {
+    data: [
+        0,
+        10
+    ]
+}"
+        );
     }
 }

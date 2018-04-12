@@ -278,7 +278,9 @@ impl<T: ?Sized + Default> Default for Mutex<T> {
 impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_lock() {
-            Some(guard) => write!(f, "Mutex {{ data: {:?} }}", &*guard),
+            Some(guard) => f.debug_struct("Mutex")
+                .field("data", &&*guard)
+                .finish(),
             None => write!(f, "Mutex {{ <locked> }}"),
         }
     }
@@ -531,5 +533,22 @@ mod tests {
 
         let mutex = Mutex::new(());
         sync(mutex.lock());
+    }
+
+    #[test]
+    fn test_mutex_debug() {
+        let mutex = Mutex::new(vec![0u8, 10]);
+
+        assert_eq!(format!("{:?}", mutex), "Mutex { data: [0, 10] }");
+        assert_eq!(format!("{:#?}", mutex),
+"Mutex {
+    data: [
+        0,
+        10
+    ]
+}"
+        );
+        let _lock = mutex.lock();
+        assert_eq!(format!("{:?}", mutex), "Mutex { <locked> }");
     }
 }
