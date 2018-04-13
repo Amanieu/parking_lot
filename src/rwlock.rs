@@ -732,7 +732,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for RwLock<T> {
             Some(guard) => f.debug_struct("RwLock")
                 .field("data", &&*guard)
                 .finish(),
-            None => write!(f, "RwLock {{ <locked> }}"),
+            None => f.pad("RwLock { <locked> }"),
         }
     }
 }

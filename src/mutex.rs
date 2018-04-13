@@ -281,7 +281,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for Mutex<T> {
             Some(guard) => f.debug_struct("Mutex")
                 .field("data", &&*guard)
                 .finish(),
-            None => write!(f, "Mutex {{ <locked> }}"),
+            None => f.pad("Mutex { <locked> }"),
         }
     }
 }

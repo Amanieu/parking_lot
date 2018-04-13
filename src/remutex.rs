@@ -217,7 +217,7 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for ReentrantMutex<T> {
             Some(guard) => f.debug_struct("ReentrantMutex")
                 .field("data", &&*guard)
                 .finish(),
-            None => write!(f, "ReentrantMutex {{ <locked> }}"),
+            None => f.pad("ReentrantMutex { <locked> }"),
         }
     }
 }

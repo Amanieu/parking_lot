@@ -7,7 +7,7 @@
 
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
-use std::ptr;
+use std::{ptr, fmt};
 use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
 use mutex::{guard_lock, MutexGuard};
 use raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
@@ -354,6 +354,12 @@ impl Default for Condvar {
     }
 }
 
+impl fmt::Debug for Condvar {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.pad("Condvar { .. }")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc::channel;
@@ -509,5 +515,11 @@ mod tests {
         drop(g);
 
         let _ = c.wait_for(&mut m3.lock(), Duration::from_millis(1));
+    }
+
+    #[test]
+    fn test_debug_condvar() {
+        let c = Condvar::new();
+        assert_eq!(format!("{:?}", c), "Condvar { .. }");
     }
 }
