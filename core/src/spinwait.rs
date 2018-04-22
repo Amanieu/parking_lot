@@ -11,8 +11,7 @@ use libc;
 use winapi;
 #[cfg(not(any(windows, unix)))]
 use std::thread;
-#[cfg(not(feature = "nightly"))]
-use std::sync::atomic::{fence, Ordering};
+use std::sync::atomic::spin_loop_hint;
 
 // Yields the rest of the current timeslice to the OS
 #[cfg(windows)]
@@ -38,43 +37,12 @@ fn thread_yield() {
     thread::yield_now();
 }
 
-// Wastes some CPU time for the given number of iterations, preferably also
+// Wastes some CPU time for the given number of iterations,
 // using a hint to indicate to the CPU that we are spinning.
-#[cfg(all(feature = "nightly", any(target_arch = "x86", target_arch = "x86_64")))]
 #[inline]
 fn cpu_relax(iterations: u32) {
     for _ in 0..iterations {
-        unsafe {
-            asm!("pause" ::: "memory" : "volatile");
-        }
-    }
-}
-#[cfg(all(feature = "nightly", target_arch = "aarch64"))]
-#[inline]
-fn cpu_relax(iterations: u32) {
-    for _ in 0..iterations {
-        unsafe {
-            asm!("yield" ::: "memory" : "volatile");
-        }
-    }
-}
-#[cfg(all(feature = "nightly",
-          not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64"))))]
-#[inline]
-fn cpu_relax(iterations: u32) {
-    for _ in 0..iterations {
-        unsafe {
-            asm!("" ::: "memory" : "volatile");
-        }
-    }
-}
-#[cfg(not(feature = "nightly"))]
-#[inline]
-fn cpu_relax(iterations: u32) {
-    // This is a bit tricky: we rely on the fact that LLVM doesn't optimize
-    // atomic operations and effectively treats them as volatile.
-    for _ in 0..iterations {
-        fence(Ordering::SeqCst);
+        spin_loop_hint()
     }
 }
 
