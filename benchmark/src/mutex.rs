@@ -100,7 +100,7 @@ fn run_benchmark<M: Mutex<f64> + Send + Sync + 'static>(
     work_per_critical_section: usize,
     work_between_critical_sections: usize,
     seconds_per_test: usize,
-) {
+) -> Vec<usize> {
     let lock = Arc::new(([0u8; 300], M::new(0.0), [0u8; 300]));
     let keep_going = Arc::new(AtomicBool::new(true));
     let barrier = Arc::new(Barrier::new(num_threads));
@@ -133,10 +133,29 @@ fn run_benchmark<M: Mutex<f64> + Send + Sync + 'static>(
         }));
     }
 
-    thread::sleep(Duration::new(seconds_per_test as u64, 0));
+    thread::sleep(Duration::from_secs(seconds_per_test as u64));
     keep_going.store(false, Ordering::Relaxed);
+    threads.into_iter().map(|x| x.join().unwrap().0).collect()
+}
 
-    let mut data: Vec<usize> = threads.into_iter().map(|x| x.join().unwrap().0).collect();
+fn run_benchmark_iterations<M: Mutex<f64> + Send + Sync + 'static>(
+    num_threads: usize,
+    work_per_critical_section: usize,
+    work_between_critical_sections: usize,
+    seconds_per_test: usize,
+    test_iterations: usize,
+) {
+    let mut data = vec![];
+    for _ in 0..test_iterations {
+        let run_data = run_benchmark::<M>(
+            num_threads,
+            work_per_critical_section,
+            work_between_critical_sections,
+            seconds_per_test,
+        );
+        data.extend_from_slice(&run_data);
+    }
+
     let average = data.iter().fold(0f64, |a, b| a + *b as f64) / data.len() as f64;
     let variance = data.iter()
         .fold(0f64, |a, b| a + ((*b as f64 - average).powi(2)))
@@ -160,6 +179,7 @@ fn run_all(
     work_per_critical_section: usize,
     work_between_critical_sections: usize,
     seconds_per_test: usize,
+    test_iterations: usize,
 ) {
     if num_threads == 0 {
         return;
@@ -186,24 +206,29 @@ fn run_all(
         "median",
         "std.dev."
     );
-    run_benchmark::<parking_lot::Mutex<f64>>(
+
+    run_benchmark_iterations::<parking_lot::Mutex<f64>>(
         num_threads,
         work_per_critical_section,
         work_between_critical_sections,
         seconds_per_test,
+        test_iterations,
     );
-    run_benchmark::<std::sync::Mutex<f64>>(
+
+    run_benchmark_iterations::<std::sync::Mutex<f64>>(
         num_threads,
         work_per_critical_section,
         work_between_critical_sections,
         seconds_per_test,
+        test_iterations,
     );
     if cfg!(unix) {
-        run_benchmark::<PthreadMutex<f64>>(
+        run_benchmark_iterations::<PthreadMutex<f64>>(
             num_threads,
             work_per_critical_section,
             work_between_critical_sections,
             seconds_per_test,
+            test_iterations,
         );
     }
 }
@@ -214,20 +239,24 @@ fn main() {
         "workPerCriticalSection",
         "workBetweenCriticalSections",
         "secondsPerTest",
+        "testIterations",
     ]);
     let mut first = true;
     for num_threads in args[0] {
         for work_per_critical_section in args[1] {
             for work_between_critical_sections in args[2] {
                 for seconds_per_test in args[3] {
-                    run_all(
-                        &args,
-                        &mut first,
-                        num_threads,
-                        work_per_critical_section,
-                        work_between_critical_sections,
-                        seconds_per_test,
-                    );
+                    for test_iterations in args[4] {
+                        run_all(
+                            &args,
+                            &mut first,
+                            num_threads,
+                            work_per_critical_section,
+                            work_between_critical_sections,
+                            seconds_per_test,
+                            test_iterations
+                        );
+                    }
                 }
             }
         }
