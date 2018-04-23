@@ -13,7 +13,7 @@ mod args;
 use args::ArgRange;
 
 use std::thread;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 #[cfg(unix)]
@@ -152,15 +152,19 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(
 ) {
     let lock = Arc::new(([0u8; 300], M::new(0.0), [0u8; 300]));
     let keep_going = Arc::new(AtomicBool::new(true));
+    let barrier = Arc::new(Barrier::new(
+        num_reader_threads + num_writer_threads));
     let mut writers = vec![];
     let mut readers = vec![];
     for _ in 0..num_writer_threads {
+        let barrier = barrier.clone();
         let lock = lock.clone();
         let keep_going = keep_going.clone();
         writers.push(thread::spawn(move || {
             let mut local_value = 0.0;
             let mut value = 0.0;
             let mut iterations = 0usize;
+            barrier.wait();
             while keep_going.load(Ordering::Relaxed) {
                 lock.1.write(|shared_value| {
                     for _ in 0..work_per_critical_section {
@@ -180,12 +184,14 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(
         }));
     }
     for _ in 0..num_reader_threads {
+        let barrier = barrier.clone();
         let lock = lock.clone();
         let keep_going = keep_going.clone();
         readers.push(thread::spawn(move || {
             let mut local_value = 0.0;
             let mut value = 0.0;
             let mut iterations = 0usize;
+            barrier.wait();
             while keep_going.load(Ordering::Relaxed) {
                 lock.1.read(|shared_value| {
                     for _ in 0..work_per_critical_section {

@@ -12,7 +12,7 @@ mod args;
 use args::ArgRange;
 
 use std::thread;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 #[cfg(unix)]
@@ -103,14 +103,17 @@ fn run_benchmark<M: Mutex<f64> + Send + Sync + 'static>(
 ) {
     let lock = Arc::new(([0u8; 300], M::new(0.0), [0u8; 300]));
     let keep_going = Arc::new(AtomicBool::new(true));
+    let barrier = Arc::new(Barrier::new(num_threads));
     let mut threads = vec![];
     for _ in 0..num_threads {
+        let barrier = barrier.clone();
         let lock = lock.clone();
         let keep_going = keep_going.clone();
         threads.push(thread::spawn(move || {
             let mut local_value = 0.0;
             let mut value = 0.0;
             let mut iterations = 0usize;
+            barrier.wait();
             while keep_going.load(Ordering::Relaxed) {
                 lock.1.lock(|shared_value| {
                     for _ in 0..work_per_critical_section {
