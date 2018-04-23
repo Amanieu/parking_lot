@@ -13,7 +13,7 @@ mod args;
 use args::ArgRange;
 
 use std::thread;
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 #[cfg(unix)]
@@ -149,18 +149,22 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(
     work_per_critical_section: usize,
     work_between_critical_sections: usize,
     seconds_per_test: usize,
-) {
+) -> (Vec<usize>, Vec<usize>) {
     let lock = Arc::new(([0u8; 300], M::new(0.0), [0u8; 300]));
     let keep_going = Arc::new(AtomicBool::new(true));
+    let barrier = Arc::new(Barrier::new(
+        num_reader_threads + num_writer_threads));
     let mut writers = vec![];
     let mut readers = vec![];
     for _ in 0..num_writer_threads {
+        let barrier = barrier.clone();
         let lock = lock.clone();
         let keep_going = keep_going.clone();
         writers.push(thread::spawn(move || {
             let mut local_value = 0.0;
             let mut value = 0.0;
             let mut iterations = 0usize;
+            barrier.wait();
             while keep_going.load(Ordering::Relaxed) {
                 lock.1.write(|shared_value| {
                     for _ in 0..work_per_critical_section {
@@ -180,12 +184,14 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(
         }));
     }
     for _ in 0..num_reader_threads {
+        let barrier = barrier.clone();
         let lock = lock.clone();
         let keep_going = keep_going.clone();
         readers.push(thread::spawn(move || {
             let mut local_value = 0.0;
             let mut value = 0.0;
             let mut iterations = 0usize;
+            barrier.wait();
             while keep_going.load(Ordering::Relaxed) {
                 lock.1.read(|shared_value| {
                     for _ in 0..work_per_critical_section {
@@ -208,14 +214,46 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(
     thread::sleep(Duration::new(seconds_per_test as u64, 0));
     keep_going.store(false, Ordering::Relaxed);
 
-    let total_writers = writers
+
+    let run_writers = writers
         .into_iter()
         .map(|x| x.join().unwrap().0)
-        .fold(0, |a, b| a + b);
-    let total_readers = readers
+        .collect::<Vec<usize>>();
+    let run_readers = readers
         .into_iter()
         .map(|x| x.join().unwrap().0)
-        .fold(0, |a, b| a + b);
+        .collect::<Vec<usize>>();
+
+    (run_writers, run_readers)
+}
+
+fn run_benchmark_iterations<M: RwLock<f64> + Send + Sync + 'static>(
+    num_writer_threads: usize,
+    num_reader_threads: usize,
+    work_per_critical_section: usize,
+    work_between_critical_sections: usize,
+    seconds_per_test: usize,
+    test_iterations: usize,
+) {
+    let mut writers = vec![];
+    let mut readers = vec![];
+
+    for _ in 0..test_iterations {
+      let (run_writers, run_readers) = run_benchmark::<M>(
+          num_writer_threads,
+          num_reader_threads,
+          work_per_critical_section,
+          work_between_critical_sections,
+          seconds_per_test,
+      );
+      writers.extend_from_slice(&run_writers);
+      readers.extend_from_slice(&run_readers);
+    }
+
+    let total_writers = writers.iter()
+        .fold(0f64, |a, b| a + *b as f64) / test_iterations as f64;
+    let total_readers = readers.iter()
+        .fold(0f64, |a, b| a + *b as f64) / test_iterations as f64;
     println!(
         "{:20} - [write] {:10.3} kHz [read] {:10.3} kHz",
         M::name(),
@@ -223,6 +261,7 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(
         total_readers as f64 / seconds_per_test as f64 / 1000.0
     );
 }
+
 
 fn run_all(
     args: &[ArgRange],
@@ -232,6 +271,7 @@ fn run_all(
     work_per_critical_section: usize,
     work_between_critical_sections: usize,
     seconds_per_test: usize,
+    test_iterations: usize,
 ) {
     if num_writer_threads == 0 && num_reader_threads == 0 {
         return;
@@ -255,38 +295,41 @@ fn run_all(
     }
     *first = false;
 
-    run_benchmark::<parking_lot::RwLock<f64>>(
+    run_benchmark_iterations::<parking_lot::RwLock<f64>>(
         num_writer_threads,
         num_reader_threads,
         work_per_critical_section,
         work_between_critical_sections,
         seconds_per_test,
+        test_iterations,
     );
-    run_benchmark::<seqlock::SeqLock<f64>>(
+    run_benchmark_iterations::<seqlock::SeqLock<f64>>(
         num_writer_threads,
         num_reader_threads,
         work_per_critical_section,
         work_between_critical_sections,
         seconds_per_test,
+        test_iterations,
     );
-    run_benchmark::<std::sync::RwLock<f64>>(
+    run_benchmark_iterations::<std::sync::RwLock<f64>>(
         num_writer_threads,
         num_reader_threads,
         work_per_critical_section,
         work_between_critical_sections,
         seconds_per_test,
+        test_iterations,
     );
     if cfg!(unix) {
-        run_benchmark::<PthreadRwLock<f64>>(
+        run_benchmark_iterations::<PthreadRwLock<f64>>(
             num_writer_threads,
             num_reader_threads,
             work_per_critical_section,
             work_between_critical_sections,
             seconds_per_test,
+            test_iterations,
         );
     }
 }
-
 fn main() {
     let args = args::parse(&[
         "numWriterThreads",
@@ -294,6 +337,7 @@ fn main() {
         "workPerCriticalSection",
         "workBetweenCriticalSections",
         "secondsPerTest",
+        "testIterations",
     ]);
     let mut first = true;
     for num_writer_threads in args[0] {
@@ -301,15 +345,18 @@ fn main() {
             for work_per_critical_section in args[2] {
                 for work_between_critical_sections in args[3] {
                     for seconds_per_test in args[4] {
-                        run_all(
-                            &args,
-                            &mut first,
-                            num_writer_threads,
-                            num_reader_threads,
-                            work_per_critical_section,
-                            work_between_critical_sections,
-                            seconds_per_test,
-                        );
+                        for test_iterations in args[5] {
+                            run_all(
+                                &args,
+                                &mut first,
+                                num_writer_threads,
+                                num_reader_threads,
+                                work_per_critical_section,
+                                work_between_critical_sections,
+                                seconds_per_test,
+                                test_iterations,
+                            );
+                        }
                     }
                 }
             }
