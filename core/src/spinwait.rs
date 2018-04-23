@@ -53,14 +53,6 @@ pub struct SpinWait {
 
 impl SpinWait {
     /// Creates a new `SpinWait`.
-    #[cfg(feature = "nightly")]
-    #[inline]
-    pub const fn new() -> SpinWait {
-        SpinWait { counter: 0 }
-    }
-
-    /// Creates a new `SpinWait`.
-    #[cfg(not(feature = "nightly"))]
     #[inline]
     pub fn new() -> SpinWait {
         SpinWait { counter: 0 }
