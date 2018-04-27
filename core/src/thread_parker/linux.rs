@@ -16,8 +16,10 @@ const FUTEX_PRIVATE: i32 = 128;
 // x32 Linux uses a non-standard type for tv_nsec in timespec.
 // See https://sourceware.org/bugzilla/show_bug.cgi?id=16437
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+#[allow(non_camel_case_types)]
 type tv_nsec_t = i64;
 #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
+#[allow(non_camel_case_types)]
 type tv_nsec_t = libc::c_long;
 
 // Helper type for putting a thread to sleep until some other thread wakes it up
