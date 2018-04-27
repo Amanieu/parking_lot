@@ -20,7 +20,7 @@ libc = "0.2.27"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winnt", "ntstatus", "minwindef",
-    "winerror", "winbase", "synchapi", "errhandlingapi", "handleapi"] }
+    "winerror", "winbase", "errhandlingapi", "handleapi"] }
 
 [features]
 nightly = []
