@@ -176,6 +176,9 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 
     /// Returns the underlying raw mutex object.
     ///
+    /// Note that you will most likely need to import the `RawMutex` trait from
+    /// `parking_lot_wrappers` to be able to call functions on the raw mutex.
+    ///
     /// # Safety
     ///
     /// This method is unsafe because it allows unlocking a mutex while

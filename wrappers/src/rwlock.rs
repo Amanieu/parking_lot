@@ -355,6 +355,10 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
 
     /// Returns the underlying raw reader-writer lock object.
     ///
+    /// Note that you will most likely need to import the `RawRwLock` trait from
+    /// `parking_lot_wrappers` to be able to call functions on the raw
+    /// reader-writer lock.
+    ///
     /// # Safety
     ///
     /// This method is unsafe because it allows unlocking a mutex while
