@@ -210,8 +210,13 @@ unsafe fn timeout_to_timespec(timeout: Duration) -> Option<libc::timespec> {
         return None;
     }
 
+    #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+    type NSec = i64;
+    #[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
+    type NSec = libc::c_long;
+
     let now = timespec_now();
-    let mut nsec = now.tv_nsec + timeout.subsec_nanos() as libc::c_long;
+    let mut nsec = now.tv_nsec + timeout.subsec_nanos() as NSec;
     let mut sec = now.tv_sec.checked_add(timeout.as_secs() as libc::time_t);
     if nsec >= 1_000_000_000 {
         nsec -= 1_000_000_000;
