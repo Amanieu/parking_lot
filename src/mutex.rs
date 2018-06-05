@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use raw_mutex::ParkingLotMutex;
-use parking_lot_wrappers;
+use lock_api;
 
 /// A mutual exclusion primitive useful for protecting shared data
 ///
@@ -85,14 +85,14 @@ use parking_lot_wrappers;
 ///
 /// rx.recv().unwrap();
 /// ```
-pub type Mutex<T> = parking_lot_wrappers::Mutex<ParkingLotMutex, T>;
+pub type Mutex<T> = lock_api::Mutex<ParkingLotMutex, T>;
 
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
 /// dropped (falls out of scope), the lock will be unlocked.
 ///
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` and `DerefMut` implementations.
-pub type MutexGuard<'a, T> = parking_lot_wrappers::MutexGuard<'a, ParkingLotMutex, T>;
+pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, ParkingLotMutex, T>;
 
 #[cfg(test)]
 mod tests {

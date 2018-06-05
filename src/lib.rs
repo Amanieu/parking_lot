@@ -15,7 +15,7 @@
 #![cfg_attr(feature = "nightly", feature(asm))]
 
 extern crate parking_lot_core;
-extern crate parking_lot_wrappers;
+extern crate lock_api;
 
 mod util;
 mod elision;

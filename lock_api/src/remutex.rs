@@ -241,7 +241,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// Returns the underlying raw mutex object.
     ///
     /// Note that you will most likely need to import the `RawMutex` trait from
-    /// `parking_lot_wrappers` to be able to call functions on the raw mutex.
+    /// `lock_api` to be able to call functions on the raw mutex.
     ///
     /// # Safety
     ///

@@ -12,7 +12,7 @@ use parking_lot_core::{self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkRe
 use elision::{have_elision, AtomicElisionExt};
 use raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use deadlock;
-use parking_lot_wrappers::{GuardNoSend, RawRwLock, RawRwLockDowngrade, RawRwLockFair,
+use lock_api::{GuardNoSend, RawRwLock, RawRwLockDowngrade, RawRwLockFair,
                            RawRwLockRecursive, RawRwLockRecursiveTimed, RawRwLockTimed,
                            RawRwLockUpgrade, RawRwLockUpgradeDowngrade, RawRwLockUpgradeFair,
                            RawRwLockUpgradeTimed};

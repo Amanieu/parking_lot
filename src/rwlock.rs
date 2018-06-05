@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use raw_rwlock::ParkingLotRwLock;
-use parking_lot_wrappers;
+use lock_api;
 
 /// A reader-writer lock
 ///
@@ -86,20 +86,20 @@ use parking_lot_wrappers;
 ///     assert_eq!(*w, 6);
 /// } // write lock is dropped here
 /// ```
-pub type RwLock<T> = parking_lot_wrappers::RwLock<ParkingLotRwLock, T>;
+pub type RwLock<T> = lock_api::RwLock<ParkingLotRwLock, T>;
 
 /// RAII structure used to release the shared read access of a lock when
 /// dropped.
-pub type RwLockReadGuard<'a, T> = parking_lot_wrappers::RwLockReadGuard<'a, ParkingLotRwLock, T>;
+pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, ParkingLotRwLock, T>;
 
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
-pub type RwLockWriteGuard<'a, T> = parking_lot_wrappers::RwLockWriteGuard<'a, ParkingLotRwLock, T>;
+pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, ParkingLotRwLock, T>;
 
 /// RAII structure used to release the upgradable read access of a lock when
 /// dropped.
 pub type RwLockUpgradableReadGuard<'a, T> =
-    parking_lot_wrappers::RwLockUpgradableReadGuard<'a, ParkingLotRwLock, T>;
+    lock_api::RwLockUpgradableReadGuard<'a, ParkingLotRwLock, T>;
 
 #[cfg(test)]
 mod tests {

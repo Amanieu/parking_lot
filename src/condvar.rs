@@ -11,7 +11,7 @@ use std::{ptr, fmt};
 use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
 use mutex::MutexGuard;
 use raw_mutex::{ParkingLotMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
-use parking_lot_wrappers::RawMutex;
+use lock_api::RawMutex;
 use deadlock;
 
 /// A type indicating whether a timed wait on a condition variable returned

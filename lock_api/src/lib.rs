@@ -16,8 +16,8 @@
 //! 1. Create a raw lock type. This should only contain the lock state, not any
 //!    data protected by the lock.
 //! 2. Implement the `RawMutex` trait for your custom lock type.
-//! 3. Export your mutex as a type alias for `parking_lot_wrappers::Mutex`, and
-//!    your mutex guard as a type alias for `parking_lot_wrappers::MutexGuard`.
+//! 3. Export your mutex as a type alias for `lock_api::Mutex`, and
+//!    your mutex guard as a type alias for `lock_api::MutexGuard`.
 //!    See the [example](#example) below for details.
 //!
 //! This process is similar for RwLocks, except that two guards need to be
@@ -27,7 +27,7 @@
 //! # Example
 //!
 //! ```
-//! use parking_lot_wrappers::{RawMutex, Mutex};
+//! use lock_api::{RawMutex, Mutex};
 //! use std::sync::atomic::{AtomicBool, Ordering, ATOMIC_BOOL_INIT};
 //!
 //! // 1. Define our raw lock type
@@ -53,8 +53,8 @@
 //! }
 //!
 //! // 3. Export the wrappers. This are the types that your users will actually use.
-//! pub type Spinlock<T> = parking_lot_wrappers::Mutex<RawSpinlock, T>;
-//! pub type SpinlockGuard<'a, T> = parking_lot_wrappers::MutexGuard<'a, RawSpinlock, T>;
+//! pub type Spinlock<T> = lock_api::Mutex<RawSpinlock, T>;
+//! pub type SpinlockGuard<'a, T> = lock_api::MutexGuard<'a, RawSpinlock, T>;
 //! ```
 //!
 //! # Extension traits

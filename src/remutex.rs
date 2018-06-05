@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use parking_lot_wrappers::{self, GetThreadId};
+use lock_api::{self, GetThreadId};
 use raw_mutex::ParkingLotMutex;
 
 pub struct ThreadId;
@@ -32,7 +32,7 @@ unsafe impl GetThreadId for ThreadId {
 ///
 /// See [`Mutex`](struct.Mutex.html) for more details about the underlying mutex
 /// primitive.
-pub type ReentrantMutex<T> = parking_lot_wrappers::ReentrantMutex<ParkingLotMutex, ThreadId, T>;
+pub type ReentrantMutex<T> = lock_api::ReentrantMutex<ParkingLotMutex, ThreadId, T>;
 
 /// An RAII implementation of a "scoped lock" of a reentrant mutex. When this structure
 /// is dropped (falls out of scope), the lock will be unlocked.
@@ -40,7 +40,7 @@ pub type ReentrantMutex<T> = parking_lot_wrappers::ReentrantMutex<ParkingLotMute
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` implementation.
 pub type ReentrantMutexGuard<'a, T> =
-    parking_lot_wrappers::ReentrantMutexGuard<'a, ParkingLotMutex, ThreadId, T>;
+    lock_api::ReentrantMutexGuard<'a, ParkingLotMutex, ThreadId, T>;
 
 #[cfg(test)]
 mod tests {
