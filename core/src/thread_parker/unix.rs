@@ -12,6 +12,15 @@ use std::mem;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use std::ptr;
 
+// x32 Linux uses a non-standard type for tv_nsec in timespec.
+// See https://sourceware.org/bugzilla/show_bug.cgi?id=16437
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
+#[allow(non_camel_case_types)]
+type tv_nsec_t = i64;
+#[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
+#[allow(non_camel_case_types)]
+type tv_nsec_t = libc::c_long;
+
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {
     should_park: Cell<bool>,
@@ -184,7 +193,7 @@ unsafe fn timespec_now() -> libc::timespec {
     debug_assert_eq!(r, 0);
     libc::timespec {
         tv_sec: now.tv_sec,
-        tv_nsec: now.tv_usec as libc::c_long * 1000,
+        tv_nsec: now.tv_usec as tv_nsec_t * 1000,
     }
 }
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
@@ -211,7 +220,7 @@ unsafe fn timeout_to_timespec(timeout: Duration) -> Option<libc::timespec> {
     }
 
     let now = timespec_now();
-    let mut nsec = now.tv_nsec + timeout.subsec_nanos() as libc::c_long;
+    let mut nsec = now.tv_nsec + timeout.subsec_nanos() as tv_nsec_t;
     let mut sec = now.tv_sec.checked_add(timeout.as_secs() as libc::time_t);
     if nsec >= 1_000_000_000 {
         nsec -= 1_000_000_000;
