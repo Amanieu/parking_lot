@@ -10,9 +10,6 @@ use std::time::{Duration, Instant};
 use std::cell::{Cell, UnsafeCell};
 use std::ptr;
 use std::mem;
-use std::thread::LocalKey;
-#[cfg(not(feature = "nightly"))]
-use std::panic;
 use smallvec::SmallVec;
 use rand::{self, Rng, XorShiftRng};
 use thread_parker::ThreadParker;
@@ -161,21 +158,13 @@ impl ThreadData {
 
 // Returns a ThreadData structure for the current thread
 unsafe fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
-    // Try to read from thread-local storage, but return None if the TLS has
-    // already been destroyed.
-    #[cfg(feature = "nightly")]
-    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
-        key.try_with(|x| x as *const ThreadData).ok()
-    }
-    #[cfg(not(feature = "nightly"))]
-    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
-        panic::catch_unwind(|| key.with(|x| x as *const ThreadData)).ok()
-    }
-
+    // Try to read from thread-local storage, but return a local copy if the TLS
+    // has already been destroyed.
+    //
     // Unlike word_lock::ThreadData, parking_lot::ThreadData is always expensive
     // to construct. Try to use a thread-local version if possible.
     thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
-    if let Some(tls) = try_get_tls(&THREAD_DATA) {
+    if let Ok(tls) = THREAD_DATA.try_with(|x| x as *const ThreadData) {
         return &*tls;
     }
 
