@@ -174,6 +174,22 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
         unsafe { &mut *self.data.get() }
     }
 
+    /// Forcibly unlocks the mutex.
+    /// 
+    /// This is useful when combined with `mem::forget` to hold a lock without
+    /// the need to maintain a `MutexGuard` object alive, for example when
+    /// dealing with FFI.
+    /// 
+    /// # Safety
+    /// 
+    /// This method must only be called if the current thread logically owns a
+    /// `MutexGuard` but that guard has be discarded using `mem::forget`.
+    /// Behavior is undefined if a mutex is unlocked when not locked.
+    #[inline]
+    pub unsafe fn force_unlock(&self) {
+        self.raw.unlock();
+    }
+
     /// Returns the underlying raw mutex object.
     ///
     /// Note that you will most likely need to import the `RawMutex` trait from
@@ -183,8 +199,27 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     ///
     /// This method is unsafe because it allows unlocking a mutex while
     /// still holding a reference to a `MutexGuard`.
+    #[inline]
     pub unsafe fn raw(&self) -> &R {
         &self.raw
+    }
+}
+
+impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
+    /// Forcibly unlocks the mutex using a fair unlock procotol.
+    /// 
+    /// This is useful when combined with `mem::forget` to hold a lock without
+    /// the need to maintain a `MutexGuard` object alive, for example when
+    /// dealing with FFI.
+    /// 
+    /// # Safety
+    /// 
+    /// This method must only be called if the current thread logically owns a
+    /// `MutexGuard` but that guard has be discarded using `mem::forget`.
+    /// Behavior is undefined if a mutex is unlocked when not locked.
+    #[inline]
+    pub unsafe fn force_unlock_fair(&self) {
+        self.raw.unlock_fair();
     }
 }
 

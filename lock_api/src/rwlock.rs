@@ -353,6 +353,38 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         unsafe { &mut *self.data.get() }
     }
 
+    /// Forcibly unlocks a read lock.
+    /// 
+    /// This is useful when combined with `mem::forget` to hold a lock without
+    /// the need to maintain a `RwLockReadGuard` object alive, for example when
+    /// dealing with FFI.
+    /// 
+    /// # Safety
+    /// 
+    /// This method must only be called if the current thread logically owns a
+    /// `RwLockReadGuard` but that guard has be discarded using `mem::forget`.
+    /// Behavior is undefined if a rwlock is read-unlocked when not read-locked.
+    #[inline]
+    pub unsafe fn force_unlock_read(&self) {
+        self.raw.unlock_shared();
+    }
+
+    /// Forcibly unlocks a write lock.
+    /// 
+    /// This is useful when combined with `mem::forget` to hold a lock without
+    /// the need to maintain a `RwLockWriteGuard` object alive, for example when
+    /// dealing with FFI.
+    /// 
+    /// # Safety
+    /// 
+    /// This method must only be called if the current thread logically owns a
+    /// `RwLockWriteGuard` but that guard has be discarded using `mem::forget`.
+    /// Behavior is undefined if a rwlock is write-unlocked when not write-locked.
+    #[inline]
+    pub unsafe fn force_unlock_write(&self) {
+        self.raw.unlock_exclusive();
+    }
+
     /// Returns the underlying raw reader-writer lock object.
     ///
     /// Note that you will most likely need to import the `RawRwLock` trait from
@@ -365,6 +397,40 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// still holding a reference to a lock guard.
     pub unsafe fn raw(&self) -> &R {
         &self.raw
+    }
+}
+
+impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
+    /// Forcibly unlocks a read lock using a fair unlock procotol.
+    /// 
+    /// This is useful when combined with `mem::forget` to hold a lock without
+    /// the need to maintain a `RwLockReadGuard` object alive, for example when
+    /// dealing with FFI.
+    /// 
+    /// # Safety
+    /// 
+    /// This method must only be called if the current thread logically owns a
+    /// `RwLockReadGuard` but that guard has be discarded using `mem::forget`.
+    /// Behavior is undefined if a rwlock is read-unlocked when not read-locked.
+    #[inline]
+    pub unsafe fn force_unlock_read_fair(&self) {
+        self.raw.unlock_shared_fair();
+    }
+
+    /// Forcibly unlocks a write lock using a fair unlock procotol.
+    /// 
+    /// This is useful when combined with `mem::forget` to hold a lock without
+    /// the need to maintain a `RwLockWriteGuard` object alive, for example when
+    /// dealing with FFI.
+    /// 
+    /// # Safety
+    /// 
+    /// This method must only be called if the current thread logically owns a
+    /// `RwLockWriteGuard` but that guard has be discarded using `mem::forget`.
+    /// Behavior is undefined if a rwlock is write-unlocked when not write-locked.
+    #[inline]
+    pub unsafe fn force_unlock_write_fair(&self) {
+        self.raw.unlock_exclusive_fair();
     }
 }
 
