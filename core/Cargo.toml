@@ -7,6 +7,7 @@ documentation = "https://amanieu.github.io/parking_lot/parking_lot_core/index.ht
 license = "Apache-2.0/MIT"
 repository = "https://github.com/Amanieu/parking_lot"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
+categories = ["concurrency"]
 
 [dependencies]
 smallvec = "0.6"
