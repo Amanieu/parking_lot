@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["check_deadlock","Returns all deadlocks detected since the last call. Each cycle consist of a vector of `DeadlockedThread`."]]});
