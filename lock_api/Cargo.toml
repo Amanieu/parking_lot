@@ -3,10 +3,10 @@ name = "lock_api"
 version = "0.1.0"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 description = "Wrappers to create fully-featured Mutex and RwLock types. Compatible with no_std."
-documentation = "https://amanieu.github.io/parking_lot/lock_api/index.html"
 license = "Apache-2.0/MIT"
 repository = "https://github.com/Amanieu/parking_lot"
 keywords = ["mutex", "rwlock", "lock", "no_std"]
+categories = ["concurrency", "no_std"]
 
 [dependencies]
 scopeguard = { version = "0.3", default-features = false }

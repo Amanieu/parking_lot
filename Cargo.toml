@@ -1,9 +1,8 @@
 [package]
 name = "parking_lot"
-version = "0.5.5"
+version = "0.6.0"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 description = "More compact and efficient implementations of the standard synchronization primitives."
-documentation = "https://amanieu.github.io/parking_lot/parking_lot/index.html"
 license = "Apache-2.0/MIT"
 repository = "https://github.com/Amanieu/parking_lot"
 readme = "README.md"
