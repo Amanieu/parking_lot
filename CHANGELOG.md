@@ -1,3 +1,13 @@
+0.6.1 (2018-06-08)
+==================
+
+Added missing typedefs for mapped lock guards:
+
+- `MappedMutexGuard`
+- `MappedReentrantMutexGuard`
+- `MappedRwLockReadGuard`
+- `MappedRwLockWriteGuard`
+
 0.6.0 (2018-06-08)
 ==================
 
