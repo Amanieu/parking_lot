@@ -69,13 +69,13 @@ mod thread_parker;
 #[path = "thread_parker/generic.rs"]
 mod thread_parker;
 
-mod util;
-mod spinwait;
-mod word_lock;
 mod parking_lot;
+mod spinwait;
+mod util;
+mod word_lock;
 
+pub use parking_lot::deadlock;
+pub use parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
 pub use parking_lot::{FilterOp, ParkResult, ParkToken, RequeueOp, UnparkResult, UnparkToken};
 pub use parking_lot::{DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
-pub use parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
 pub use spinwait::SpinWait;
-pub use parking_lot::deadlock;

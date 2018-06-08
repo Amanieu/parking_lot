@@ -82,7 +82,8 @@ impl WordLock {
 
     #[inline]
     pub unsafe fn lock(&self) {
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {

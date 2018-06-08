@@ -6,10 +6,10 @@
 // copied, modified, or distributed except according to those terms.
 
 use core::cell::UnsafeCell;
-use core::ops::{Deref, DerefMut};
 use core::fmt;
-use core::mem;
 use core::marker::PhantomData;
+use core::mem;
+use core::ops::{Deref, DerefMut};
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -175,13 +175,13 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     }
 
     /// Forcibly unlocks the mutex.
-    /// 
+    ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `MutexGuard` object alive, for example when
     /// dealing with FFI.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This method must only be called if the current thread logically owns a
     /// `MutexGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
@@ -207,13 +207,13 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 
 impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
     /// Forcibly unlocks the mutex using a fair unlock procotol.
-    /// 
+    ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `MutexGuard` object alive, for example when
     /// dealing with FFI.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This method must only be called if the current thread logically owns a
     /// `MutexGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
@@ -270,9 +270,7 @@ impl<R: RawMutex, T> From<T> for Mutex<R, T> {
 impl<R: RawMutex, T: ?Sized + fmt::Debug> fmt::Debug for Mutex<R, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_lock() {
-            Some(guard) => f.debug_struct("Mutex")
-                .field("data", &&*guard)
-                .finish(),
+            Some(guard) => f.debug_struct("Mutex").field("data", &&*guard).finish(),
             None => f.pad("Mutex { <locked> }"),
         }
     }

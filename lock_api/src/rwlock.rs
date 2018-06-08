@@ -6,10 +6,10 @@
 // copied, modified, or distributed except according to those terms.
 
 use core::cell::UnsafeCell;
-use core::ops::{Deref, DerefMut};
 use core::fmt;
-use core::mem;
 use core::marker::PhantomData;
+use core::mem;
+use core::ops::{Deref, DerefMut};
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -187,8 +187,7 @@ pub unsafe trait RawRwLockUpgradeFair: RawRwLockUpgrade + RawRwLockFair {
 
 /// Additional methods for RwLocks which support upgradable locks and lock
 /// downgrading.
-pub unsafe trait RawRwLockUpgradeDowngrade
-    : RawRwLockUpgrade + RawRwLockDowngrade {
+pub unsafe trait RawRwLockUpgradeDowngrade: RawRwLockUpgrade + RawRwLockDowngrade {
     /// Downgrades an upgradable lock to a shared lock.
     fn downgrade_upgradable(&self);
 
@@ -354,13 +353,13 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     }
 
     /// Forcibly unlocks a read lock.
-    /// 
+    ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `RwLockReadGuard` object alive, for example when
     /// dealing with FFI.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This method must only be called if the current thread logically owns a
     /// `RwLockReadGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a rwlock is read-unlocked when not read-locked.
@@ -370,13 +369,13 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     }
 
     /// Forcibly unlocks a write lock.
-    /// 
+    ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `RwLockWriteGuard` object alive, for example when
     /// dealing with FFI.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This method must only be called if the current thread logically owns a
     /// `RwLockWriteGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a rwlock is write-unlocked when not write-locked.
@@ -402,13 +401,13 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
 
 impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
     /// Forcibly unlocks a read lock using a fair unlock procotol.
-    /// 
+    ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `RwLockReadGuard` object alive, for example when
     /// dealing with FFI.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This method must only be called if the current thread logically owns a
     /// `RwLockReadGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a rwlock is read-unlocked when not read-locked.
@@ -418,13 +417,13 @@ impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
     }
 
     /// Forcibly unlocks a write lock using a fair unlock procotol.
-    /// 
+    ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `RwLockWriteGuard` object alive, for example when
     /// dealing with FFI.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This method must only be called if the current thread logically owns a
     /// `RwLockWriteGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a rwlock is write-unlocked when not write-locked.
@@ -670,9 +669,7 @@ impl<R: RawRwLock, T> From<T> for RwLock<R, T> {
 impl<R: RawRwLock, T: ?Sized + fmt::Debug> fmt::Debug for RwLock<R, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_read() {
-            Some(guard) => f.debug_struct("RwLock")
-                .field("data", &&*guard)
-                .finish(),
+            Some(guard) => f.debug_struct("RwLock").field("data", &&*guard).finish(),
             None => f.pad("RwLock { <locked> }"),
         }
     }

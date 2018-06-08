@@ -5,16 +5,16 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use rand::{self, Rng, XorShiftRng};
+use smallvec::SmallVec;
+use std::cell::{Cell, UnsafeCell};
+use std::mem;
+use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::time::{Duration, Instant};
-use std::cell::{Cell, UnsafeCell};
-use std::ptr;
-use std::mem;
-use smallvec::SmallVec;
-use rand::{self, Rng, XorShiftRng};
 use thread_parker::ThreadParker;
-use word_lock::WordLock;
 use util::UncheckedOptionExt;
+use word_lock::WordLock;
 
 static NUM_THREADS: AtomicUsize = ATOMIC_USIZE_INIT;
 static HASHTABLE: AtomicUsize = ATOMIC_USIZE_INIT;
@@ -1116,14 +1116,14 @@ pub mod deadlock {
 #[cfg(feature = "deadlock_detection")]
 mod deadlock_impl {
     use super::{get_hashtable, get_thread_data, lock_bucket, ThreadData, NUM_THREADS};
-    use std::cell::{Cell, UnsafeCell};
-    use std::sync::mpsc;
-    use std::sync::atomic::Ordering;
-    use std::collections::HashSet;
-    use thread_id;
     use backtrace::Backtrace;
     use petgraph;
     use petgraph::graphmap::DiGraphMap;
+    use std::cell::{Cell, UnsafeCell};
+    use std::collections::HashSet;
+    use std::sync::atomic::Ordering;
+    use std::sync::mpsc;
+    use thread_id;
 
     /// Representation of a deadlocked thread
     pub struct DeadlockedThread {
@@ -1352,14 +1352,15 @@ mod deadlock_impl {
 
     // returns all thread cycles in the wait graph
     fn graph_cycles(g: &DiGraphMap<WaitGraphNode, ()>) -> Vec<Vec<*const ThreadData>> {
-        use petgraph::visit::NodeIndexable;
         use petgraph::visit::depth_first_search;
         use petgraph::visit::DfsEvent;
+        use petgraph::visit::NodeIndexable;
 
         let mut cycles = HashSet::new();
         let mut path = Vec::with_capacity(g.node_bound());
         // start from threads to get the correct threads cycle
-        let threads = g.nodes()
+        let threads = g
+            .nodes()
             .filter(|n| if let &Thread(_) = n { true } else { false });
 
         depth_first_search(g, threads, |e| match e {

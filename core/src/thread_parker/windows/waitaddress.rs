@@ -5,9 +5,9 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use std::mem;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
-use std::mem;
 
 use winapi::shared::basetsd::SIZE_T;
 use winapi::shared::minwindef::{BOOL, DWORD, FALSE, TRUE};
@@ -81,7 +81,8 @@ impl WaitAddress {
                 return false;
             }
             let diff = timeout - now;
-            let timeout = diff.as_secs()
+            let timeout = diff
+                .as_secs()
                 .checked_mul(1000)
                 .and_then(|x| x.checked_add((diff.subsec_nanos() as u64 + 999999) / 1000000))
                 .map(|ms| {

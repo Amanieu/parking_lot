@@ -5,17 +5,18 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
-use std::cell::Cell;
-use std::time::{Duration, Instant};
-use parking_lot_core::{self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult};
-use elision::{have_elision, AtomicElisionExt};
-use raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use deadlock;
-use lock_api::{GuardNoSend, RawRwLock, RawRwLockDowngrade, RawRwLockFair,
-                           RawRwLockRecursive, RawRwLockRecursiveTimed, RawRwLockTimed,
-                           RawRwLockUpgrade, RawRwLockUpgradeDowngrade, RawRwLockUpgradeFair,
-                           RawRwLockUpgradeTimed};
+use elision::{have_elision, AtomicElisionExt};
+use lock_api::{
+    GuardNoSend, RawRwLock, RawRwLockDowngrade, RawRwLockFair, RawRwLockRecursive,
+    RawRwLockRecursiveTimed, RawRwLockTimed, RawRwLockUpgrade, RawRwLockUpgradeDowngrade,
+    RawRwLockUpgradeFair, RawRwLockUpgradeTimed,
+};
+use parking_lot_core::{self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult};
+use raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
+use std::cell::Cell;
+use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::time::{Duration, Instant};
 
 const PARKED_BIT: usize = 0b001;
 const UPGRADING_BIT: usize = 0b010;
@@ -49,7 +50,8 @@ unsafe impl RawRwLock for ParkingLotRwLock {
 
     #[inline]
     fn lock_exclusive(&self) {
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(0, EXCLUSIVE_GUARD, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
@@ -61,7 +63,8 @@ unsafe impl RawRwLock for ParkingLotRwLock {
 
     #[inline]
     fn try_lock_exclusive(&self) -> bool {
-        if self.state
+        if self
+            .state
             .compare_exchange(0, EXCLUSIVE_GUARD, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
@@ -75,7 +78,8 @@ unsafe impl RawRwLock for ParkingLotRwLock {
     #[inline]
     fn unlock_exclusive(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(EXCLUSIVE_GUARD, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
@@ -114,14 +118,16 @@ unsafe impl RawRwLock for ParkingLotRwLock {
             || (state & UPGRADING_BIT == 0 && state & GUARD_COUNT_MASK != SHARED_GUARD)
         {
             if have_elision() {
-                if self.state
+                if self
+                    .state
                     .elision_release(state, state - SHARED_GUARD)
                     .is_ok()
                 {
                     return;
                 }
             } else {
-                if self.state
+                if self
+                    .state
                     .compare_exchange_weak(
                         state,
                         state - SHARED_GUARD,
@@ -147,14 +153,16 @@ unsafe impl RawRwLockFair for ParkingLotRwLock {
             || (state & UPGRADING_BIT == 0 && state & GUARD_COUNT_MASK != SHARED_GUARD)
         {
             if have_elision() {
-                if self.state
+                if self
+                    .state
                     .elision_release(state, state - SHARED_GUARD)
                     .is_ok()
                 {
                     return;
                 }
             } else {
-                if self.state
+                if self
+                    .state
                     .compare_exchange_weak(
                         state,
                         state - SHARED_GUARD,
@@ -173,7 +181,8 @@ unsafe impl RawRwLockFair for ParkingLotRwLock {
     #[inline]
     fn unlock_exclusive_fair(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(EXCLUSIVE_GUARD, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
@@ -200,7 +209,8 @@ unsafe impl RawRwLockFair for ParkingLotRwLock {
 unsafe impl RawRwLockDowngrade for ParkingLotRwLock {
     #[inline]
     fn downgrade(&self) {
-        let state = self.state
+        let state = self
+            .state
             .fetch_sub(EXCLUSIVE_GUARD - SHARED_GUARD, Ordering::Release);
 
         // Wake up parked shared and upgradable threads if there are any
@@ -242,7 +252,8 @@ unsafe impl RawRwLockTimed for ParkingLotRwLock {
 
     #[inline]
     fn try_lock_exclusive_for(&self, timeout: Duration) -> bool {
-        let result = if self.state
+        let result = if self
+            .state
             .compare_exchange_weak(0, EXCLUSIVE_GUARD, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
@@ -258,7 +269,8 @@ unsafe impl RawRwLockTimed for ParkingLotRwLock {
 
     #[inline]
     fn try_lock_exclusive_until(&self, timeout: Instant) -> bool {
-        let result = if self.state
+        let result = if self
+            .state
             .compare_exchange_weak(0, EXCLUSIVE_GUARD, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
@@ -351,7 +363,8 @@ unsafe impl RawRwLockUpgrade for ParkingLotRwLock {
     #[inline]
     fn unlock_upgradable(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(UPGRADABLE_GUARD, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
@@ -362,7 +375,8 @@ unsafe impl RawRwLockUpgrade for ParkingLotRwLock {
 
     #[inline]
     fn upgrade(&self) {
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(
                 UPGRADABLE_GUARD,
                 EXCLUSIVE_GUARD,
@@ -377,7 +391,8 @@ unsafe impl RawRwLockUpgrade for ParkingLotRwLock {
     }
 
     fn try_upgrade(&self) -> bool {
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(
                 UPGRADABLE_GUARD,
                 EXCLUSIVE_GUARD,
@@ -397,7 +412,8 @@ unsafe impl RawRwLockUpgradeFair for ParkingLotRwLock {
     #[inline]
     fn unlock_upgradable_fair(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(UPGRADABLE_GUARD, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
@@ -417,7 +433,8 @@ unsafe impl RawRwLockUpgradeFair for ParkingLotRwLock {
 unsafe impl RawRwLockUpgradeDowngrade for ParkingLotRwLock {
     #[inline]
     fn downgrade_upgradable(&self) {
-        let state = self.state
+        let state = self
+            .state
             .fetch_sub(UPGRADABLE_GUARD - SHARED_GUARD, Ordering::Relaxed);
 
         // Wake up parked shared and upgradable threads if there are any
@@ -428,7 +445,8 @@ unsafe impl RawRwLockUpgradeDowngrade for ParkingLotRwLock {
 
     #[inline]
     fn downgrade_to_upgradable(&self) {
-        let state = self.state
+        let state = self
+            .state
             .fetch_sub(EXCLUSIVE_GUARD - UPGRADABLE_GUARD, Ordering::Release);
 
         // Wake up parked shared threads if there are any
@@ -467,7 +485,8 @@ unsafe impl RawRwLockUpgradeTimed for ParkingLotRwLock {
 
     #[inline]
     fn try_upgrade_until(&self, timeout: Instant) -> bool {
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(
                 UPGRADABLE_GUARD,
                 EXCLUSIVE_GUARD,
@@ -484,7 +503,8 @@ unsafe impl RawRwLockUpgradeTimed for ParkingLotRwLock {
 
     #[inline]
     fn try_upgrade_for(&self, timeout: Duration) -> bool {
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(
                 UPGRADABLE_GUARD,
                 EXCLUSIVE_GUARD,
@@ -643,7 +663,8 @@ impl ParkingLotRwLock {
     #[inline(never)]
     fn unlock_exclusive_slow(&self, force_fair: bool) {
         // Unlock directly if there are no parked threads
-        if self.state
+        if self
+            .state
             .compare_exchange(EXCLUSIVE_GUARD, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
@@ -765,7 +786,8 @@ impl ParkingLotRwLock {
             // the lock even if there are pending exclusive threads.
             if unparked || recursive || state & PARKED_BIT == 0 {
                 if let Some(new_state) = state.checked_add(SHARED_GUARD) {
-                    if self.state
+                    if self
+                        .state
                         .compare_exchange_weak(
                             state,
                             new_state,
@@ -1013,7 +1035,8 @@ impl ParkingLotRwLock {
             // allowed to grab the lock even if there are pending exclusive threads.
             if unparked || state & PARKED_BIT == 0 {
                 if let Some(new_state) = state.checked_add(UPGRADABLE_GUARD) {
-                    if self.state
+                    if self
+                        .state
                         .compare_exchange_weak(
                             state,
                             new_state,

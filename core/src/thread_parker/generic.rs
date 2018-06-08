@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::{Condvar, Mutex, MutexGuard};
 use std::cell::Cell;
+use std::sync::{Condvar, Mutex, MutexGuard};
 use std::time::Instant;
 
 // Helper type for putting a thread to sleep until some other thread wakes it up

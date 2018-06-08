@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use raw_mutex::ParkingLotMutex;
 use lock_api;
+use raw_mutex::ParkingLotMutex;
 
 /// A mutual exclusion primitive useful for protecting shared data
 ///
@@ -105,9 +105,9 @@ pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, ParkingLotMute
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::channel;
     use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::thread;
     use {Condvar, Mutex};
 
@@ -283,8 +283,9 @@ mod tests {
         let mutex = Mutex::new(vec![0u8, 10]);
 
         assert_eq!(format!("{:?}", mutex), "Mutex { data: [0, 10] }");
-        assert_eq!(format!("{:#?}", mutex),
-"Mutex {
+        assert_eq!(
+            format!("{:#?}", mutex),
+            "Mutex {
     data: [
         0,
         10

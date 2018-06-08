@@ -16,9 +16,9 @@ use std::sync::atomic::AtomicUsize as AtomicU8;
 use std::sync::atomic::ATOMIC_USIZE_INIT as ATOMIC_U8_INIT;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
-use std::mem;
-use std::fmt;
 use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+use std::fmt;
+use std::mem;
 use util::UncheckedOptionExt;
 
 const DONE_BIT: U8 = 1;
@@ -478,8 +478,9 @@ mod tests {
         static O: Once = ONCE_INIT;
 
         assert_eq!(format!("{:?}", O), "Once { state: New }");
-        assert_eq!(format!("{:#?}", O),
-"Once {
+        assert_eq!(
+            format!("{:#?}", O),
+            "Once {
     state: New
 }"
         );

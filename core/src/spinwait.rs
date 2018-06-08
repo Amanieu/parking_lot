@@ -7,11 +7,11 @@
 
 #[cfg(unix)]
 use libc;
-#[cfg(windows)]
-use winapi;
+use std::sync::atomic::spin_loop_hint;
 #[cfg(not(any(windows, unix)))]
 use std::thread;
-use std::sync::atomic::spin_loop_hint;
+#[cfg(windows)]
+use winapi;
 
 // Yields the rest of the current timeslice to the OS
 #[cfg(windows)]

@@ -6,10 +6,10 @@
 // copied, modified, or distributed except according to those terms.
 
 use core::cell::{Cell, UnsafeCell};
-use core::ops::Deref;
 use core::fmt;
-use core::mem;
 use core::marker::PhantomData;
+use core::mem;
+use core::ops::Deref;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use mutex::{RawMutex, RawMutexFair, RawMutexTimed};
 use GuardNoSend;
@@ -239,13 +239,13 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     }
 
     /// Forcibly unlocks the mutex.
-    /// 
+    ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `ReentrantMutexGuard` object alive, for example when
     /// dealing with FFI.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This method must only be called if the current thread logically owns a
     /// `ReentrantMutexGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
@@ -271,13 +271,13 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
 
 impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// Forcibly unlocks the mutex using a fair unlock procotol.
-    /// 
+    ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `ReentrantMutexGuard` object alive, for example when
     /// dealing with FFI.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// This method must only be called if the current thread logically owns a
     /// `ReentrantMutexGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
@@ -334,7 +334,8 @@ impl<R: RawMutex, G: GetThreadId, T> From<T> for ReentrantMutex<R, G, T> {
 impl<R: RawMutex, G: GetThreadId, T: ?Sized + fmt::Debug> fmt::Debug for ReentrantMutex<R, G, T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.try_lock() {
-            Some(guard) => f.debug_struct("ReentrantMutex")
+            Some(guard) => f
+                .debug_struct("ReentrantMutex")
                 .field("data", &&*guard)
                 .finish(),
             None => f.pad("ReentrantMutex { <locked> }"),

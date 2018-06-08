@@ -5,14 +5,14 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use deadlock;
+use lock_api::RawMutex;
+use mutex::MutexGuard;
+use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
+use raw_mutex::{ParkingLotMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
-use std::{ptr, fmt};
-use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
-use mutex::MutexGuard;
-use raw_mutex::{ParkingLotMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
-use lock_api::RawMutex;
-use deadlock;
+use std::{fmt, ptr};
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.

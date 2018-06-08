@@ -16,10 +16,10 @@ use std::sync::atomic::AtomicUsize as AtomicU8;
 use std::sync::atomic::ATOMIC_USIZE_INIT as ATOMIC_U8_INIT;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
-use std::time::{Duration, Instant};
-use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
 use deadlock;
 use lock_api::{GuardNoSend, RawMutex, RawMutexFair, RawMutexTimed};
+use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
+use std::time::{Duration, Instant};
 
 // UnparkToken used to indicate that that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.
@@ -46,7 +46,8 @@ unsafe impl RawMutex for ParkingLotMutex {
 
     #[inline]
     fn lock(&self) {
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
@@ -80,7 +81,8 @@ unsafe impl RawMutex for ParkingLotMutex {
     #[inline]
     fn unlock(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
@@ -94,7 +96,8 @@ unsafe impl RawMutexFair for ParkingLotMutex {
     #[inline]
     fn unlock_fair(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
-        if self.state
+        if self
+            .state
             .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
@@ -117,7 +120,8 @@ unsafe impl RawMutexTimed for ParkingLotMutex {
 
     #[inline]
     fn try_lock_until(&self, timeout: Instant) -> bool {
-        let result = if self.state
+        let result = if self
+            .state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
@@ -133,7 +137,8 @@ unsafe impl RawMutexTimed for ParkingLotMutex {
 
     #[inline]
     fn try_lock_for(&self, timeout: Duration) -> bool {
-        let result = if self.state
+        let result = if self
+            .state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
@@ -260,7 +265,8 @@ impl ParkingLotMutex {
     #[inline(never)]
     fn unlock_slow(&self, force_fair: bool) {
         // Unlock directly if there are no parked threads
-        if self.state
+        if self
+            .state
             .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {

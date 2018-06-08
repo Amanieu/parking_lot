@@ -5,12 +5,12 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::cell::{Cell, UnsafeCell};
-use std::time::{Duration, Instant};
 use libc;
+use std::cell::{Cell, UnsafeCell};
 use std::mem;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use std::ptr;
+use std::time::{Duration, Instant};
 
 // x32 Linux uses a non-standard type for tv_nsec in timespec.
 // See https://sourceware.org/bugzilla/show_bug.cgi?id=16437

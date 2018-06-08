@@ -5,10 +5,10 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use std::mem;
+use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
-use std::ptr;
-use std::mem;
 
 use winapi::shared::minwindef::{TRUE, ULONG};
 use winapi::shared::ntdef::NTSTATUS;
