@@ -94,6 +94,15 @@ pub type Mutex<T> = lock_api::Mutex<ParkingLotMutex, T>;
 /// `Deref` and `DerefMut` implementations.
 pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, ParkingLotMutex, T>;
 
+/// An RAII mutex guard returned by `MutexGuard::map`, which can point to a
+/// subfield of the protected data.
+///
+/// The main difference between `MappedMutexGuard` and `MutexGuard` is that the
+/// former doesn't support temporarily unlocking and re-locking, since that
+/// could introduce soundness issues if the locked object is modified by another
+/// thread.
+pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, ParkingLotMutex, T>;
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc::channel;

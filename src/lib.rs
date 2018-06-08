@@ -14,26 +14,29 @@
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
 #![cfg_attr(feature = "nightly", feature(asm))]
 
-extern crate parking_lot_core;
 extern crate lock_api;
+extern crate parking_lot_core;
 
-mod util;
+mod condvar;
 mod elision;
+mod mutex;
+mod once;
 mod raw_mutex;
 mod raw_rwlock;
-mod condvar;
-mod mutex;
 mod remutex;
 mod rwlock;
-mod once;
+mod util;
 
 #[cfg(feature = "deadlock_detection")]
 pub mod deadlock;
 #[cfg(not(feature = "deadlock_detection"))]
 mod deadlock;
 
-pub use once::{Once, OnceState, ONCE_INIT};
-pub use mutex::{Mutex, MutexGuard};
-pub use remutex::{ReentrantMutex, ReentrantMutexGuard};
 pub use condvar::{Condvar, WaitTimeoutResult};
-pub use rwlock::{RwLock, RwLockReadGuard, RwLockUpgradableReadGuard, RwLockWriteGuard};
+pub use mutex::{MappedMutexGuard, Mutex, MutexGuard};
+pub use once::{Once, OnceState, ONCE_INIT};
+pub use remutex::{MappedReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuard};
+pub use rwlock::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
+    RwLockUpgradableReadGuard, RwLockWriteGuard,
+};
