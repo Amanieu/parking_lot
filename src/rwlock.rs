@@ -553,4 +553,12 @@ mod tests {
         let _lock = x.write();
         assert_eq!(format!("{:?}", x), "RwLock { <locked> }");
     }
+
+    #[test]
+    fn test_clone() {
+        let rwlock = RwLock::new(Arc::new(1));
+        let a = rwlock.read_recursive();
+        let b = a.clone();
+        assert_eq!(Arc::strong_count(&b), 2);
+    }
 }

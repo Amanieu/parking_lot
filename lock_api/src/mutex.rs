@@ -352,8 +352,9 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         mem::forget(s);
     }
 
-    /// Executes the given function with the mutex unlocked using a fair unlock
-    /// protocol.
+    /// Temporarily unlocks the mutex to execute the given function.
+    ///
+    /// The mutex is unlocked a fair unlock protocol.
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
