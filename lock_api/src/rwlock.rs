@@ -792,17 +792,6 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, R, T> {
     }
 }
 
-impl<'a, R: RawRwLockRecursive + 'a, T: ?Sized + 'a> Clone for RwLockReadGuard<'a, R, T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        self.rwlock.raw.lock_shared_recursive();
-        RwLockReadGuard {
-            rwlock: self.rwlock,
-            marker: PhantomData,
-        }
-    }
-}
-
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress for RwLockReadGuard<'a, R, T> {}
 
@@ -1234,18 +1223,6 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Drop for MappedRwLockReadGuard<'a, R
     #[inline]
     fn drop(&mut self) {
         self.raw.unlock_shared();
-    }
-}
-
-impl<'a, R: RawRwLockRecursive + 'a, T: ?Sized + 'a> Clone for MappedRwLockReadGuard<'a, R, T> {
-    #[inline]
-    fn clone(&self) -> Self {
-        self.raw.lock_shared_recursive();
-        MappedRwLockReadGuard {
-            raw: self.raw,
-            data: self.data,
-            marker: PhantomData,
-        }
     }
 }
 

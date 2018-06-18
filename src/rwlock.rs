@@ -526,7 +526,7 @@ mod tests {
     fn test_rwlock_recursive() {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
-        let lock1 = arc.read();
+        let _lock1 = arc.read();
         thread::spawn(move || {
             let _lock = arc2.write();
         });
@@ -534,7 +534,6 @@ mod tests {
 
         // A normal read would block here since there is a pending writer
         let _lock2 = arc.read_recursive();
-        let _lock3 = lock1.clone();
     }
 
     #[test]
