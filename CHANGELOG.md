@@ -1,3 +1,8 @@
+0.6.2 (2018-06-18)
+==================
+
+- Enable `lock_api/nightly` feature from `parking_lot/nightly` (#79)
+
 0.6.1 (2018-06-08)
 ==================
 
