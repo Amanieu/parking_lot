@@ -1,4 +1,4 @@
-//! [Experimental] Deadlock detection
+//! \[Experimental\] Deadlock detection
 //!
 //! This feature is optional and can be enabled via the `deadlock_detection` feature flag.
 //!

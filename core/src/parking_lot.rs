@@ -1059,7 +1059,7 @@ unsafe fn unpark_filter_internal(
     result
 }
 
-/// [Experimental] Deadlock detection
+/// \[Experimental\] Deadlock detection
 ///
 /// Enabled via the `deadlock_detection` feature flag.
 pub mod deadlock {
