@@ -5,7 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use rand::{self, Rng, XorShiftRng};
+use rand::{Rng, FromEntropy};
+use rand::rngs::SmallRng;
 use smallvec::SmallVec;
 use std::cell::{Cell, UnsafeCell};
 use std::mem;
@@ -88,14 +89,14 @@ struct FairTimeout {
     timeout: Instant,
 
     // Random number generator for calculating the next timeout
-    rng: XorShiftRng,
+    rng: SmallRng,
 }
 
 impl FairTimeout {
     fn new() -> FairTimeout {
         FairTimeout {
             timeout: Instant::now(),
-            rng: rand::weak_rng(),
+            rng: SmallRng::from_entropy(),
         }
     }
 
@@ -1058,7 +1059,7 @@ unsafe fn unpark_filter_internal(
     result
 }
 
-/// [Experimental] Deadlock detection
+/// \[Experimental\] Deadlock detection
 ///
 /// Enabled via the `deadlock_detection` feature flag.
 pub mod deadlock {
