@@ -8,9 +8,9 @@
 use deadlock;
 use elision::{have_elision, AtomicElisionExt};
 use lock_api::{
-    GuardNoSend, RawRwLock, RawRwLockDowngrade, RawRwLockFair, RawRwLockRecursive,
-    RawRwLockRecursiveTimed, RawRwLockTimed, RawRwLockUpgrade, RawRwLockUpgradeDowngrade,
-    RawRwLockUpgradeFair, RawRwLockUpgradeTimed,
+    GuardNoSend, RawRwLock as RawRwLockTrait, RawRwLockDowngrade, RawRwLockFair,
+    RawRwLockRecursive, RawRwLockRecursiveTimed, RawRwLockTimed, RawRwLockUpgrade,
+    RawRwLockUpgradeDowngrade, RawRwLockUpgradeFair, RawRwLockUpgradeTimed,
 };
 use parking_lot_core::{self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult};
 use raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
@@ -37,12 +37,13 @@ const TOKEN_EXCLUSIVE: ParkToken = ParkToken(EXCLUSIVE_GUARD);
 const TOKEN_UPGRADABLE: ParkToken = ParkToken(UPGRADABLE_GUARD);
 const TOKEN_UPGRADING: ParkToken = ParkToken((EXCLUSIVE_GUARD - UPGRADABLE_GUARD) | UPGRADING_BIT);
 
-pub struct ParkingLotRwLock {
+/// Raw reader-writer lock type backed by the parking lot.
+pub struct RawRwLock {
     state: AtomicUsize,
 }
 
-unsafe impl RawRwLock for ParkingLotRwLock {
-    const INIT: ParkingLotRwLock = ParkingLotRwLock {
+unsafe impl RawRwLockTrait for RawRwLock {
+    const INIT: RawRwLock = RawRwLock {
         state: ATOMIC_USIZE_INIT,
     };
 
@@ -144,7 +145,7 @@ unsafe impl RawRwLock for ParkingLotRwLock {
     }
 }
 
-unsafe impl RawRwLockFair for ParkingLotRwLock {
+unsafe impl RawRwLockFair for RawRwLock {
     #[inline]
     fn unlock_shared_fair(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
@@ -206,7 +207,7 @@ unsafe impl RawRwLockFair for ParkingLotRwLock {
     }
 }
 
-unsafe impl RawRwLockDowngrade for ParkingLotRwLock {
+unsafe impl RawRwLockDowngrade for RawRwLock {
     #[inline]
     fn downgrade(&self) {
         let state = self
@@ -220,7 +221,7 @@ unsafe impl RawRwLockDowngrade for ParkingLotRwLock {
     }
 }
 
-unsafe impl RawRwLockTimed for ParkingLotRwLock {
+unsafe impl RawRwLockTimed for RawRwLock {
     type Duration = Duration;
     type Instant = Instant;
 
@@ -285,7 +286,7 @@ unsafe impl RawRwLockTimed for ParkingLotRwLock {
     }
 }
 
-unsafe impl RawRwLockRecursive for ParkingLotRwLock {
+unsafe impl RawRwLockRecursive for RawRwLock {
     #[inline]
     fn lock_shared_recursive(&self) {
         if !self.try_lock_shared_fast(true) {
@@ -309,7 +310,7 @@ unsafe impl RawRwLockRecursive for ParkingLotRwLock {
     }
 }
 
-unsafe impl RawRwLockRecursiveTimed for ParkingLotRwLock {
+unsafe impl RawRwLockRecursiveTimed for RawRwLock {
     #[inline]
     fn try_lock_shared_recursive_for(&self, timeout: Self::Duration) -> bool {
         let result = if self.try_lock_shared_fast(true) {
@@ -337,7 +338,7 @@ unsafe impl RawRwLockRecursiveTimed for ParkingLotRwLock {
     }
 }
 
-unsafe impl RawRwLockUpgrade for ParkingLotRwLock {
+unsafe impl RawRwLockUpgrade for RawRwLock {
     #[inline]
     fn lock_upgradable(&self) {
         if !self.try_lock_upgradable_fast() {
@@ -408,7 +409,7 @@ unsafe impl RawRwLockUpgrade for ParkingLotRwLock {
     }
 }
 
-unsafe impl RawRwLockUpgradeFair for ParkingLotRwLock {
+unsafe impl RawRwLockUpgradeFair for RawRwLock {
     #[inline]
     fn unlock_upgradable_fair(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
@@ -430,7 +431,7 @@ unsafe impl RawRwLockUpgradeFair for ParkingLotRwLock {
     }
 }
 
-unsafe impl RawRwLockUpgradeDowngrade for ParkingLotRwLock {
+unsafe impl RawRwLockUpgradeDowngrade for RawRwLock {
     #[inline]
     fn downgrade_upgradable(&self) {
         let state = self
@@ -456,7 +457,7 @@ unsafe impl RawRwLockUpgradeDowngrade for ParkingLotRwLock {
     }
 }
 
-unsafe impl RawRwLockUpgradeTimed for ParkingLotRwLock {
+unsafe impl RawRwLockUpgradeTimed for RawRwLock {
     #[inline]
     fn try_lock_upgradable_until(&self, timeout: Instant) -> bool {
         let result = if self.try_lock_upgradable_fast() {
@@ -520,7 +521,7 @@ unsafe impl RawRwLockUpgradeTimed for ParkingLotRwLock {
     }
 }
 
-impl ParkingLotRwLock {
+impl RawRwLock {
     #[inline(always)]
     fn try_lock_shared_fast(&self, recursive: bool) -> bool {
         let state = self.state.load(Ordering::Relaxed);

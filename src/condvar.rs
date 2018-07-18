@@ -6,10 +6,10 @@
 // copied, modified, or distributed except according to those terms.
 
 use deadlock;
-use lock_api::RawMutex;
+use lock_api::RawMutex as RawMutexTrait;
 use mutex::MutexGuard;
 use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
-use raw_mutex::{ParkingLotMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
+use raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 use std::{fmt, ptr};
@@ -81,7 +81,7 @@ impl WaitTimeoutResult {
 /// }
 /// ```
 pub struct Condvar {
-    state: AtomicPtr<ParkingLotMutex>,
+    state: AtomicPtr<RawMutex>,
 }
 
 impl Condvar {
@@ -159,7 +159,7 @@ impl Condvar {
 
     #[cold]
     #[inline(never)]
-    fn notify_all_slow(&self, mutex: *mut ParkingLotMutex) {
+    fn notify_all_slow(&self, mutex: *mut RawMutex) {
         unsafe {
             // Unpark one thread and requeue the rest onto the mutex
             let from = self as *const _ as usize;
@@ -259,7 +259,7 @@ impl Condvar {
     // using `wait_until`.
     fn wait_until_internal(
         &self,
-        mutex: &ParkingLotMutex,
+        mutex: &RawMutex,
         timeout: Option<Instant>,
     ) -> WaitTimeoutResult {
         unsafe {

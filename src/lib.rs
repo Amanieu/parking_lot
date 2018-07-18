@@ -35,7 +35,9 @@ mod deadlock;
 pub use condvar::{Condvar, WaitTimeoutResult};
 pub use mutex::{MappedMutexGuard, Mutex, MutexGuard};
 pub use once::{Once, OnceState, ONCE_INIT};
-pub use remutex::{MappedReentrantMutexGuard, ReentrantMutex, ReentrantMutexGuard};
+pub use raw_mutex::RawMutex;
+pub use raw_rwlock::RawRwLock;
+pub use remutex::{MappedReentrantMutexGuard, RawThreadId, ReentrantMutex, ReentrantMutexGuard};
 pub use rwlock::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
     RwLockUpgradableReadGuard, RwLockWriteGuard,

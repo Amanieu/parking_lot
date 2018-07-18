@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use lock_api;
-use raw_rwlock::ParkingLotRwLock;
+use raw_rwlock::RawRwLock;
 
 /// A reader-writer lock
 ///
@@ -86,15 +86,15 @@ use raw_rwlock::ParkingLotRwLock;
 ///     assert_eq!(*w, 6);
 /// } // write lock is dropped here
 /// ```
-pub type RwLock<T> = lock_api::RwLock<ParkingLotRwLock, T>;
+pub type RwLock<T> = lock_api::RwLock<RawRwLock, T>;
 
 /// RAII structure used to release the shared read access of a lock when
 /// dropped.
-pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, ParkingLotRwLock, T>;
+pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawRwLock, T>;
 
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
-pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, ParkingLotRwLock, T>;
+pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawRwLock, T>;
 
 /// An RAII read lock guard returned by `RwLockReadGuard::map`, which can point to a
 /// subfield of the protected data.
@@ -103,7 +103,7 @@ pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, ParkingLotRwLo
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
-pub type MappedRwLockReadGuard<'a, T> = lock_api::MappedRwLockReadGuard<'a, ParkingLotRwLock, T>;
+pub type MappedRwLockReadGuard<'a, T> = lock_api::MappedRwLockReadGuard<'a, RawRwLock, T>;
 
 /// An RAII write lock guard returned by `RwLockWriteGuard::map`, which can point to a
 /// subfield of the protected data.
@@ -112,12 +112,12 @@ pub type MappedRwLockReadGuard<'a, T> = lock_api::MappedRwLockReadGuard<'a, Park
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
-pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, ParkingLotRwLock, T>;
+pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, RawRwLock, T>;
 
 /// RAII structure used to release the upgradable read access of a lock when
 /// dropped.
 pub type RwLockUpgradableReadGuard<'a, T> =
-    lock_api::RwLockUpgradableReadGuard<'a, ParkingLotRwLock, T>;
+    lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
 #[cfg(test)]
 mod tests {

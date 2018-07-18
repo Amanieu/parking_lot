@@ -17,28 +17,28 @@ use std::sync::atomic::ATOMIC_USIZE_INIT as ATOMIC_U8_INIT;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use deadlock;
-use lock_api::{GuardNoSend, RawMutex, RawMutexFair, RawMutexTimed};
+use lock_api::{GuardNoSend, RawMutex as RawMutexTrait, RawMutexFair, RawMutexTimed};
 use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
 use std::time::{Duration, Instant};
 
 // UnparkToken used to indicate that that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.
-pub const TOKEN_NORMAL: UnparkToken = UnparkToken(0);
+pub(crate) const TOKEN_NORMAL: UnparkToken = UnparkToken(0);
 
 // UnparkToken used to indicate that the mutex is being handed off to the target
 // thread directly without unlocking it.
-pub const TOKEN_HANDOFF: UnparkToken = UnparkToken(1);
+pub(crate) const TOKEN_HANDOFF: UnparkToken = UnparkToken(1);
 
 const LOCKED_BIT: U8 = 1;
 const PARKED_BIT: U8 = 2;
 
 /// Raw mutex type backed by the parking lot.
-pub struct ParkingLotMutex {
+pub struct RawMutex {
     state: AtomicU8,
 }
 
-unsafe impl RawMutex for ParkingLotMutex {
-    const INIT: ParkingLotMutex = ParkingLotMutex {
+unsafe impl RawMutexTrait for RawMutex {
+    const INIT: RawMutex = RawMutex {
         state: ATOMIC_U8_INIT,
     };
 
@@ -92,7 +92,7 @@ unsafe impl RawMutex for ParkingLotMutex {
     }
 }
 
-unsafe impl RawMutexFair for ParkingLotMutex {
+unsafe impl RawMutexFair for RawMutex {
     #[inline]
     fn unlock_fair(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
@@ -114,7 +114,7 @@ unsafe impl RawMutexFair for ParkingLotMutex {
     }
 }
 
-unsafe impl RawMutexTimed for ParkingLotMutex {
+unsafe impl RawMutexTimed for RawMutex {
     type Duration = Duration;
     type Instant = Instant;
 
@@ -153,7 +153,7 @@ unsafe impl RawMutexTimed for ParkingLotMutex {
     }
 }
 
-impl ParkingLotMutex {
+impl RawMutex {
     // Used by Condvar when requeuing threads to us, must be called while
     // holding the queue lock.
     #[inline]

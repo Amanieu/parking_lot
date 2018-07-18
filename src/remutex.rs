@@ -6,12 +6,13 @@
 // copied, modified, or distributed except according to those terms.
 
 use lock_api::{self, GetThreadId};
-use raw_mutex::ParkingLotMutex;
+use raw_mutex::RawMutex;
 
-pub struct ThreadId;
+/// Implementation of the `GetThreadId` trait for `lock_api::ReentrantMutex`.
+pub struct RawThreadId;
 
-unsafe impl GetThreadId for ThreadId {
-    const INIT: ThreadId = ThreadId;
+unsafe impl GetThreadId for RawThreadId {
+    const INIT: RawThreadId = RawThreadId;
 
     fn nonzero_thread_id(&self) -> usize {
         // The address of a thread-local variable is guaranteed to be unique to the
@@ -32,7 +33,7 @@ unsafe impl GetThreadId for ThreadId {
 ///
 /// See [`Mutex`](struct.Mutex.html) for more details about the underlying mutex
 /// primitive.
-pub type ReentrantMutex<T> = lock_api::ReentrantMutex<ParkingLotMutex, ThreadId, T>;
+pub type ReentrantMutex<T> = lock_api::ReentrantMutex<RawMutex, RawThreadId, T>;
 
 /// An RAII implementation of a "scoped lock" of a reentrant mutex. When this structure
 /// is dropped (falls out of scope), the lock will be unlocked.
@@ -40,7 +41,7 @@ pub type ReentrantMutex<T> = lock_api::ReentrantMutex<ParkingLotMutex, ThreadId,
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` implementation.
 pub type ReentrantMutexGuard<'a, T> =
-    lock_api::ReentrantMutexGuard<'a, ParkingLotMutex, ThreadId, T>;
+    lock_api::ReentrantMutexGuard<'a, RawMutex, RawThreadId, T>;
 
 /// An RAII mutex guard returned by `ReentrantMutexGuard::map`, which can point to a
 /// subfield of the protected data.
@@ -50,7 +51,7 @@ pub type ReentrantMutexGuard<'a, T> =
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
 pub type MappedReentrantMutexGuard<'a, T> =
-    lock_api::MappedReentrantMutexGuard<'a, ParkingLotMutex, ThreadId, T>;
+    lock_api::MappedReentrantMutexGuard<'a, RawMutex, RawThreadId, T>;
 
 #[cfg(test)]
 mod tests {
