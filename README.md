@@ -122,6 +122,11 @@ The core parking lot API is provided by the `parking_lot_core` crate. It is
 separate from the synchronization primitives in the `parking_lot` crate so that
 changes to the core API do not cause breaking changes for users of `parking_lot`.
 
+## Minimum Rust version
+
+The current minimum required Rust version is 1.26. Any change to this is
+considered a breaking change and will require a major version bump.
+
 ## License
 
 Licensed under either of
