@@ -8,8 +8,11 @@
 use spinwait::SpinWait;
 use std::cell::Cell;
 use std::mem;
+#[cfg(not(has_localkey_try_with))]
+use std::panic;
 use std::ptr;
 use std::sync::atomic::{fence, AtomicUsize, Ordering};
+use std::thread::LocalKey;
 use thread_parker::ThreadParker;
 
 struct ThreadData {
@@ -45,14 +48,22 @@ impl ThreadData {
 
 // Returns a ThreadData structure for the current thread
 unsafe fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
-    // Try to read from thread-local storage, but return a local copy if the TLS
-    // has already been destroyed.
-    //
+    // Try to read from thread-local storage, but return None if the TLS has
+    // already been destroyed.
+    #[cfg(has_localkey_try_with)]
+    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
+        key.try_with(|x| x as *const ThreadData).ok()
+    }
+    #[cfg(not(has_localkey_try_with))]
+    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
+        panic::catch_unwind(|| key.with(|x| x as *const ThreadData)).ok()
+    }
+
     // If ThreadData is expensive to construct, then we want to use a cached
     // version in thread-local storage if possible.
     if !cfg!(windows) && !cfg!(all(feature = "nightly", target_os = "linux")) {
         thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
-        if let Ok(tls) = THREAD_DATA.try_with(|x| x as *const ThreadData) {
+        if let Some(tls) = try_get_tls(&THREAD_DATA) {
             return &*tls;
         }
     }

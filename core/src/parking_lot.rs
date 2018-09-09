@@ -5,13 +5,16 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use rand::{Rng, FromEntropy};
 use rand::rngs::SmallRng;
+use rand::{FromEntropy, Rng};
 use smallvec::SmallVec;
 use std::cell::{Cell, UnsafeCell};
 use std::mem;
+#[cfg(not(has_localkey_try_with))]
+use std::panic;
 use std::ptr;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::thread::LocalKey;
 use std::time::{Duration, Instant};
 use thread_parker::ThreadParker;
 use util::UncheckedOptionExt;
@@ -160,13 +163,21 @@ impl ThreadData {
 
 // Returns a ThreadData structure for the current thread
 unsafe fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
-    // Try to read from thread-local storage, but return a local copy if the TLS
-    // has already been destroyed.
-    //
+    // Try to read from thread-local storage, but return None if the TLS has
+    // already been destroyed.
+    #[cfg(has_localkey_try_with)]
+    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
+        key.try_with(|x| x as *const ThreadData).ok()
+    }
+    #[cfg(not(has_localkey_try_with))]
+    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
+        panic::catch_unwind(|| key.with(|x| x as *const ThreadData)).ok()
+    }
+
     // Unlike word_lock::ThreadData, parking_lot::ThreadData is always expensive
     // to construct. Try to use a thread-local version if possible.
     thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
-    if let Ok(tls) = THREAD_DATA.try_with(|x| x as *const ThreadData) {
+    if let Some(tls) = try_get_tls(&THREAD_DATA) {
         return &*tls;
     }
 
@@ -1176,8 +1187,7 @@ mod deadlock_impl {
                 .send(DeadlockedThread {
                     thread_id: td.deadlock_data.thread_id,
                     backtrace: Backtrace::new(),
-                })
-                .unwrap();
+                }).unwrap();
             // make sure to close this sender
             drop(sender);
 
