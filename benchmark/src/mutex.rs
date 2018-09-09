@@ -11,12 +11,12 @@ extern crate parking_lot;
 mod args;
 use args::ArgRange;
 
-use std::thread;
-use std::sync::{Arc, Barrier};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 #[cfg(unix)]
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Barrier};
+use std::thread;
+use std::time::Duration;
 
 trait Mutex<T> {
     fn new(v: T) -> Self;
@@ -157,7 +157,8 @@ fn run_benchmark_iterations<M: Mutex<f64> + Send + Sync + 'static>(
     }
 
     let average = data.iter().fold(0f64, |a, b| a + *b as f64) / data.len() as f64;
-    let variance = data.iter()
+    let variance = data
+        .iter()
         .fold(0f64, |a, b| a + ((*b as f64 - average).powi(2)))
         / data.len() as f64;
     data.sort();
@@ -190,8 +191,7 @@ fn run_all(
     if *first || !args[1].is_single() || !args[2].is_single() {
         println!(
             "- {} iterations inside lock, {} iterations outside lock",
-            work_per_critical_section,
-            work_between_critical_sections
+            work_per_critical_section, work_between_critical_sections
         );
     }
     if *first || !args[3].is_single() {
@@ -201,10 +201,7 @@ fn run_all(
 
     println!(
         "{:^20} | {:^14} | {:^14} | {:^14}",
-        "name",
-        "average",
-        "median",
-        "std.dev."
+        "name", "average", "median", "std.dev."
     );
 
     run_benchmark_iterations::<parking_lot::Mutex<f64>>(
@@ -254,7 +251,7 @@ fn main() {
                             work_per_critical_section,
                             work_between_critical_sections,
                             seconds_per_test,
-                            test_iterations
+                            test_iterations,
                         );
                     }
                 }

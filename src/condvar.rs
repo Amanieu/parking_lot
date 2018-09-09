@@ -257,11 +257,7 @@ impl Condvar {
 
     // This is a non-generic function to reduce the monomorphization cost of
     // using `wait_until`.
-    fn wait_until_internal(
-        &self,
-        mutex: &RawMutex,
-        timeout: Option<Instant>,
-    ) -> WaitTimeoutResult {
+    fn wait_until_internal(&self, mutex: &RawMutex, timeout: Option<Instant>) -> WaitTimeoutResult {
         unsafe {
             let result;
             let mut bad_mutex = false;

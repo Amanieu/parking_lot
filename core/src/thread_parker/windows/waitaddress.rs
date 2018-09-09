@@ -91,8 +91,7 @@ impl WaitAddress {
                     } else {
                         ms as DWORD
                     }
-                })
-                .unwrap_or(INFINITE);
+                }).unwrap_or(INFINITE);
             let cmp = 1usize;
             let r = (self.WaitOnAddress)(
                 key as *const _ as PVOID,

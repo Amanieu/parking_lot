@@ -38,7 +38,10 @@
 //! reference count and the two mutex bits in the same atomic word.
 
 #![warn(missing_docs)]
-#![cfg_attr(all(feature = "nightly", target_os = "linux"), feature(integer_atomics))]
+#![cfg_attr(
+    all(feature = "nightly", target_os = "linux"),
+    feature(integer_atomics)
+)]
 
 extern crate rand;
 extern crate smallvec;

@@ -7,7 +7,7 @@
 
 use std::sync::atomic::{fence, Ordering};
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{ATOMIC_U8_INIT, AtomicU8};
+use std::sync::atomic::{AtomicU8, ATOMIC_U8_INIT};
 #[cfg(feature = "nightly")]
 type U8 = u8;
 #[cfg(not(feature = "nightly"))]

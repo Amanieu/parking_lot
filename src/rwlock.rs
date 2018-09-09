@@ -116,8 +116,7 @@ pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, Ra
 
 /// RAII structure used to release the upgradable read access of a lock when
 /// dropped.
-pub type RwLockUpgradableReadGuard<'a, T> =
-    lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
+pub type RwLockUpgradableReadGuard<'a, T> = lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
 #[cfg(test)]
 mod tests {

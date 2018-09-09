@@ -36,7 +36,10 @@ pub fn have_elision() -> bool {
 
 // This implementation is never actually called because it is guarded by
 // have_elision().
-#[cfg(not(all(feature = "nightly", any(target_arch = "x86", target_arch = "x86_64"))))]
+#[cfg(not(all(
+    feature = "nightly",
+    any(target_arch = "x86", target_arch = "x86_64")
+)))]
 impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 
@@ -90,7 +93,11 @@ impl AtomicElisionExt for AtomicUsize {
     }
 }
 
-#[cfg(all(feature = "nightly", target_arch = "x86_64", target_pointer_width = "32"))]
+#[cfg(all(
+    feature = "nightly",
+    target_arch = "x86_64",
+    target_pointer_width = "32"
+))]
 impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 
@@ -129,7 +136,11 @@ impl AtomicElisionExt for AtomicUsize {
     }
 }
 
-#[cfg(all(feature = "nightly", target_arch = "x86_64", target_pointer_width = "64"))]
+#[cfg(all(
+    feature = "nightly",
+    target_arch = "x86_64",
+    target_pointer_width = "64"
+))]
 impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 

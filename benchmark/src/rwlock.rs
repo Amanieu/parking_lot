@@ -12,12 +12,12 @@ extern crate seqlock;
 mod args;
 use args::ArgRange;
 
-use std::thread;
-use std::sync::{Arc, Barrier};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 #[cfg(unix)]
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Barrier};
+use std::thread;
+use std::time::Duration;
 
 trait RwLock<T> {
     fn new(v: T) -> Self;
@@ -152,8 +152,7 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(
 ) -> (Vec<usize>, Vec<usize>) {
     let lock = Arc::new(([0u8; 300], M::new(0.0), [0u8; 300]));
     let keep_going = Arc::new(AtomicBool::new(true));
-    let barrier = Arc::new(Barrier::new(
-        num_reader_threads + num_writer_threads));
+    let barrier = Arc::new(Barrier::new(num_reader_threads + num_writer_threads));
     let mut writers = vec![];
     let mut readers = vec![];
     for _ in 0..num_writer_threads {
@@ -214,7 +213,6 @@ fn run_benchmark<M: RwLock<f64> + Send + Sync + 'static>(
     thread::sleep(Duration::new(seconds_per_test as u64, 0));
     keep_going.store(false, Ordering::Relaxed);
 
-
     let run_writers = writers
         .into_iter()
         .map(|x| x.join().unwrap().0)
@@ -239,21 +237,19 @@ fn run_benchmark_iterations<M: RwLock<f64> + Send + Sync + 'static>(
     let mut readers = vec![];
 
     for _ in 0..test_iterations {
-      let (run_writers, run_readers) = run_benchmark::<M>(
-          num_writer_threads,
-          num_reader_threads,
-          work_per_critical_section,
-          work_between_critical_sections,
-          seconds_per_test,
-      );
-      writers.extend_from_slice(&run_writers);
-      readers.extend_from_slice(&run_readers);
+        let (run_writers, run_readers) = run_benchmark::<M>(
+            num_writer_threads,
+            num_reader_threads,
+            work_per_critical_section,
+            work_between_critical_sections,
+            seconds_per_test,
+        );
+        writers.extend_from_slice(&run_writers);
+        readers.extend_from_slice(&run_readers);
     }
 
-    let total_writers = writers.iter()
-        .fold(0f64, |a, b| a + *b as f64) / test_iterations as f64;
-    let total_readers = readers.iter()
-        .fold(0f64, |a, b| a + *b as f64) / test_iterations as f64;
+    let total_writers = writers.iter().fold(0f64, |a, b| a + *b as f64) / test_iterations as f64;
+    let total_readers = readers.iter().fold(0f64, |a, b| a + *b as f64) / test_iterations as f64;
     println!(
         "{:20} - [write] {:10.3} kHz [read] {:10.3} kHz",
         M::name(),
@@ -261,7 +257,6 @@ fn run_benchmark_iterations<M: RwLock<f64> + Send + Sync + 'static>(
         total_readers as f64 / seconds_per_test as f64 / 1000.0
     );
 }
-
 
 fn run_all(
     args: &[ArgRange],
@@ -279,15 +274,13 @@ fn run_all(
     if *first || !args[0].is_single() || !args[1].is_single() {
         println!(
             "- Running with {} writer threads and {} reader threads",
-            num_writer_threads,
-            num_reader_threads
+            num_writer_threads, num_reader_threads
         );
     }
     if *first || !args[2].is_single() || !args[3].is_single() {
         println!(
             "- {} iterations inside lock, {} iterations outside lock",
-            work_per_critical_section,
-            work_between_critical_sections
+            work_per_critical_section, work_between_critical_sections
         );
     }
     if *first || !args[4].is_single() {
