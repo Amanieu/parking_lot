@@ -1043,7 +1043,7 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
     }
 
     /// Atomically upgrades an upgradable read lock lock into a exclusive write lock,
-    /// blocking the current thread until it can be aquired.
+    /// blocking the current thread until it can be acquired.
     pub fn upgrade(s: Self) -> RwLockWriteGuard<'a, R, T> {
         s.rwlock.raw.upgrade();
         let rwlock = s.rwlock;

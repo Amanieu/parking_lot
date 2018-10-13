@@ -38,14 +38,14 @@ pub enum OnceState {
     /// A thread is currently executing a closure.
     InProgress,
 
-    /// A closure has completed sucessfully.
+    /// A closure has completed successfully.
     Done,
 }
 
 impl OnceState {
     /// Returns whether the associated `Once` has been poisoned.
     ///
-    /// Once an initalization routine for a `Once` has panicked it will forever
+    /// Once an initialization routine for a `Once` has panicked it will forever
     /// indicate to future forced initialization routines that it is poisoned.
     #[inline]
     pub fn poisoned(&self) -> bool {
@@ -55,7 +55,7 @@ impl OnceState {
         }
     }
 
-    /// Returns whether the associated `Once` has successfullly executed a
+    /// Returns whether the associated `Once` has successfully executed a
     /// closure.
     #[inline]
     pub fn done(&self) -> bool {
