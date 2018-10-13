@@ -1264,7 +1264,7 @@ mod deadlock_impl {
 
     use self::WaitGraphNode::*;
 
-    // Contrary to the _fast variant this locks the entrie table before looking for cycles.
+    // Contrary to the _fast variant this locks the entries table before looking for cycles.
     // Returns all detected thread wait cycles.
     // Note that once a cycle is reported it's never reported again.
     unsafe fn check_wait_graph_slow() -> Vec<Vec<DeadlockedThread>> {

@@ -268,7 +268,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
 }
 
 impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
-    /// Forcibly unlocks the mutex using a fair unlock procotol.
+    /// Forcibly unlocks the mutex using a fair unlock protocol.
     ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `ReentrantMutexGuard` object alive, for example when

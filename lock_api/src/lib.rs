@@ -11,7 +11,7 @@
 //! implementing custom lock types, it also allows users to write code which is
 //! generic with regards to different lock implementations.
 //!
-//! Basic usage of this crate is very straightfoward:
+//! Basic usage of this crate is very straightforward:
 //!
 //! 1. Create a raw lock type. This should only contain the lock state, not any
 //!    data protected by the lock.
