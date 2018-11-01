@@ -149,7 +149,7 @@ unsafe impl<R: RawMutex + Sync, G: GetThreadId + Sync, T: ?Sized + Send> Sync
 
 impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
     /// Creates a new reentrant mutex in an unlocked state ready for use.
-    #[cfg(feature = "nightly")]
+    #[cfg(feature = "const_fn")]
     #[inline]
     pub const fn new(val: T) -> ReentrantMutex<R, G, T> {
         ReentrantMutex {
@@ -164,7 +164,7 @@ impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
     }
 
     /// Creates a new reentrant mutex in an unlocked state ready for use.
-    #[cfg(not(feature = "nightly"))]
+    #[cfg(not(feature = "const_fn"))]
     #[inline]
     pub fn new(val: T) -> ReentrantMutex<R, G, T> {
         ReentrantMutex {

@@ -51,7 +51,7 @@ impl WaitTimeoutResult {
 ///   woken up.
 /// - Only requires 1 word of space, whereas the standard library boxes the
 ///   `Condvar` due to platform limitations.
-/// - Can be statically constructed (requires the `const_fn` nightly feature).
+/// - Can be statically constructed (requires the `const_fn` feature).
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
 ///
@@ -87,7 +87,7 @@ pub struct Condvar {
 impl Condvar {
     /// Creates a new condition variable which is ready to be waited on and
     /// notified.
-    #[cfg(feature = "nightly")]
+    #[cfg(feature = "const_fn")]
     #[inline]
     pub const fn new() -> Condvar {
         Condvar {
@@ -97,7 +97,7 @@ impl Condvar {
 
     /// Creates a new condition variable which is ready to be waited on and
     /// notified.
-    #[cfg(not(feature = "nightly"))]
+    #[cfg(not(feature = "const_fn"))]
     #[inline]
     pub fn new() -> Condvar {
         Condvar {

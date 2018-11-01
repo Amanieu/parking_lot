@@ -77,15 +77,15 @@
 //!
 //! # Cargo features
 //!
-//! This crate supports two cargo features:
+//! This crate supports the following cargo features:
 //!
 //! - `owning_ref`: Allows your lock types to be used with the `owning_ref` crate.
-//! - `nightly`: Enables nightly-only features. At the moment the only such
+//! - `const_fn`: Enables `const fn` constructors for lock types. Requires Rust 1.31.
+//! - `nightly`: Enables all nightly-only features. At the moment the only such
 //!   feature is `const fn` constructors for lock types.
 
 #![no_std]
 #![warn(missing_docs)]
-#![cfg_attr(feature = "nightly", feature(const_fn))]
 
 #[macro_use]
 extern crate scopeguard;

@@ -42,7 +42,7 @@ use raw_mutex::RawMutex;
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 byte of space, whereas the standard library boxes the
 ///   `Mutex` due to platform limitations.
-/// - Can be statically constructed (requires the `const_fn` nightly feature).
+/// - Can be statically constructed (requires the `const_fn` feature).
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
 /// - Efficient handling of micro-contention using adaptive spinning.

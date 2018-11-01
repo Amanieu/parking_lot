@@ -85,13 +85,14 @@ lock.
 There are a few restrictions when using this library on stable Rust:
 
 - `Mutex` and `Once` will use 1 word of space instead of 1 byte.
-- You will have to use `lazy_static!` to statically initialize `Mutex`,
-  `Condvar` and `RwLock` types instead of `const fn`.
+- Statically initializing `Mutex`, `Condvar` and `RwLock` types requires Rust
+  1.31 and has to be enabled by selecting the `const_fn` feature.
+  Otherwise you will have to use `lazy_static!`.
 - `RwLock` will not be able to take advantage of hardware lock elision for
   readers, which improves performance when there are multiple readers.
 
-To enable nightly-only functionality, you need to enable the `nightly` feature
-in Cargo (see below).
+To enable all nightly-only functionality, you need to enable the `nightly`
+feature in Cargo (see below).
 
 ## Usage
 

@@ -13,4 +13,8 @@ scopeguard = { version = "0.3", default-features = false }
 owning_ref = { version = "0.3", optional = true }
 
 [features]
-nightly = []
+const_fn = []
+nightly = ["const_fn"]
+
+[package.metadata.docs.rs]
+features = ["const_fn"]

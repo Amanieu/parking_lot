@@ -235,7 +235,7 @@ unsafe impl<R: RawRwLock + Sync, T: ?Sized + Send + Sync> Sync for RwLock<R, T> 
 
 impl<R: RawRwLock, T> RwLock<R, T> {
     /// Creates a new instance of an `RwLock<T>` which is unlocked.
-    #[cfg(feature = "nightly")]
+    #[cfg(feature = "const_fn")]
     #[inline]
     pub const fn new(val: T) -> RwLock<R, T> {
         RwLock {
@@ -245,7 +245,7 @@ impl<R: RawRwLock, T> RwLock<R, T> {
     }
 
     /// Creates a new instance of an `RwLock<T>` which is unlocked.
-    #[cfg(not(feature = "nightly"))]
+    #[cfg(not(feature = "const_fn"))]
     #[inline]
     pub fn new(val: T) -> RwLock<R, T> {
         RwLock {

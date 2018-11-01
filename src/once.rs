@@ -96,14 +96,14 @@ pub const ONCE_INIT: Once = Once(ATOMIC_U8_INIT);
 
 impl Once {
     /// Creates a new `Once` value.
-    #[cfg(feature = "nightly")]
+    #[cfg(feature = "const_fn")]
     #[inline]
     pub const fn new() -> Once {
         Once(ATOMIC_U8_INIT)
     }
 
     /// Creates a new `Once` value.
-    #[cfg(not(feature = "nightly"))]
+    #[cfg(not(feature = "const_fn"))]
     #[inline]
     pub fn new() -> Once {
         Once(ATOMIC_U8_INIT)

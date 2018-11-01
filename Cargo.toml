@@ -19,8 +19,12 @@ rand = "0.5"
 [features]
 default = ["owning_ref"]
 owning_ref = ["lock_api/owning_ref"]
-nightly = ["parking_lot_core/nightly", "lock_api/nightly"]
+const_fn = ["lock_api/const_fn"]
+nightly = ["const_fn", "parking_lot_core/nightly", "lock_api/nightly"]
 deadlock_detection = ["parking_lot_core/deadlock_detection"]
+
+[package.metadata.docs.rs]
+features = ["const_fn"]
 
 [workspace]
 exclude = ["benchmark"]
