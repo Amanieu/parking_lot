@@ -107,24 +107,40 @@ impl Condvar {
 
     /// Wakes up one blocked thread on this condvar.
     ///
+    /// Returns whether a thread was woken up.
+    ///
     /// If there is a blocked thread on this condition variable, then it will
     /// be woken up from its call to `wait` or `wait_timeout`. Calls to
     /// `notify_one` are not buffered in any way.
     ///
     /// To wake up all threads, see `notify_all()`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use parking_lot::Condvar;
+    ///
+    /// let condvar = Condvar::new();
+    ///
+    /// // do something with condvar, share it with other threads
+    ///
+    /// if !condvar.notify_one() {
+    ///     println!("Nobody was listening for this.");
+    /// }
+    /// ```
     #[inline]
-    pub fn notify_one(&self) {
+    pub fn notify_one(&self) -> bool {
         // Nothing to do if there are no waiting threads
         if self.state.load(Ordering::Relaxed).is_null() {
-            return;
+            return false;
         }
 
-        self.notify_one_slow();
+        self.notify_one_slow()
     }
 
     #[cold]
     #[inline(never)]
-    fn notify_one_slow(&self) {
+    fn notify_one_slow(&self) -> bool {
         unsafe {
             // Unpark one thread
             let addr = self as *const _ as usize;
@@ -135,11 +151,16 @@ impl Condvar {
                 }
                 TOKEN_NORMAL
             };
-            parking_lot_core::unpark_one(addr, callback);
+            let res = parking_lot_core::unpark_one(addr, callback);
+
+            res.unparked_threads != 0
         }
+
     }
 
     /// Wakes up all blocked threads on this condvar.
+    ///
+    /// Returns the number of threads woken up.
     ///
     /// This method will ensure that any current waiters on the condition
     /// variable are awoken. Calls to `notify_all()` are not buffered in any
@@ -147,19 +168,19 @@ impl Condvar {
     ///
     /// To wake up only one thread, see `notify_one()`.
     #[inline]
-    pub fn notify_all(&self) {
+    pub fn notify_all(&self) -> usize {
         // Nothing to do if there are no waiting threads
         let state = self.state.load(Ordering::Relaxed);
         if state.is_null() {
-            return;
+            return 0;
         }
 
-        self.notify_all_slow(state);
+        self.notify_all_slow(state)
     }
 
     #[cold]
     #[inline(never)]
-    fn notify_all_slow(&self, mutex: *mut RawMutex) {
+    fn notify_all_slow(&self, mutex: *mut RawMutex) -> usize {
         unsafe {
             // Unpark one thread and requeue the rest onto the mutex
             let from = self as *const _ as usize;
@@ -198,8 +219,11 @@ impl Condvar {
                 }
                 TOKEN_NORMAL
             };
-            parking_lot_core::unpark_requeue(from, to, validate, callback);
+            let res = parking_lot_core::unpark_requeue(from, to, validate, callback);
+
+            res.unparked_threads
         }
+
     }
 
     /// Blocks the current thread until this condition variable receives a
