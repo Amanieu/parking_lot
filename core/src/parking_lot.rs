@@ -455,6 +455,9 @@ pub struct UnparkResult {
     /// should be used to switch to a fair unlocking mechanism for a particular
     /// unlock.
     pub be_fair: bool,
+
+    /// Private field so new fields can be added without breakage.
+    _sealed: (),
 }
 
 /// Operation that `unpark_requeue` should perform.
