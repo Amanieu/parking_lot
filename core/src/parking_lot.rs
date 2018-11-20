@@ -439,10 +439,13 @@ impl ParkResult {
 }
 
 /// Result of an unpark operation.
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Default, Eq, PartialEq, Debug)]
 pub struct UnparkResult {
     /// The number of threads that were unparked.
     pub unparked_threads: usize,
+
+    /// The number of threads that were requeued.
+    pub requeued_threads: usize,
 
     /// Whether there are any threads remaining in the queue. This only returns
     /// true if a thread was unparked.
@@ -701,11 +704,7 @@ unsafe fn unpark_one_internal(
     let mut link = &bucket.queue_head;
     let mut current = bucket.queue_head.get();
     let mut previous = ptr::null();
-    let mut result = UnparkResult {
-        unparked_threads: 0,
-        have_more_threads: false,
-        be_fair: false,
-    };
+    let mut result = UnparkResult::default();
     while !current.is_null() {
         if (*current).key.load(Ordering::Relaxed) == key {
             // Remove the thread from the queue
@@ -874,11 +873,7 @@ unsafe fn unpark_requeue_internal(
     let (bucket_from, bucket_to) = lock_bucket_pair(key_from, key_to);
 
     // If the validation function fails, just return
-    let mut result = UnparkResult {
-        unparked_threads: 0,
-        have_more_threads: false,
-        be_fair: false,
-    };
+    let mut result = UnparkResult::default();
     let op = validate();
     if op == RequeueOp::Abort {
         unlock_bucket_pair(bucket_from, bucket_to);
@@ -914,6 +909,7 @@ unsafe fn unpark_requeue_internal(
                 requeue_threads_tail = current;
                 (*current).key.store(key_to, Ordering::Relaxed);
                 result.have_more_threads = true;
+                result.requeued_threads += 1;
             }
             current = next;
         } else {
@@ -1005,11 +1001,7 @@ unsafe fn unpark_filter_internal(
     let mut current = bucket.queue_head.get();
     let mut previous = ptr::null();
     let mut threads = SmallVec::<[_; 8]>::new();
-    let mut result = UnparkResult {
-        unparked_threads: 0,
-        have_more_threads: false,
-        be_fair: false,
-    };
+    let mut result = UnparkResult::default();
     while !current.is_null() {
         if (*current).key.load(Ordering::Relaxed) == key {
             // Call the filter function with the thread's ParkToken
