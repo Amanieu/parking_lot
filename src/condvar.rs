@@ -221,7 +221,7 @@ impl Condvar {
             };
             let res = parking_lot_core::unpark_requeue(from, to, validate, callback);
 
-            res.unparked_threads
+            res.unparked_threads + res.requeued_threads
         }
 
     }
@@ -452,6 +452,70 @@ mod tests {
         for _ in 0..N {
             rx.recv().unwrap();
         }
+    }
+
+    #[test]
+    fn notify_one_return_true() {
+        let m = Arc::new(Mutex::new(()));
+        let m2 = m.clone();
+        let c = Arc::new(Condvar::new());
+        let c2 = c.clone();
+
+        let mut g = m.lock();
+        let _t = thread::spawn(move || {
+            let _g = m2.lock();
+            assert!(c2.notify_one());
+        });
+        c.wait(&mut g);
+    }
+
+    #[test]
+    fn notify_one_return_false() {
+        let m = Arc::new(Mutex::new(()));
+        let c = Arc::new(Condvar::new());
+
+        let _t = thread::spawn(move || {
+            let _g = m.lock();
+            assert!(!c.notify_one());
+        });
+    }
+
+    #[test]
+    fn notify_all_return() {
+        const N: usize = 10;
+
+        let data = Arc::new((Mutex::new(0), Condvar::new()));
+        let (tx, rx) = channel();
+        for _ in 0..N {
+            let data = data.clone();
+            let tx = tx.clone();
+            thread::spawn(move || {
+                let &(ref lock, ref cond) = &*data;
+                let mut cnt = lock.lock();
+                *cnt += 1;
+                if *cnt == N {
+                    tx.send(()).unwrap();
+                }
+                while *cnt != 0 {
+                    cond.wait(&mut cnt);
+                }
+                tx.send(()).unwrap();
+            });
+        }
+        drop(tx);
+
+        let &(ref lock, ref cond) = &*data;
+        rx.recv().unwrap();
+        let mut cnt = lock.lock();
+        *cnt = 0;
+        assert_eq!(cond.notify_all(), N);
+        drop(cnt);
+
+        for _ in 0..N {
+            rx.recv().unwrap();
+        }
+
+        assert_eq!(cond.notify_all(), 0);
     }
 
     #[test]
