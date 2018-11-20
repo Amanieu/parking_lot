@@ -1,3 +1,8 @@
+0.7.0 (2018-11-20)
+==================
+
+- Return if or how many threads were notified from `Condvar::notify_*`
+
 0.6.3 (2018-07-18)
 ==================
 
