@@ -131,31 +131,54 @@ impl Condvar {
     #[inline]
     pub fn notify_one(&self) -> bool {
         // Nothing to do if there are no waiting threads
-        if self.state.load(Ordering::Relaxed).is_null() {
+        let state = self.state.load(Ordering::Relaxed);
+        if state.is_null() {
             return false;
         }
 
-        self.notify_one_slow()
+        self.notify_one_slow(state)
     }
 
     #[cold]
     #[inline(never)]
-    fn notify_one_slow(&self) -> bool {
+    fn notify_one_slow(&self, mutex: *mut RawMutex) -> bool {
         unsafe {
-            // Unpark one thread
-            let addr = self as *const _ as usize;
-            let callback = |result: UnparkResult| {
+            // Unpark one thread and requeue the rest onto the mutex
+            let from = self as *const _ as usize;
+            let to = mutex as usize;
+            let validate = || {
+                // Make sure that our atomic state still points to the same
+                // mutex. If not then it means that all threads on the current
+                // mutex were woken up and a new waiting thread switched to a
+                // different mutex. In that case we can get away with doing
+                // nothing.
+                if self.state.load(Ordering::Relaxed) != mutex {
+                    return RequeueOp::Abort;
+                }
+
+                // Unpark one thread if the mutex is unlocked, otherwise just
+                // requeue everything to the mutex. This is safe to do here
+                // since unlocking the mutex when the parked bit is set requires
+                // locking the queue. There is the possibility of a race if the
+                // mutex gets locked after we check, but that doesn't matter in
+                // this case.
+                if (*mutex).mark_parked_if_locked() {
+                    RequeueOp::RequeueOne
+                } else {
+                    RequeueOp::UnparkOne
+                }
+            };
+            let callback = |_op, result: UnparkResult| {
                 // Clear our state if there are no more waiting threads
                 if !result.have_more_threads {
                     self.state.store(ptr::null_mut(), Ordering::Relaxed);
                 }
                 TOKEN_NORMAL
             };
-            let res = parking_lot_core::unpark_one(addr, callback);
+            let res = parking_lot_core::unpark_requeue(from, to, validate, callback);
 
-            res.unparked_threads != 0
+            res.unparked_threads + res.requeued_threads != 0
         }
-
     }
 
     /// Wakes up all blocked threads on this condvar.
@@ -214,7 +237,7 @@ impl Condvar {
             let callback = |op, result: UnparkResult| {
                 // If we requeued threads to the mutex, mark it as having
                 // parked threads. The RequeueAll case is already handled above.
-                if op == RequeueOp::UnparkOneRequeueRest && result.have_more_threads {
+                if op == RequeueOp::UnparkOneRequeueRest && result.requeued_threads != 0 {
                     (*mutex).mark_parked();
                 }
                 TOKEN_NORMAL
@@ -223,7 +246,6 @@ impl Condvar {
 
             res.unparked_threads + res.requeued_threads
         }
-
     }
 
     /// Blocks the current thread until this condition variable receives a
@@ -613,5 +635,26 @@ mod tests {
     fn test_debug_condvar() {
         let c = Condvar::new();
         assert_eq!(format!("{:?}", c), "Condvar { .. }");
+    }
+
+    #[test]
+    fn test_condvar_requeue() {
+        let m = Arc::new(Mutex::new(()));
+        let m2 = m.clone();
+        let c = Arc::new(Condvar::new());
+        let c2 = c.clone();
+        let t = thread::spawn(move || {
+            let mut g = m2.lock();
+            c2.wait(&mut g);
+        });
+
+        let mut g = m.lock();
+        while !c.notify_one() {
+            // Wait for the thread to get into wait()
+            ::MutexGuard::bump(&mut g);
+        }
+        // The thread should have been requeued to the mutex, which we wake up now.
+        drop(g);
+        t.join().unwrap();
     }
 }

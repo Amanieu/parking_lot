@@ -471,6 +471,12 @@ pub enum RequeueOp {
 
     /// Requeue all threads onto the target queue.
     RequeueAll,
+
+    /// Unpark one thread and leave the rest parked. No requeuing is done.
+    UnparkOne,
+
+    /// Requeue one thread and leave the rest parked on the original queue.
+    RequeueOne,
 }
 
 /// Operation that `unpark_filter` should perform for each thread.
@@ -820,11 +826,10 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
 /// unparks the first one and requeues the rest onto the queue associated with
 /// `key_to`.
 ///
-/// The `validate` function is called while both queues are locked and can abort
-/// the operation by returning `RequeueOp::Abort`. It can also choose to
-/// unpark the first thread in the source queue while moving the rest by
-/// returning `RequeueOp::UnparkFirstRequeueRest`. Returning
-/// `RequeueOp::RequeueAll` will move all threads to the destination queue.
+/// The `validate` function is called while both queues are locked. Its return
+/// value will determine which operation is performed, or whether the operation
+/// should be aborted. See `RequeueOp` for details about the different possible
+/// return values.
 ///
 /// The `callback` function is also called while both queues are locked. It is
 /// passed the `RequeueOp` returned by `validate` and an `UnparkResult`
@@ -900,7 +905,9 @@ unsafe fn unpark_requeue_internal(
             }
 
             // Prepare the first thread for wakeup and requeue the rest.
-            if op == RequeueOp::UnparkOneRequeueRest && wakeup_thread.is_none() {
+            if (op == RequeueOp::UnparkOneRequeueRest || op == RequeueOp::UnparkOne)
+                && wakeup_thread.is_none()
+            {
                 wakeup_thread = Some(current);
                 result.unparked_threads = 1;
             } else {
@@ -911,8 +918,20 @@ unsafe fn unpark_requeue_internal(
                 }
                 requeue_threads_tail = current;
                 (*current).key.store(key_to, Ordering::Relaxed);
-                result.have_more_threads = true;
                 result.requeued_threads += 1;
+            }
+            if op == RequeueOp::UnparkOne || op == RequeueOp::RequeueOne {
+                // Scan the rest of the queue to see if there are any other
+                // entries with the given key.
+                let mut scan = next;
+                while !scan.is_null() {
+                    if (*scan).key.load(Ordering::Relaxed) == key_from {
+                        result.have_more_threads = true;
+                        break;
+                    }
+                    scan = (*scan).next_in_queue.get();
+                }
+                break;
             }
             current = next;
         } else {
@@ -1182,7 +1201,8 @@ mod deadlock_impl {
                 .send(DeadlockedThread {
                     thread_id: td.deadlock_data.thread_id,
                     backtrace: Backtrace::new(),
-                }).unwrap();
+                })
+                .unwrap();
             // make sure to close this sender
             drop(sender);
 
