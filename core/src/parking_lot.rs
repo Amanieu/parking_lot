@@ -9,7 +9,6 @@ use rand::rngs::SmallRng;
 use rand::{FromEntropy, Rng};
 use smallvec::SmallVec;
 use std::cell::{Cell, UnsafeCell};
-use std::mem;
 #[cfg(not(has_localkey_try_with))]
 use std::panic;
 use std::ptr;
@@ -42,21 +41,15 @@ impl HashTable {
     fn new(num_threads: usize, prev: *const HashTable) -> Box<HashTable> {
         let new_size = (num_threads * LOAD_FACTOR).next_power_of_two();
         let hash_bits = 0usize.leading_zeros() - new_size.leading_zeros() - 1;
-        let bucket = Bucket {
-            mutex: WordLock::new(),
-            queue_head: Cell::new(ptr::null()),
-            queue_tail: Cell::new(ptr::null()),
-            fair_timeout: UnsafeCell::new(FairTimeout::new()),
-            _padding: unsafe { mem::uninitialized() },
-        };
         Box::new(HashTable {
-            entries: vec![bucket; new_size].into_boxed_slice(),
-            hash_bits: hash_bits,
+            entries: vec![Bucket::new(); new_size].into_boxed_slice(),
+            hash_bits,
             _prev: prev,
         })
     }
 }
 
+#[cfg_attr(has_repr_align, repr(align(64)))]
 struct Bucket {
     // Lock protecting the queue
     mutex: WordLock,
@@ -70,20 +63,28 @@ struct Bucket {
 
     // Padding to avoid false sharing between buckets. Ideally we would just
     // align the bucket structure to 64 bytes, but Rust doesn't support that
-    // yet.
+    // yet. Remove this field when dropping support for Rust < 1.25
+    #[cfg(not(has_repr_align))]
     _padding: [u8; 64],
 }
 
-// Implementation of Clone for Bucket, needed to make vec![] work
-impl Clone for Bucket {
-    fn clone(&self) -> Bucket {
-        Bucket {
+impl Bucket {
+    pub fn new() -> Self {
+        Self {
             mutex: WordLock::new(),
             queue_head: Cell::new(ptr::null()),
             queue_tail: Cell::new(ptr::null()),
             fair_timeout: UnsafeCell::new(FairTimeout::new()),
-            _padding: unsafe { mem::uninitialized() },
+            #[cfg(not(has_repr_align))]
+            _padding: unsafe { ::std::mem::uninitialized() },
         }
+    }
+}
+
+// Implementation of Clone for Bucket, needed to make vec![] work
+impl Clone for Bucket {
+    fn clone(&self) -> Self {
+        Self::new()
     }
 }
 
