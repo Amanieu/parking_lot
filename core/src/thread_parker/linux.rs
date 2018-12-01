@@ -29,6 +29,8 @@ pub struct ThreadParker {
 }
 
 impl ThreadParker {
+    pub const IS_CHEAP_TO_CONSTRUCT: bool = true;
+
     pub fn new() -> ThreadParker {
         ThreadParker {
             futex: AtomicI32::new(0),

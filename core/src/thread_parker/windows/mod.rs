@@ -67,6 +67,8 @@ pub struct ThreadParker {
 }
 
 impl ThreadParker {
+    pub const IS_CHEAP_TO_CONSTRUCT: bool = true;
+
     pub fn new() -> ThreadParker {
         // Initialize the backend here to ensure we don't get any panics
         // later on, which could leave synchronization primitives in a broken

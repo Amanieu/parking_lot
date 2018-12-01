@@ -30,6 +30,8 @@ pub struct ThreadParker {
 }
 
 impl ThreadParker {
+    pub const IS_CHEAP_TO_CONSTRUCT: bool = false;
+
     pub fn new() -> ThreadParker {
         ThreadParker {
             should_park: Cell::new(false),
