@@ -136,7 +136,7 @@ struct ThreadData {
     parked_with_timeout: Cell<bool>,
 
     // Extra data for deadlock detection
-    // TODO: once supported in stable replace with #[cfg...] & remove dummy struct/impl
+    // FIXME: once supported in stable replace with #[cfg...] & remove dummy struct/impl
     #[allow(dead_code)]
     deadlock_data: deadlock::DeadlockData,
 }
