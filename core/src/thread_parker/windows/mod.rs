@@ -8,6 +8,7 @@
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::time::Instant;
+use winapi;
 
 mod keyed_event;
 mod waitaddress;
@@ -142,5 +143,32 @@ impl UnparkHandle {
             UnparkHandle::KeyedEvent(x) => x.unpark(),
             UnparkHandle::WaitAddress(x) => x.unpark(),
         }
+    }
+}
+
+// Yields the rest of the current timeslice to the OS
+#[inline]
+pub fn thread_yield() {
+    // Note that this is manually defined here rather than using the definition
+    // through `winapi`. The `winapi` definition comes from the `synchapi`
+    // header which enables the "synchronization.lib" library. It turns out,
+    // however that `Sleep` comes from `kernel32.dll` so this activation isn't
+    // necessary.
+    //
+    // This was originally identified in rust-lang/rust where on MinGW the
+    // libsynchronization.a library pulls in a dependency on a newer DLL not
+    // present in older versions of Windows. (see rust-lang/rust#49438)
+    //
+    // This is a bit of a hack for now and ideally we'd fix MinGW's own import
+    // libraries, but that'll probably take a lot longer than patching this here
+    // and avoiding the `synchapi` feature entirely.
+    extern "system" {
+        fn Sleep(a: winapi::shared::minwindef::DWORD);
+    }
+    unsafe {
+        // We don't use SwitchToThread here because it doesn't consider all
+        // threads in the system and the thread we are waiting for may not get
+        // selected.
+        Sleep(0);
     }
 }

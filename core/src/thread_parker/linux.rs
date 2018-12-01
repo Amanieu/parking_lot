@@ -8,6 +8,7 @@
 use libc;
 use std::ptr;
 use std::sync::atomic::{AtomicI32, Ordering};
+use std::thread;
 use std::time::Instant;
 
 const FUTEX_WAIT: i32 = 0;
@@ -138,4 +139,9 @@ impl UnparkHandle {
             debug_assert_eq!(unsafe { *libc::__errno_location() }, libc::EFAULT);
         }
     }
+}
+
+#[inline]
+pub fn thread_yield() {
+    thread::yield_now();
 }

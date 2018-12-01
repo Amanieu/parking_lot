@@ -8,8 +8,8 @@
 //! A simple spin lock based thread parker. Used on platforms without better
 //! parking facilities available.
 
-use std::sync::atomic::spin_loop_hint;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering, spin_loop_hint};
+use std::thread;
 use std::time::Instant;
 
 // Helper type for putting a thread to sleep until some other thread wakes it up
@@ -77,4 +77,9 @@ impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
     pub fn unpark(self) {}
+}
+
+#[inline]
+pub fn thread_yield() {
+    thread::yield_now();
 }
