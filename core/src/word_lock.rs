@@ -106,7 +106,7 @@ impl WordLock {
     #[inline]
     pub unsafe fn unlock(&self) {
         let state = self.state.fetch_sub(LOCKED_BIT, Ordering::Release);
-        if state & QUEUE_LOCKED_BIT != 0 || state & QUEUE_MASK == 0 {
+        if state.is_queue_locked() || state.queue_head().is_null() {
             return;
         }
         self.unlock_slow();
@@ -119,7 +119,7 @@ impl WordLock {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // Grab the lock if it isn't locked, even if there is a queue on it
-            if state & LOCKED_BIT == 0 {
+            if !state.is_locked() {
                 match self.state.compare_exchange_weak(
                     state,
                     state | LOCKED_BIT,
@@ -133,7 +133,7 @@ impl WordLock {
             }
 
             // If there is no queue, try spinning a few times
-            if state & QUEUE_MASK == 0 && spinwait.spin() {
+            if state.queue_head().is_null() && spinwait.spin() {
                 state = self.state.load(Ordering::Relaxed);
                 continue;
             }
@@ -145,7 +145,7 @@ impl WordLock {
             thread_data.parker.prepare_park();
 
             // Add our thread to the front of the queue
-            let queue_head = (state & QUEUE_MASK) as *const ThreadData;
+            let queue_head = state.queue_head();
             if queue_head.is_null() {
                 thread_data.queue_tail.set(thread_data);
                 thread_data.prev.set(ptr::null());
@@ -156,7 +156,7 @@ impl WordLock {
             }
             if let Err(x) = self.state.compare_exchange_weak(
                 state,
-                (state & !QUEUE_MASK) | thread_data as *const _ as usize,
+                state.with_queue_head(thread_data),
                 Ordering::Release,
                 Ordering::Relaxed,
             ) {
@@ -181,7 +181,7 @@ impl WordLock {
             // We just unlocked the WordLock. Just check if there is a thread
             // to wake up. If the queue is locked then another thread is already
             // taking care of waking up a thread.
-            if state & QUEUE_LOCKED_BIT != 0 || state & QUEUE_MASK == 0 {
+            if state.is_queue_locked() || state.queue_head().is_null() {
                 return;
             }
 
@@ -202,7 +202,7 @@ impl WordLock {
             // First, we need to fill in the prev pointers for any newly added
             // threads. We do this until we reach a node that we previously
             // processed, which has a non-null queue_tail pointer.
-            let queue_head = (state & QUEUE_MASK) as *const ThreadData;
+            let queue_head = state.queue_head();
             let mut queue_tail;
             let mut current = queue_head;
             loop {
@@ -222,7 +222,7 @@ impl WordLock {
             // If the WordLock is locked, then there is no point waking up a
             // thread now. Instead we let the next unlocker take care of waking
             // up a thread.
-            if state & LOCKED_BIT != 0 {
+            if state.is_locked() {
                 match self.state.compare_exchange_weak(
                     state,
                     state & !QUEUE_LOCKED_BIT,
@@ -255,7 +255,7 @@ impl WordLock {
                     // If the compare_exchange failed because a new thread was
                     // added to the queue then we need to re-scan the queue to
                     // find the previous element.
-                    if state & QUEUE_MASK == 0 {
+                    if state.queue_head().is_null() {
                         continue;
                     } else {
                         // Need an acquire fence before reading the new queue
@@ -275,5 +275,34 @@ impl WordLock {
             (*queue_tail).parker.unpark_lock().unpark();
             break;
         }
+    }
+}
+
+trait LockState {
+    fn is_locked(self) -> bool;
+    fn is_queue_locked(self) -> bool;
+    fn queue_head(self) -> *const ThreadData;
+    fn with_queue_head(self, thread_data: *const ThreadData) -> Self;
+}
+
+impl LockState for usize {
+    #[inline]
+    fn is_locked(self) -> bool {
+        self & LOCKED_BIT != 0
+    }
+
+    #[inline]
+    fn is_queue_locked(self) -> bool {
+        self & QUEUE_LOCKED_BIT != 0
+    }
+
+    #[inline]
+    fn queue_head(self) -> *const ThreadData {
+        (self & QUEUE_MASK) as *const ThreadData
+    }
+
+    #[inline]
+    fn with_queue_head(self, thread_data: *const ThreadData) -> Self {
+        (self & !QUEUE_MASK) | thread_data as *const _ as usize
     }
 }
