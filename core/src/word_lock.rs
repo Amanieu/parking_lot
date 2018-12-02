@@ -175,7 +175,7 @@ impl WordLock {
 
     #[cold]
     #[inline(never)]
-    unsafe fn unlock_slow(&self) {
+    fn unlock_slow(&self) {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // We just unlocked the WordLock. Just check if there is a thread
@@ -206,18 +206,22 @@ impl WordLock {
             let mut queue_tail;
             let mut current = queue_head;
             loop {
-                queue_tail = (*current).queue_tail.get();
+                queue_tail = unsafe { (*current).queue_tail.get() };
                 if !queue_tail.is_null() {
                     break;
                 }
-                let next = (*current).next.get();
-                (*next).prev.set(current);
-                current = next;
+                unsafe {
+                    let next = (*current).next.get();
+                    (*next).prev.set(current);
+                    current = next;
+                }
             }
 
             // Set queue_tail on the queue head to indicate that the whole list
             // has prev pointers set correctly.
-            (*queue_head).queue_tail.set(queue_tail);
+            unsafe {
+                (*queue_head).queue_tail.set(queue_tail);
+            }
 
             // If the WordLock is locked, then there is no point waking up a
             // thread now. Instead we let the next unlocker take care of waking
@@ -239,7 +243,7 @@ impl WordLock {
             }
 
             // Remove the last thread from the queue and unlock the queue
-            let new_tail = (*queue_tail).prev.get();
+            let new_tail = unsafe { (*queue_tail).prev.get() };
             if new_tail.is_null() {
                 loop {
                     match self.state.compare_exchange_weak(
@@ -264,7 +268,9 @@ impl WordLock {
                     }
                 }
             } else {
-                (*queue_head).queue_tail.set(new_tail);
+                unsafe {
+                    (*queue_head).queue_tail.set(new_tail);
+                }
                 self.state.fetch_and(!QUEUE_LOCKED_BIT, Ordering::Release);
             }
 
@@ -272,7 +278,9 @@ impl WordLock {
             // we don't need to worry about any races here since the thread is
             // guaranteed to be sleeping right now and we are the only one who
             // can wake it up.
-            (*queue_tail).parker.unpark_lock().unpark();
+            unsafe {
+                (*queue_tail).parker.unpark_lock().unpark();
+            }
             break;
         }
     }
