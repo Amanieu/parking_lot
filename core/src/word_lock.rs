@@ -103,6 +103,7 @@ impl WordLock {
         self.lock_slow();
     }
 
+    /// Must not be called on an already unlocked `WordLock`!
     #[inline]
     pub unsafe fn unlock(&self) {
         let state = self.state.fetch_sub(LOCKED_BIT, Ordering::Release);
