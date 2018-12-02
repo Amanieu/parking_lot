@@ -194,7 +194,7 @@ impl Drop for ThreadData {
 }
 
 // Get a pointer to the latest hash table, creating one if it doesn't exist yet.
-unsafe fn get_hashtable() -> *mut HashTable {
+fn get_hashtable() -> *mut HashTable {
     let mut table = HASHTABLE.load(Ordering::Acquire);
 
     // If there is no table, create one
@@ -214,7 +214,9 @@ unsafe fn get_hashtable() -> *mut HashTable {
         }
 
         // Free the table we created
-        Box::from_raw(new_table);
+        unsafe {
+            Box::from_raw(new_table);
+        }
     }
 
     table
