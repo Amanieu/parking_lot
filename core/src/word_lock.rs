@@ -47,7 +47,7 @@ impl ThreadData {
 }
 
 // Returns a ThreadData structure for the current thread
-unsafe fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
+fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
     // Try to read from thread-local storage, but return None if the TLS has
     // already been destroyed.
     #[cfg(has_localkey_try_with)]
@@ -64,7 +64,7 @@ unsafe fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
     if !cfg!(windows) && !cfg!(all(feature = "nightly", target_os = "linux")) {
         thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
         if let Some(tls) = try_get_tls(&THREAD_DATA) {
-            return &*tls;
+            return unsafe { &*tls };
         }
     }
 
