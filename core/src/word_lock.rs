@@ -170,7 +170,7 @@ impl WordLock {
 
             // Loop back and try locking again
             spinwait.reset();
-            self.state.load(Ordering::Relaxed);
+            state = self.state.load(Ordering::Relaxed);
         }
     }
 
