@@ -92,7 +92,7 @@ impl WordLock {
     }
 
     #[inline]
-    pub unsafe fn lock(&self) {
+    pub fn lock(&self) {
         if self
             .state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
@@ -114,7 +114,7 @@ impl WordLock {
 
     #[cold]
     #[inline(never)]
-    unsafe fn lock_slow(&self) {
+    fn lock_slow(&self) {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -142,7 +142,7 @@ impl WordLock {
             let mut thread_data = None;
             let thread_data = get_thread_data(&mut thread_data);
             assert!(mem::align_of_val(thread_data) > !QUEUE_MASK);
-            thread_data.parker.prepare_park();
+            unsafe { thread_data.parker.prepare_park(); }
 
             // Add our thread to the front of the queue
             let queue_head = state.queue_head();
@@ -165,7 +165,7 @@ impl WordLock {
             }
 
             // Sleep until we are woken up by an unlock
-            thread_data.parker.park();
+            unsafe { thread_data.parker.park(); }
 
             // Loop back and try locking again
             spinwait.reset();
