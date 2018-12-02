@@ -37,6 +37,7 @@ struct ThreadData {
 
 impl ThreadData {
     fn new() -> ThreadData {
+        assert!(mem::align_of::<ThreadData>() > !QUEUE_MASK);
         ThreadData {
             parker: ThreadParker::new(),
             queue_tail: Cell::new(ptr::null()),
@@ -46,8 +47,11 @@ impl ThreadData {
     }
 }
 
-// Returns a ThreadData structure for the current thread
-fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
+// Invokes the given closure with a reference to the current thread `ThreadData`.
+fn with_thread_data<F, T>(f: F) -> T
+where
+    F: FnOnce(&ThreadData) -> T,
+{
     // Try to read from thread-local storage, but return None if the TLS has
     // already been destroyed.
     #[cfg(has_localkey_try_with)]
@@ -59,18 +63,22 @@ fn get_thread_data(local: &mut Option<ThreadData>) -> &ThreadData {
         panic::catch_unwind(|| key.with(|x| x as *const ThreadData)).ok()
     }
 
+    let mut thread_data_ptr = ptr::null();
     // If ThreadData is expensive to construct, then we want to use a cached
     // version in thread-local storage if possible.
     if !cfg!(windows) && !cfg!(all(feature = "nightly", target_os = "linux")) {
         thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
-        if let Some(tls) = try_get_tls(&THREAD_DATA) {
-            return unsafe { &*tls };
+        if let Some(tls_thread_data) = try_get_tls(&THREAD_DATA) {
+            thread_data_ptr = tls_thread_data;
         }
     }
-
     // Otherwise just create a ThreadData on the stack
-    *local = Some(ThreadData::new());
-    local.as_ref().unwrap()
+    let mut thread_data_storage = None;
+    if thread_data_ptr.is_null() {
+        thread_data_ptr = thread_data_storage.get_or_insert_with(ThreadData::new);
+    }
+
+    f(unsafe { &*thread_data_ptr })
 }
 
 const LOCKED_BIT: usize = 1;
@@ -140,37 +148,39 @@ impl WordLock {
             }
 
             // Get our thread data and prepare it for parking
-            let mut thread_data = None;
-            let thread_data = get_thread_data(&mut thread_data);
-            assert!(mem::align_of_val(thread_data) > !QUEUE_MASK);
-            unsafe { thread_data.parker.prepare_park(); }
+            state = with_thread_data(|thread_data| {
+                unsafe {
+                    thread_data.parker.prepare_park();
+                }
 
-            // Add our thread to the front of the queue
-            let queue_head = state.queue_head();
-            if queue_head.is_null() {
-                thread_data.queue_tail.set(thread_data);
-                thread_data.prev.set(ptr::null());
-            } else {
-                thread_data.queue_tail.set(ptr::null());
-                thread_data.prev.set(ptr::null());
-                thread_data.next.set(queue_head);
-            }
-            if let Err(x) = self.state.compare_exchange_weak(
-                state,
-                state.with_queue_head(thread_data),
-                Ordering::Release,
-                Ordering::Relaxed,
-            ) {
-                state = x;
-                continue;
-            }
+                // Add our thread to the front of the queue
+                let queue_head = state.queue_head();
+                if queue_head.is_null() {
+                    thread_data.queue_tail.set(thread_data);
+                    thread_data.prev.set(ptr::null());
+                } else {
+                    thread_data.queue_tail.set(ptr::null());
+                    thread_data.prev.set(ptr::null());
+                    thread_data.next.set(queue_head);
+                }
+                if let Err(x) = self.state.compare_exchange_weak(
+                    state,
+                    state.with_queue_head(thread_data),
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                ) {
+                    return x;
+                }
 
-            // Sleep until we are woken up by an unlock
-            unsafe { thread_data.parker.park(); }
+                // Sleep until we are woken up by an unlock
+                unsafe {
+                    thread_data.parker.park();
+                }
 
-            // Loop back and try locking again
-            spinwait.reset();
-            state = self.state.load(Ordering::Relaxed);
+                // Loop back and try locking again
+                spinwait.reset();
+                self.state.load(Ordering::Relaxed)
+            });
         }
     }
 
