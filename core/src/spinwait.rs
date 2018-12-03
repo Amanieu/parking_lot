@@ -18,6 +18,7 @@ fn cpu_relax(iterations: u32) {
 }
 
 /// A counter used to perform exponential backoff in spin loops.
+#[derive(Default)]
 pub struct SpinWait {
     counter: u32,
 }
@@ -25,8 +26,8 @@ pub struct SpinWait {
 impl SpinWait {
     /// Creates a new `SpinWait`.
     #[inline]
-    pub fn new() -> SpinWait {
-        SpinWait { counter: 0 }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Resets a `SpinWait` to its initial state.
@@ -69,12 +70,5 @@ impl SpinWait {
             self.counter = 10;
         }
         cpu_relax(1 << self.counter);
-    }
-}
-
-impl Default for SpinWait {
-    #[inline]
-    fn default() -> SpinWait {
-        SpinWait::new()
     }
 }
