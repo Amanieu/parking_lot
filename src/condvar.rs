@@ -387,12 +387,17 @@ impl Condvar {
     ///
     /// Like `wait`, the lock specified will be re-acquired when this function
     /// returns, regardless of whether the timeout elapsed or not.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the given `timeout` is so large that it can't be added to the current time.
     #[inline]
     pub fn wait_for<T: ?Sized>(
         &self,
         guard: &mut MutexGuard<T>,
         timeout: Duration,
     ) -> WaitTimeoutResult {
+        // FIXME: Change to Intstant::now().checked_add(timeout) when stable.
         self.wait_until(guard, Instant::now() + timeout)
     }
 }
