@@ -5,7 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::ptr;
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::time::Instant;
 
 mod keyed_event;
@@ -18,12 +19,12 @@ enum Backend {
 
 impl Backend {
     unsafe fn get() -> &'static Backend {
-        static BACKEND: AtomicUsize = ATOMIC_USIZE_INIT;
+        static BACKEND: AtomicPtr<Backend> = AtomicPtr::new(ptr::null_mut());
 
         // Fast path: use the existing object
-        let backend = BACKEND.load(Ordering::Acquire);
-        if backend != 0 {
-            return &*(backend as *const Backend);
+        let backend_ptr = BACKEND.load(Ordering::Acquire);
+        if !backend_ptr.is_null() {
+            return &*backend_ptr;
         };
 
         // Try to create a new Backend
@@ -40,13 +41,18 @@ impl Backend {
         }
 
         // Try to create a new object
-        let backend = Box::into_raw(Box::new(backend));
-        match BACKEND.compare_exchange(0, backend as usize, Ordering::Release, Ordering::Relaxed) {
-            Ok(_) => &*(backend as *const Backend),
-            Err(x) => {
+        let backend_ptr = Box::into_raw(Box::new(backend));
+        match BACKEND.compare_exchange(
+            ptr::null_mut(),
+            backend_ptr,
+            Ordering::Release,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => &*backend_ptr,
+            Err(global_backend_ptr) => {
                 // We lost the race, free our object and return the global one
-                Box::from_raw(backend);
-                &*(x as *const Backend)
+                Box::from_raw(backend_ptr);
+                &*global_backend_ptr
             }
         }
     }
