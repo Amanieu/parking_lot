@@ -195,9 +195,9 @@ impl UnparkHandle {
 
 // Returns the current time on the clock used by pthread_cond_t as a timespec.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
-unsafe fn timespec_now() -> libc::timespec {
-    let mut now: libc::timeval = mem::uninitialized();
-    let r = libc::gettimeofday(&mut now, ptr::null_mut());
+fn timespec_now() -> libc::timespec {
+    let mut now: libc::timeval = unsafe { mem::uninitialized() };
+    let r = unsafe { libc::gettimeofday(&mut now, ptr::null_mut()) };
     debug_assert_eq!(r, 0);
     libc::timespec {
         tv_sec: now.tv_sec,
@@ -205,8 +205,8 @@ unsafe fn timespec_now() -> libc::timespec {
     }
 }
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-unsafe fn timespec_now() -> libc::timespec {
-    let mut now: libc::timespec = mem::uninitialized();
+fn timespec_now() -> libc::timespec {
+    let mut now: libc::timespec = unsafe { mem::uninitialized() };
     let clock = if cfg!(target_os = "android") {
         // Android doesn't support pthread_condattr_setclock, so we need to
         // specify the timeout in CLOCK_REALTIME.
@@ -214,14 +214,14 @@ unsafe fn timespec_now() -> libc::timespec {
     } else {
         libc::CLOCK_MONOTONIC
     };
-    let r = libc::clock_gettime(clock, &mut now);
+    let r = unsafe { libc::clock_gettime(clock, &mut now) };
     debug_assert_eq!(r, 0);
     now
 }
 
 // Converts a relative timeout into an absolute timeout in the clock used by
 // pthread_cond_t.
-unsafe fn timeout_to_timespec(timeout: Duration) -> Option<libc::timespec> {
+fn timeout_to_timespec(timeout: Duration) -> Option<libc::timespec> {
     // Handle overflows early on
     if timeout.as_secs() > libc::time_t::max_value() as u64 {
         return None;
