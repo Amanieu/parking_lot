@@ -94,11 +94,11 @@ impl KeyedEvent {
         })
     }
 
-    pub unsafe fn prepare_park(&'static self, key: &AtomicUsize) {
+    pub fn prepare_park(&'static self, key: &AtomicUsize) {
         key.store(STATE_PARKED, Ordering::Relaxed);
     }
 
-    pub unsafe fn timed_out(&'static self, key: &AtomicUsize) -> bool {
+    pub fn timed_out(&'static self, key: &AtomicUsize) -> bool {
         key.load(Ordering::Relaxed) == STATE_TIMED_OUT
     }
 

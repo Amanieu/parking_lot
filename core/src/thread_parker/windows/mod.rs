@@ -18,20 +18,20 @@ enum Backend {
 }
 
 impl Backend {
-    unsafe fn get() -> &'static Backend {
+    fn get() -> &'static Backend {
         static BACKEND: AtomicPtr<Backend> = AtomicPtr::new(ptr::null_mut());
 
         // Fast path: use the existing object
         let backend_ptr = BACKEND.load(Ordering::Acquire);
         if !backend_ptr.is_null() {
-            return &*backend_ptr;
+            return unsafe { &*backend_ptr };
         };
 
         // Try to create a new Backend
         let backend;
-        if let Some(waitaddress) = waitaddress::WaitAddress::create() {
+        if let Some(waitaddress) = unsafe { waitaddress::WaitAddress::create() } {
             backend = Backend::WaitAddress(waitaddress);
-        } else if let Some(keyed_event) = keyed_event::KeyedEvent::create() {
+        } else if let Some(keyed_event) = unsafe { keyed_event::KeyedEvent::create() } {
             backend = Backend::KeyedEvent(keyed_event);
         } else {
             panic!(
@@ -48,11 +48,13 @@ impl Backend {
             Ordering::Release,
             Ordering::Relaxed,
         ) {
-            Ok(_) => &*backend_ptr,
+            Ok(_) => unsafe { &*backend_ptr },
             Err(global_backend_ptr) => {
-                // We lost the race, free our object and return the global one
-                Box::from_raw(backend_ptr);
-                &*global_backend_ptr
+                unsafe {
+                    // We lost the race, free our object and return the global one
+                    Box::from_raw(backend_ptr);
+                    &*global_backend_ptr
+                }
             }
         }
     }
@@ -71,12 +73,12 @@ impl ThreadParker {
         // state.
         ThreadParker {
             key: AtomicUsize::new(0),
-            backend: unsafe { Backend::get() },
+            backend: Backend::get(),
         }
     }
 
     // Prepares the parker. This should be called before adding it to the queue.
-    pub unsafe fn prepare_park(&self) {
+    pub fn prepare_park(&self) {
         match *self.backend {
             Backend::KeyedEvent(ref x) => x.prepare_park(&self.key),
             Backend::WaitAddress(ref x) => x.prepare_park(&self.key),
@@ -85,7 +87,7 @@ impl ThreadParker {
 
     // Checks if the park timed out. This should be called while holding the
     // queue lock after park_until has returned false.
-    pub unsafe fn timed_out(&self) -> bool {
+    pub fn timed_out(&self) -> bool {
         match *self.backend {
             Backend::KeyedEvent(ref x) => x.timed_out(&self.key),
             Backend::WaitAddress(ref x) => x.timed_out(&self.key),
