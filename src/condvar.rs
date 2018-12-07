@@ -397,7 +397,7 @@ impl Condvar {
         guard: &mut MutexGuard<T>,
         timeout: Duration,
     ) -> WaitTimeoutResult {
-        // FIXME: Change to Intstant::now().checked_add(timeout) when stable.
+        // FIXME: Change to Instant::now().checked_add(timeout) when stable.
         self.wait_until(guard, Instant::now() + timeout)
     }
 }
