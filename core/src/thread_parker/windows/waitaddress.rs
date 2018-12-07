@@ -30,26 +30,28 @@ pub struct WaitAddress {
 
 impl WaitAddress {
     #[allow(non_snake_case)]
-    pub unsafe fn create() -> Option<WaitAddress> {
+    pub fn create() -> Option<WaitAddress> {
         // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
         // located in kernel32.dll, but they are lying...
-        let synch_dll = GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr() as LPCSTR);
+        let synch_dll =
+            unsafe { GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr() as LPCSTR) };
         if synch_dll.is_null() {
             return None;
         }
 
-        let WaitOnAddress = GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as LPCSTR);
+        let WaitOnAddress =
+            unsafe { GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as LPCSTR) };
         if WaitOnAddress.is_null() {
             return None;
         }
         let WakeByAddressSingle =
-            GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr() as LPCSTR);
+            unsafe { GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr() as LPCSTR) };
         if WakeByAddressSingle.is_null() {
             return None;
         }
         Some(WaitAddress {
-            WaitOnAddress: mem::transmute(WaitOnAddress),
-            WakeByAddressSingle: mem::transmute(WakeByAddressSingle),
+            WaitOnAddress: unsafe { mem::transmute(WaitOnAddress) },
+            WakeByAddressSingle: unsafe { mem::transmute(WakeByAddressSingle) },
         })
     }
 
@@ -85,7 +87,8 @@ impl WaitAddress {
                     } else {
                         ms as DWORD
                     }
-                }).unwrap_or(INFINITE);
+                })
+                .unwrap_or(INFINITE);
             if self.wait_on_address(key, timeout) == FALSE {
                 debug_assert_eq!(unsafe { GetLastError() }, ERROR_TIMEOUT);
             }

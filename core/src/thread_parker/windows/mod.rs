@@ -29,9 +29,9 @@ impl Backend {
 
         // Try to create a new Backend
         let backend;
-        if let Some(waitaddress) = unsafe { waitaddress::WaitAddress::create() } {
+        if let Some(waitaddress) = waitaddress::WaitAddress::create() {
             backend = Backend::WaitAddress(waitaddress);
-        } else if let Some(keyed_event) = unsafe { keyed_event::KeyedEvent::create() } {
+        } else if let Some(keyed_event) = keyed_event::KeyedEvent::create() {
             backend = Backend::KeyedEvent(keyed_event);
         } else {
             panic!(

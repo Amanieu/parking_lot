@@ -49,49 +49,52 @@ impl KeyedEvent {
     }
 
     #[allow(non_snake_case)]
-    pub unsafe fn create() -> Option<KeyedEvent> {
-        let ntdll = GetModuleHandleA(b"ntdll.dll\0".as_ptr() as LPCSTR);
-        if ntdll.is_null() {
-            return None;
-        }
+    pub fn create() -> Option<KeyedEvent> {
+        unsafe {
+            let ntdll = GetModuleHandleA(b"ntdll.dll\0".as_ptr() as LPCSTR);
+            if ntdll.is_null() {
+                return None;
+            }
 
-        let NtCreateKeyedEvent = GetProcAddress(ntdll, b"NtCreateKeyedEvent\0".as_ptr() as LPCSTR);
-        if NtCreateKeyedEvent.is_null() {
-            return None;
-        }
-        let NtReleaseKeyedEvent =
-            GetProcAddress(ntdll, b"NtReleaseKeyedEvent\0".as_ptr() as LPCSTR);
-        if NtReleaseKeyedEvent.is_null() {
-            return None;
-        }
-        let NtWaitForKeyedEvent =
-            GetProcAddress(ntdll, b"NtWaitForKeyedEvent\0".as_ptr() as LPCSTR);
-        if NtWaitForKeyedEvent.is_null() {
-            return None;
-        }
+            let NtCreateKeyedEvent =
+                GetProcAddress(ntdll, b"NtCreateKeyedEvent\0".as_ptr() as LPCSTR);
+            if NtCreateKeyedEvent.is_null() {
+                return None;
+            }
+            let NtReleaseKeyedEvent =
+                GetProcAddress(ntdll, b"NtReleaseKeyedEvent\0".as_ptr() as LPCSTR);
+            if NtReleaseKeyedEvent.is_null() {
+                return None;
+            }
+            let NtWaitForKeyedEvent =
+                GetProcAddress(ntdll, b"NtWaitForKeyedEvent\0".as_ptr() as LPCSTR);
+            if NtWaitForKeyedEvent.is_null() {
+                return None;
+            }
 
-        let NtCreateKeyedEvent: extern "system" fn(
-            KeyedEventHandle: PHANDLE,
-            DesiredAccess: ACCESS_MASK,
-            ObjectAttributes: PVOID,
-            Flags: ULONG,
-        ) -> NTSTATUS = mem::transmute(NtCreateKeyedEvent);
-        let mut handle = mem::uninitialized();
-        let status = NtCreateKeyedEvent(
-            &mut handle,
-            GENERIC_READ | GENERIC_WRITE,
-            ptr::null_mut(),
-            0,
-        );
-        if status != STATUS_SUCCESS {
-            return None;
-        }
+            let NtCreateKeyedEvent: extern "system" fn(
+                KeyedEventHandle: PHANDLE,
+                DesiredAccess: ACCESS_MASK,
+                ObjectAttributes: PVOID,
+                Flags: ULONG,
+            ) -> NTSTATUS = mem::transmute(NtCreateKeyedEvent);
+            let mut handle = mem::uninitialized();
+            let status = NtCreateKeyedEvent(
+                &mut handle,
+                GENERIC_READ | GENERIC_WRITE,
+                ptr::null_mut(),
+                0,
+            );
+            if status != STATUS_SUCCESS {
+                return None;
+            }
 
-        Some(KeyedEvent {
-            handle,
-            NtReleaseKeyedEvent: mem::transmute(NtReleaseKeyedEvent),
-            NtWaitForKeyedEvent: mem::transmute(NtWaitForKeyedEvent),
-        })
+            Some(KeyedEvent {
+                handle,
+                NtReleaseKeyedEvent: mem::transmute(NtReleaseKeyedEvent),
+                NtWaitForKeyedEvent: mem::transmute(NtWaitForKeyedEvent),
+            })
+        }
     }
 
     pub fn prepare_park(&'static self, key: &AtomicUsize) {
