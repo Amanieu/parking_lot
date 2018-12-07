@@ -31,28 +31,29 @@ pub struct WaitAddress {
 impl WaitAddress {
     #[allow(non_snake_case)]
     pub fn create() -> Option<WaitAddress> {
-        // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
-        // located in kernel32.dll, but they are lying...
-        let synch_dll =
-            unsafe { GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr() as LPCSTR) };
-        if synch_dll.is_null() {
-            return None;
-        }
+        unsafe {
+            // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
+            // located in kernel32.dll, but they are lying...
+            let synch_dll =
+                GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr() as LPCSTR);
+            if synch_dll.is_null() {
+                return None;
+            }
 
-        let WaitOnAddress =
-            unsafe { GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as LPCSTR) };
-        if WaitOnAddress.is_null() {
-            return None;
+            let WaitOnAddress = GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as LPCSTR);
+            if WaitOnAddress.is_null() {
+                return None;
+            }
+            let WakeByAddressSingle =
+                GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr() as LPCSTR);
+            if WakeByAddressSingle.is_null() {
+                return None;
+            }
+            Some(WaitAddress {
+                WaitOnAddress: mem::transmute(WaitOnAddress),
+                WakeByAddressSingle: mem::transmute(WakeByAddressSingle),
+            })
         }
-        let WakeByAddressSingle =
-            unsafe { GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr() as LPCSTR) };
-        if WakeByAddressSingle.is_null() {
-            return None;
-        }
-        Some(WaitAddress {
-            WaitOnAddress: unsafe { mem::transmute(WaitOnAddress) },
-            WakeByAddressSingle: unsafe { mem::transmute(WakeByAddressSingle) },
-        })
     }
 
     pub fn prepare_park(&'static self, key: &AtomicUsize) {
