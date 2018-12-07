@@ -40,7 +40,7 @@ impl Backend {
             );
         }
 
-        // Try to create a new object
+        // Try to set our new Backend as the global one
         let backend_ptr = Box::into_raw(Box::new(backend));
         match BACKEND.compare_exchange(
             ptr::null_mut(),
