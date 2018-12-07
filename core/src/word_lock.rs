@@ -149,6 +149,9 @@ impl WordLock {
 
             // Get our thread data and prepare it for parking
             state = with_thread_data(|thread_data| {
+                // The pthread implementation is still unsafe, so we need to surround `prepare_park`
+                // with `unsafe {}`.
+                #[allow(unused_unsafe)]
                 unsafe {
                     thread_data.parker.prepare_park();
                 }
@@ -173,6 +176,8 @@ impl WordLock {
                 }
 
                 // Sleep until we are woken up by an unlock
+                // Ignoring unused unsafe, since it's only a few platforms where this is unsafe.
+                #[allow(unused_unsafe)]
                 unsafe {
                     thread_data.parker.park();
                 }
