@@ -588,7 +588,6 @@ unsafe fn park_internal(
 ) -> ParkResult {
     // Grab our thread data, this also ensures that the hash table exists
     with_thread_data(|thread_data| {
-
         // Lock the bucket for the given key
         let bucket = lock_bucket(key);
 
@@ -1157,7 +1156,7 @@ pub mod deadlock {
 
 #[cfg(feature = "deadlock_detection")]
 mod deadlock_impl {
-    use super::{get_hashtable, with_thread_data, lock_bucket, ThreadData, NUM_THREADS};
+    use super::{get_hashtable, lock_bucket, with_thread_data, ThreadData, NUM_THREADS};
     use backtrace::Backtrace;
     use petgraph;
     use petgraph::graphmap::DiGraphMap;

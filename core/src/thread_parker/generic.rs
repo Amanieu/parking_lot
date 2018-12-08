@@ -8,7 +8,7 @@
 //! A simple spin lock based thread parker. Used on platforms without better
 //! parking facilities available.
 
-use std::sync::atomic::{AtomicBool, Ordering, spin_loop_hint};
+use std::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
 use std::thread;
 use std::time::Instant;
 

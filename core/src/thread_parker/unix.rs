@@ -43,17 +43,9 @@ impl ThreadParker {
     }
 
     // Initializes the condvar to use CLOCK_MONOTONIC instead of CLOCK_REALTIME.
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "android"
-    ))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
     unsafe fn init(&self) {}
-    #[cfg(not(any(
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "android"
-    )))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
     unsafe fn init(&self) {
         let mut attr: libc::pthread_condattr_t = mem::uninitialized();
         let r = libc::pthread_condattr_init(&mut attr);

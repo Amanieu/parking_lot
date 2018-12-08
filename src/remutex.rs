@@ -102,7 +102,8 @@ mod tests {
         thread::spawn(move || {
             let lock = m2.try_lock();
             assert!(lock.is_none());
-        }).join()
+        })
+        .join()
         .unwrap();
         let _lock3 = m.try_lock();
     }

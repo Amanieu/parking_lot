@@ -134,7 +134,8 @@ unsafe impl RawRwLockTrait for RawRwLock {
                         state - SHARED_GUARD,
                         Ordering::Release,
                         Ordering::Relaxed,
-                    ).is_ok()
+                    )
+                    .is_ok()
                 {
                     return;
                 }
@@ -168,7 +169,8 @@ unsafe impl RawRwLockFair for RawRwLock {
                         state - SHARED_GUARD,
                         Ordering::Release,
                         Ordering::Relaxed,
-                    ).is_ok()
+                    )
+                    .is_ok()
                 {
                     return;
                 }
@@ -384,7 +386,8 @@ unsafe impl RawRwLockUpgrade for RawRwLock {
                 EXCLUSIVE_GUARD,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
-            ).is_err()
+            )
+            .is_err()
         {
             let result = self.upgrade_slow(None);
             debug_assert!(result);
@@ -399,7 +402,8 @@ unsafe impl RawRwLockUpgrade for RawRwLock {
                 EXCLUSIVE_GUARD,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
-            ).is_ok()
+            )
+            .is_ok()
         {
             true
         } else {
@@ -493,7 +497,8 @@ unsafe impl RawRwLockUpgradeTimed for RawRwLock {
                 EXCLUSIVE_GUARD,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
-            ).is_ok()
+            )
+            .is_ok()
         {
             true
         } else {
@@ -510,7 +515,8 @@ unsafe impl RawRwLockUpgradeTimed for RawRwLock {
                 EXCLUSIVE_GUARD,
                 Ordering::Relaxed,
                 Ordering::Relaxed,
-            ).is_ok()
+            )
+            .is_ok()
         {
             true
         } else {
@@ -793,7 +799,8 @@ impl RawRwLock {
                             new_state,
                             Ordering::Acquire,
                             Ordering::Relaxed,
-                        ).is_ok()
+                        )
+                        .is_ok()
                     {
                         return true;
                     }
@@ -964,13 +971,15 @@ impl RawRwLock {
                         }
                         None => FilterOp::Stop,
                     },
-                    Some(false) => if token & UPGRADING_BIT != 0 {
-                        additional_guards.set(token & !UPGRADING_BIT);
-                        has_upgraded.set(Some(true));
-                        FilterOp::Unpark
-                    } else {
-                        FilterOp::Skip
-                    },
+                    Some(false) => {
+                        if token & UPGRADING_BIT != 0 {
+                            additional_guards.set(token & !UPGRADING_BIT);
+                            has_upgraded.set(Some(true));
+                            FilterOp::Unpark
+                        } else {
+                            FilterOp::Skip
+                        }
+                    }
                     Some(true) => FilterOp::Stop,
                 }
             };
@@ -1041,7 +1050,8 @@ impl RawRwLock {
                             new_state,
                             Ordering::Acquire,
                             Ordering::Relaxed,
-                        ).is_ok()
+                        )
+                        .is_ok()
                     {
                         return true;
                     }

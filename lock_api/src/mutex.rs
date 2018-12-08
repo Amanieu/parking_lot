@@ -447,10 +447,12 @@ pub struct MappedMutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
 
 unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync
     for MappedMutexGuard<'a, R, T>
-{}
+{
+}
 unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Send for MappedMutexGuard<'a, R, T> where
     R::GuardMarker: Send
-{}
+{
+}
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     /// Makes a new `MappedMutexGuard` for a component of the locked data.

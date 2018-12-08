@@ -253,7 +253,8 @@ mod tests {
             }
             let _u = Unwinder { i: arc2 };
             panic!();
-        }).join();
+        })
+        .join();
         let lock = arc.lock();
         assert_eq!(*lock, 2);
     }
