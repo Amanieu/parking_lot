@@ -1020,7 +1020,8 @@ pub struct RwLockUpgradableReadGuard<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + '
 
 unsafe impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + Sync + 'a> Sync
     for RwLockUpgradableReadGuard<'a, R, T>
-{}
+{
+}
 
 impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a, R, T> {
     /// Returns a reference to the original reader-writer lock object.
@@ -1199,7 +1200,8 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> Drop for RwLockUpgradableRead
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> StableAddress
     for RwLockUpgradableReadGuard<'a, R, T>
-{}
+{
+}
 
 /// An RAII read lock guard returned by `RwLockReadGuard::map`, which can point to a
 /// subfield of the protected data.
@@ -1218,7 +1220,8 @@ pub struct MappedRwLockReadGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync for MappedRwLockReadGuard<'a, R, T> {}
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Send for MappedRwLockReadGuard<'a, R, T> where
     R::GuardMarker: Send
-{}
+{
+}
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
     /// Make a new `MappedRwLockReadGuard` for a component of the locked data.
@@ -1310,7 +1313,8 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Drop for MappedRwLockReadGuard<'a, R
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress
     for MappedRwLockReadGuard<'a, R, T>
-{}
+{
+}
 
 /// An RAII write lock guard returned by `RwLockWriteGuard::map`, which can point to a
 /// subfield of the protected data.
@@ -1328,10 +1332,12 @@ pub struct MappedRwLockWriteGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
 
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync
     for MappedRwLockWriteGuard<'a, R, T>
-{}
+{
+}
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Send for MappedRwLockWriteGuard<'a, R, T> where
     R::GuardMarker: Send
-{}
+{
+}
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
     /// Make a new `MappedRwLockWriteGuard` for a component of the locked data.
@@ -1450,4 +1456,5 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Drop for MappedRwLockWriteGuard<'a, 
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress
     for MappedRwLockWriteGuard<'a, R, T>
-{}
+{
+}

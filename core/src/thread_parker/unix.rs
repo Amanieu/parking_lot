@@ -10,6 +10,7 @@ use std::cell::{Cell, UnsafeCell};
 use std::mem;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use std::ptr;
+use std::thread;
 use std::time::{Duration, Instant};
 
 // x32 Linux uses a non-standard type for tv_nsec in timespec.
@@ -30,6 +31,8 @@ pub struct ThreadParker {
 }
 
 impl ThreadParker {
+    pub const IS_CHEAP_TO_CONSTRUCT: bool = false;
+
     pub fn new() -> ThreadParker {
         ThreadParker {
             should_park: Cell::new(false),
@@ -40,17 +43,9 @@ impl ThreadParker {
     }
 
     // Initializes the condvar to use CLOCK_MONOTONIC instead of CLOCK_REALTIME.
-    #[cfg(any(
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "android"
-    ))]
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
     unsafe fn init(&self) {}
-    #[cfg(not(any(
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "android"
-    )))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
     unsafe fn init(&self) {
         let mut attr: libc::pthread_condattr_t = mem::uninitialized();
         let r = libc::pthread_condattr_init(&mut attr);
@@ -239,4 +234,9 @@ fn timeout_to_timespec(timeout: Duration) -> Option<libc::timespec> {
         tv_nsec: nsec,
         tv_sec: sec,
     })
+}
+
+#[inline]
+pub fn thread_yield() {
+    thread::yield_now();
 }

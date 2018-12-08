@@ -144,6 +144,7 @@ unsafe impl RawMutexTimed for RawMutex {
         {
             true
         } else {
+            // FIXME: Change to Intstant::now().checked_add(timeout) when stable.
             self.lock_slow(Some(Instant::now() + timeout))
         };
         if result {

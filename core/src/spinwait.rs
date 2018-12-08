@@ -5,53 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-#[cfg(unix)]
-use libc;
 use std::sync::atomic::spin_loop_hint;
-#[cfg(not(any(windows, unix)))]
-use std::thread;
-#[cfg(windows)]
-use winapi;
-
-// Yields the rest of the current timeslice to the OS
-#[cfg(windows)]
-#[inline]
-fn thread_yield() {
-    // Note that this is manually defined here rather than using the definition
-    // through `winapi`. The `winapi` definition comes from the `synchapi`
-    // header which enables the "synchronization.lib" library. It turns out,
-    // however that `Sleep` comes from `kernel32.dll` so this activation isn't
-    // necessary.
-    //
-    // This was originally identified in rust-lang/rust where on MinGW the
-    // libsynchronization.a library pulls in a dependency on a newer DLL not
-    // present in older versions of Windows. (see rust-lang/rust#49438)
-    //
-    // This is a bit of a hack for now and ideally we'd fix MinGW's own import
-    // libraries, but that'll probably take a lot longer than patching this here
-    // and avoiding the `synchapi` feature entirely.
-    extern "system" {
-        fn Sleep(a: winapi::shared::minwindef::DWORD);
-    }
-    unsafe {
-        // We don't use SwitchToThread here because it doesn't consider all
-        // threads in the system and the thread we are waiting for may not get
-        // selected.
-        Sleep(0);
-    }
-}
-#[cfg(unix)]
-#[inline]
-fn thread_yield() {
-    unsafe {
-        libc::sched_yield();
-    }
-}
-#[cfg(not(any(windows, unix)))]
-#[inline]
-fn thread_yield() {
-    thread::yield_now();
-}
+use thread_parker;
 
 // Wastes some CPU time for the given number of iterations,
 // using a hint to indicate to the CPU that we are spinning.
@@ -63,6 +18,7 @@ fn cpu_relax(iterations: u32) {
 }
 
 /// A counter used to perform exponential backoff in spin loops.
+#[derive(Default)]
 pub struct SpinWait {
     counter: u32,
 }
@@ -70,8 +26,8 @@ pub struct SpinWait {
 impl SpinWait {
     /// Creates a new `SpinWait`.
     #[inline]
-    pub fn new() -> SpinWait {
-        SpinWait { counter: 0 }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Resets a `SpinWait` to its initial state.
@@ -97,7 +53,7 @@ impl SpinWait {
         if self.counter <= 3 {
             cpu_relax(1 << self.counter);
         } else {
-            thread_yield();
+            thread_parker::thread_yield();
         }
         true
     }
@@ -114,12 +70,5 @@ impl SpinWait {
             self.counter = 10;
         }
         cpu_relax(1 << self.counter);
-    }
-}
-
-impl Default for SpinWait {
-    #[inline]
-    fn default() -> SpinWait {
-        SpinWait::new()
     }
 }

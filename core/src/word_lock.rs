@@ -66,7 +66,7 @@ where
     let mut thread_data_ptr = ptr::null();
     // If ThreadData is expensive to construct, then we want to use a cached
     // version in thread-local storage if possible.
-    if !cfg!(windows) && !cfg!(all(feature = "nightly", target_os = "linux")) {
+    if !ThreadParker::IS_CHEAP_TO_CONSTRUCT {
         thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
         if let Some(tls_thread_data) = try_get_tls(&THREAD_DATA) {
             thread_data_ptr = tls_thread_data;

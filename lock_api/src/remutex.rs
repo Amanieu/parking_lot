@@ -142,10 +142,12 @@ pub struct ReentrantMutex<R: RawMutex, G: GetThreadId, T: ?Sized> {
 
 unsafe impl<R: RawMutex + Send, G: GetThreadId + Send, T: ?Sized + Send> Send
     for ReentrantMutex<R, G, T>
-{}
+{
+}
 unsafe impl<R: RawMutex + Sync, G: GetThreadId + Sync, T: ?Sized + Send> Sync
     for ReentrantMutex<R, G, T>
-{}
+{
+}
 
 impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
     /// Creates a new reentrant mutex in an unlocked state ready for use.
@@ -354,7 +356,8 @@ pub struct ReentrantMutexGuard<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Si
 
 unsafe impl<'a, R: RawMutex + Sync + 'a, G: GetThreadId + Sync + 'a, T: ?Sized + Sync + 'a> Sync
     for ReentrantMutexGuard<'a, R, G, T>
-{}
+{
+}
 
 impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGuard<'a, R, G, T> {
     /// Returns a reference to the original `ReentrantMutex` object.
@@ -395,7 +398,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     /// used as `ReentrantMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedReentrantMutexGuard<'a, R, G, U>, Self>
+    pub fn try_map<U: ?Sized, F>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedReentrantMutexGuard<'a, R, G, U>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
@@ -497,7 +503,8 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Drop
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAddress
     for ReentrantMutexGuard<'a, R, G, T>
-{}
+{
+}
 
 /// An RAII mutex guard returned by `ReentrantMutexGuard::map`, which can point to a
 /// subfield of the protected data.
@@ -515,7 +522,8 @@ pub struct MappedReentrantMutexGuard<'a, R: RawMutex + 'a, G: GetThreadId + 'a, 
 
 unsafe impl<'a, R: RawMutex + Sync + 'a, G: GetThreadId + Sync + 'a, T: ?Sized + Sync + 'a> Sync
     for MappedReentrantMutexGuard<'a, R, G, T>
-{}
+{
+}
 
 impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     MappedReentrantMutexGuard<'a, R, G, T>
@@ -553,7 +561,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// used as `MappedReentrantMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedReentrantMutexGuard<'a, R, G, U>, Self>
+    pub fn try_map<U: ?Sized, F>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedReentrantMutexGuard<'a, R, G, U>, Self>
     where
         F: FnOnce(&T) -> Option<&U>,
     {
@@ -615,4 +626,5 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Drop
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAddress
     for MappedReentrantMutexGuard<'a, R, G, T>
-{}
+{
+}
