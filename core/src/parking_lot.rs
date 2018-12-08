@@ -136,8 +136,7 @@ struct ThreadData {
     parked_with_timeout: Cell<bool>,
 
     // Extra data for deadlock detection
-    // FIXME: once supported in stable replace with #[cfg...] & remove dummy struct/impl
-    #[allow(dead_code)]
+    #[cfg(feature = "deadlock_detection")]
     deadlock_data: deadlock::DeadlockData,
 }
 
@@ -157,6 +156,7 @@ impl ThreadData {
             unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
             park_token: Cell::new(DEFAULT_PARK_TOKEN),
             parked_with_timeout: Cell::new(false),
+            #[cfg(feature = "deadlock_detection")]
             deadlock_data: deadlock::DeadlockData::new(),
         }
     }
@@ -1108,16 +1108,6 @@ pub mod deadlock {
 
     #[cfg(feature = "deadlock_detection")]
     pub(super) use super::deadlock_impl::DeadlockData;
-
-    #[cfg(not(feature = "deadlock_detection"))]
-    pub(super) struct DeadlockData {}
-
-    #[cfg(not(feature = "deadlock_detection"))]
-    impl DeadlockData {
-        pub(super) fn new() -> Self {
-            DeadlockData {}
-        }
-    }
 
     /// Acquire a resource identified by key in the deadlock detector
     /// Noop if deadlock_detection feature isn't enabled.
