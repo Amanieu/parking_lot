@@ -179,18 +179,12 @@ where
     }
 
     // Unlike word_lock::ThreadData, parking_lot::ThreadData is always expensive
-    // to construct. Try to use a thread-local version if possible.
-    let mut thread_data_ptr = ptr::null();
-    thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
-    if let Some(tls_thread_data) = try_get_tls(&THREAD_DATA) {
-        thread_data_ptr = tls_thread_data;
-    }
-
-    // Otherwise just create a ThreadData on the stack
+    // to construct. Try to use a thread-local version if possible. Otherwise just
+    // create a ThreadData on the stack
     let mut thread_data_storage = None;
-    if thread_data_ptr.is_null() {
-        thread_data_ptr = thread_data_storage.get_or_insert_with(ThreadData::new);
-    }
+    thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
+    let thread_data_ptr = try_get_tls(&THREAD_DATA)
+        .unwrap_or_else(|| thread_data_storage.get_or_insert_with(ThreadData::new));
 
     f(unsafe { &*thread_data_ptr })
 }
