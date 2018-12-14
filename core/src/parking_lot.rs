@@ -5,15 +5,17 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::thread_parker::ThreadParker;
-use crate::util::UncheckedOptionExt;
-use crate::word_lock::WordLock;
+use super::thread_parker::ThreadParker;
+use super::util::UncheckedOptionExt;
+use super::word_lock::WordLock;
 use core::{
     cell::{Cell, UnsafeCell},
     ptr,
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
+#[cfg(not(feature = "i-am-libstd"))]
 use rand::{rngs::SmallRng, FromEntropy, Rng};
+#[cfg(not(feature = "i-am-libstd"))]
 use smallvec::SmallVec;
 use std::time::{Duration, Instant};
 
@@ -85,6 +87,7 @@ struct FairTimeout {
     timeout: Instant,
 
     // Random number generator for calculating the next timeout
+    #[cfg(not(feature = "i-am-libstd"))]
     rng: SmallRng,
 }
 
@@ -93,6 +96,7 @@ impl FairTimeout {
     fn new(timeout: Instant) -> FairTimeout {
         FairTimeout {
             timeout,
+            #[cfg(not(feature = "i-am-libstd"))]
             rng: SmallRng::from_entropy(),
         }
     }
@@ -102,7 +106,11 @@ impl FairTimeout {
     fn should_timeout(&mut self) -> bool {
         let now = Instant::now();
         if now > self.timeout {
-            self.timeout = now + Duration::new(0, self.rng.gen_range(0, 1000000));
+            #[cfg(not(feature = "i-am-libstd"))]
+            let ns_offset = self.rng.gen_range(0, 1000000);
+            #[cfg(feature = "i-am-libstd")]
+            let ns_offset = 500000;
+            self.timeout = now + Duration::new(0, ns_offset);
             true
         } else {
             false
@@ -767,7 +775,10 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
     let mut link = &bucket.queue_head;
     let mut current = bucket.queue_head.get();
     let mut previous = ptr::null();
+    #[cfg(not(feature = "i-am-libstd"))]
     let mut threads = SmallVec::<[_; 8]>::new();
+    #[cfg(feature = "i-am-libstd")]
+    let mut threads = Vec::new();
     while !current.is_null() {
         if (*current).key.load(Ordering::Relaxed) == key {
             // Remove the thread from the queue
@@ -978,7 +989,10 @@ where
     let mut link = &bucket.queue_head;
     let mut current = bucket.queue_head.get();
     let mut previous = ptr::null();
+    #[cfg(not(feature = "i-am-libstd"))]
     let mut threads = SmallVec::<[_; 8]>::new();
+    #[cfg(feature = "i-am-libstd")]
+    let mut threads = Vec::new();
     let mut result = UnparkResult::default();
     while !current.is_null() {
         if (*current).key.load(Ordering::Relaxed) == key {

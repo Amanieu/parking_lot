@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::mutex::{RawMutex, RawMutexFair, RawMutexTimed};
-use crate::GuardNoSend;
+use super::mutex::{RawMutex, RawMutexFair, RawMutexTimed};
+use super::GuardNoSend;
 use core::cell::{Cell, UnsafeCell};
 use core::fmt;
 use core::marker::PhantomData;
@@ -467,6 +467,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
     where
@@ -505,6 +506,7 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
     where

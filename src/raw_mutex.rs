@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::{deadlock, util};
+use super::{deadlock, util};
 #[cfg(has_sized_atomics)]
 use core::sync::atomic::AtomicU8;
 #[cfg(not(has_sized_atomics))]

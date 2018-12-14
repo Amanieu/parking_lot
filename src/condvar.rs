@@ -5,9 +5,9 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::mutex::MutexGuard;
-use crate::raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
-use crate::{deadlock, util};
+use super::mutex::MutexGuard;
+use super::raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
+use super::{deadlock, util};
 use core::{
     fmt, ptr,
     sync::atomic::{AtomicPtr, Ordering},

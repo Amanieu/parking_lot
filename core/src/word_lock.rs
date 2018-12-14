@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::spinwait::SpinWait;
-use crate::thread_parker::ThreadParker;
+use super::spinwait::SpinWait;
+use super::thread_parker::ThreadParker;
 use core::{
     cell::Cell,
     mem, ptr,

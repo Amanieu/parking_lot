@@ -796,6 +796,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the `RwLock`.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
     where
@@ -832,6 +833,7 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the `RwLock`.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
     where
@@ -955,6 +957,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the `RwLock`.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
     where
@@ -1027,6 +1030,7 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the `RwLock`.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
     where
@@ -1110,6 +1114,7 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the `RwLock`.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
     where
@@ -1174,6 +1179,7 @@ impl<'a, R: RawRwLockUpgradeFair + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the `RwLock`.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
     where

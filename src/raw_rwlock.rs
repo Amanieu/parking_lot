@@ -5,9 +5,9 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::elision::{have_elision, AtomicElisionExt};
-use crate::raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
-use crate::util;
+use super::elision::{have_elision, AtomicElisionExt};
+use super::raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
+use super::{deadlock, util};
 use core::{
     cell::Cell,
     sync::atomic::{AtomicUsize, Ordering},

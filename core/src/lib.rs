@@ -56,6 +56,7 @@
     feature(thread_local, checked_duration_since)
 )]
 
+#[cfg(not(feature = "i-am-libstd"))]
 use cfg_if::cfg_if;
 
 cfg_if! {

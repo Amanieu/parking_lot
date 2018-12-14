@@ -392,6 +392,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
     where
@@ -428,6 +429,7 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
+    #[cfg(not(feature = "i-am-libstd"))]
     #[inline]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
     where

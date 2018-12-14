@@ -83,11 +83,12 @@
 //! - `nightly`: Enables nightly-only features. At the moment the only such
 //!   feature is `const fn` constructors for lock types.
 
-#![no_std]
+#![cfg_attr(not(feature = "i-am-libstd"), no_std)]
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 
+#[cfg(not(feature = "i-am-libstd"))]
 #[macro_use]
 extern crate scopeguard;
 
