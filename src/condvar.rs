@@ -555,12 +555,20 @@ mod tests {
         let mut g = m.lock();
         let no_timeout = c.wait_for(&mut g, Duration::from_millis(1));
         assert!(no_timeout.timed_out());
+
         let _t = thread::spawn(move || {
             let _g = m2.lock();
             c2.notify_one();
         });
-        let timeout_res = c.wait_for(&mut g, Duration::from_millis(u32::max_value() as u64));
+        // Non-nightly panics on too large timeouts. Nightly treats it as indefinite wait.
+        #[cfg(feature = "nightly")]
+        let very_long_timeout = Duration::from_secs(u64::max_value());
+        #[cfg(not(feature = "nightly"))]
+        let very_long_timeout = Duration::from_millis(u32::max_value() as u64);
+
+        let timeout_res = c.wait_for(&mut g, very_long_timeout);
         assert!(!timeout_res.timed_out());
+
         drop(g);
     }
 
