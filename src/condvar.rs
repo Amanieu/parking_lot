@@ -13,6 +13,7 @@ use raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 use std::{fmt, ptr};
+use util;
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.
@@ -391,14 +392,16 @@ impl Condvar {
     /// # Panics
     ///
     /// Panics if the given `timeout` is so large that it can't be added to the current time.
+    /// This panic is not possible if the crate is built with the `nightly` feature, then a too
+    /// large `timeout` becomes equivalent to just calling `wait`.
     #[inline]
     pub fn wait_for<T: ?Sized>(
         &self,
-        guard: &mut MutexGuard<T>,
+        mutex_guard: &mut MutexGuard<T>,
         timeout: Duration,
     ) -> WaitTimeoutResult {
-        // FIXME: Change to Instant::now().checked_add(timeout) when stable.
-        self.wait_until(guard, Instant::now() + timeout)
+        let deadline = util::to_deadline(timeout);
+        self.wait_until_internal(unsafe { MutexGuard::mutex(mutex_guard).raw() }, deadline)
     }
 }
 

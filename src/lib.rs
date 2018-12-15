@@ -13,6 +13,7 @@
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
 #![cfg_attr(feature = "nightly", feature(asm))]
+#![cfg_attr(feature = "nightly", feature(time_checked_add))]
 
 extern crate lock_api;
 extern crate parking_lot_core;
