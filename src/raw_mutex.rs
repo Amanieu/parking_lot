@@ -20,6 +20,7 @@ use deadlock;
 use lock_api::{GuardNoSend, RawMutex as RawMutexTrait, RawMutexFair, RawMutexTimed};
 use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
 use std::time::{Duration, Instant};
+use util;
 
 // UnparkToken used to indicate that that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.
@@ -144,8 +145,7 @@ unsafe impl RawMutexTimed for RawMutex {
         {
             true
         } else {
-            // FIXME: Change to Intstant::now().checked_add(timeout) when stable.
-            self.lock_slow(Some(Instant::now() + timeout))
+            self.lock_slow(util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };

@@ -17,6 +17,7 @@ use raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use std::cell::Cell;
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
 use std::time::{Duration, Instant};
+use util;
 
 const PARKED_BIT: usize = 0b001;
 const UPGRADING_BIT: usize = 0b010;
@@ -230,8 +231,7 @@ unsafe impl RawRwLockTimed for RawRwLock {
         let result = if self.try_lock_shared_fast(false) {
             true
         } else {
-            // FIXME: Change to Instant::now().checked_add(timeout) when stable.
-            self.lock_shared_slow(false, Some(Instant::now() + timeout))
+            self.lock_shared_slow(false, util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -261,8 +261,7 @@ unsafe impl RawRwLockTimed for RawRwLock {
         {
             true
         } else {
-            // FIXME: Change to Instant::now().checked_add(timeout) when stable.
-            self.lock_exclusive_slow(Some(Instant::now() + timeout))
+            self.lock_exclusive_slow(util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -318,8 +317,7 @@ unsafe impl RawRwLockRecursiveTimed for RawRwLock {
         let result = if self.try_lock_shared_fast(true) {
             true
         } else {
-            // FIXME: Change to Instant::now().checked_add(timeout) when stable.
-            self.lock_shared_slow(true, Some(Instant::now() + timeout))
+            self.lock_shared_slow(true, util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -479,8 +477,7 @@ unsafe impl RawRwLockUpgradeTimed for RawRwLock {
         let result = if self.try_lock_upgradable_fast() {
             true
         } else {
-            // FIXME: Change to Instant::now().checked_add(timeout) when stable.
-            self.lock_upgradable_slow(Some(Instant::now() + timeout))
+            self.lock_upgradable_slow(util::to_deadline(timeout))
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -520,8 +517,7 @@ unsafe impl RawRwLockUpgradeTimed for RawRwLock {
         {
             true
         } else {
-            // FIXME: Change to Instant::now().checked_add(timeout) when stable.
-            self.upgrade_slow(Some(Instant::now() + timeout))
+            self.upgrade_slow(util::to_deadline(timeout))
         }
     }
 }

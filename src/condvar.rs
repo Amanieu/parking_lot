@@ -13,6 +13,7 @@ use raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 use std::{fmt, ptr};
+use util;
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.
@@ -391,14 +392,16 @@ impl Condvar {
     /// # Panics
     ///
     /// Panics if the given `timeout` is so large that it can't be added to the current time.
+    /// This panic is not possible if the crate is built with the `nightly` feature, then a too
+    /// large `timeout` becomes equivalent to just calling `wait`.
     #[inline]
     pub fn wait_for<T: ?Sized>(
         &self,
-        guard: &mut MutexGuard<T>,
+        mutex_guard: &mut MutexGuard<T>,
         timeout: Duration,
     ) -> WaitTimeoutResult {
-        // FIXME: Change to Instant::now().checked_add(timeout) when stable.
-        self.wait_until(guard, Instant::now() + timeout)
+        let deadline = util::to_deadline(timeout);
+        self.wait_until_internal(unsafe { MutexGuard::mutex(mutex_guard).raw() }, deadline)
     }
 }
 
@@ -555,12 +558,21 @@ mod tests {
         let mut g = m.lock();
         let no_timeout = c.wait_for(&mut g, Duration::from_millis(1));
         assert!(no_timeout.timed_out());
+
         let _t = thread::spawn(move || {
             let _g = m2.lock();
             c2.notify_one();
         });
-        let timeout_res = c.wait_for(&mut g, Duration::from_millis(u32::max_value() as u64));
+        // Non-nightly panics on too large timeouts. Nightly treats it as indefinite wait.
+        let very_long_timeout = if cfg!(feature = "nightly") {
+            Duration::from_secs(u64::max_value())
+        } else {
+            Duration::from_millis(u32::max_value() as u64)
+        };
+
+        let timeout_res = c.wait_for(&mut g, very_long_timeout);
         assert!(!timeout_res.timed_out());
+
         drop(g);
     }
 

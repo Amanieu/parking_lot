@@ -25,5 +25,5 @@ build_script:
 
 test_script:
   - travis-cargo test
-  - travis-cargo test -- --features=deadlock_detection
+  - travis-cargo --only nightly test -- --features=deadlock_detection
   - travis-cargo doc
