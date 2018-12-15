@@ -564,10 +564,11 @@ mod tests {
             c2.notify_one();
         });
         // Non-nightly panics on too large timeouts. Nightly treats it as indefinite wait.
-        #[cfg(feature = "nightly")]
-        let very_long_timeout = Duration::from_secs(u64::max_value());
-        #[cfg(not(feature = "nightly"))]
-        let very_long_timeout = Duration::from_millis(u32::max_value() as u64);
+        let very_long_timeout = if cfg!(feature = "nightly") {
+            Duration::from_secs(u64::max_value())
+        } else {
+            Duration::from_millis(u32::max_value() as u64)
+        };
 
         let timeout_res = c.wait_for(&mut g, very_long_timeout);
         assert!(!timeout_res.timed_out());
