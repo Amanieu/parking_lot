@@ -408,7 +408,7 @@ impl fmt::Debug for Condvar {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "i-am-libstd")))]
 mod tests {
     use crate::{Condvar, Mutex, MutexGuard};
     use std::sync::mpsc::channel;

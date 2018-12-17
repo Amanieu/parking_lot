@@ -340,7 +340,7 @@ impl fmt::Debug for Once {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "i-am-libstd")))]
 mod tests {
     use crate::Once;
     use std::panic;

@@ -52,7 +52,7 @@ pub type ReentrantMutexGuard<'a, T> = lock_api::ReentrantMutexGuard<'a, RawMutex
 pub type MappedReentrantMutexGuard<'a, T> =
     lock_api::MappedReentrantMutexGuard<'a, RawMutex, RawThreadId, T>;
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "i-am-libstd")))]
 mod tests {
     use crate::ReentrantMutex;
     use std::cell::RefCell;

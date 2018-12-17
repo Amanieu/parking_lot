@@ -37,7 +37,7 @@
 pub use parking_lot_core::deadlock::check_deadlock;
 pub(crate) use parking_lot_core::deadlock::{acquire_resource, release_resource};
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "i-am-libstd")))]
 #[cfg(feature = "deadlock_detection")]
 mod tests {
     use crate::{Mutex, ReentrantMutex, RwLock};

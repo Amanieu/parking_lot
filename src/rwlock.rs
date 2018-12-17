@@ -118,7 +118,7 @@ pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, Ra
 /// dropped.
 pub type RwLockUpgradableReadGuard<'a, T> = lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "i-am-libstd")))]
 mod tests {
     use crate::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
     use rand::Rng;

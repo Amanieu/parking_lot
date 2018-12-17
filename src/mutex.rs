@@ -103,7 +103,7 @@ pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawMutex, T>;
 /// thread.
 pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawMutex, T>;
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "i-am-libstd")))]
 mod tests {
     use crate::{Condvar, Mutex};
     use std::sync::atomic::{AtomicUsize, Ordering};
