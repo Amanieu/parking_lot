@@ -951,32 +951,30 @@ impl RawRwLock {
         // potential race condition here: another thread might grab a shared
         // lock between now and when we actually release our lock.
         let additional_guards = Cell::new(0usize);
-        let has_upgraded = Cell::new(if state & UPGRADING_BIT == 0 {
-            None
-        } else {
-            Some(false)
-        });
+        let has_upgraded = Cell::new(false);
         unsafe {
             let addr = self as *const _ as usize;
             let filter = |ParkToken(token)| -> FilterOp {
-                match has_upgraded.get() {
-                    None => match additional_guards.get().checked_add(token) {
+                // We need to check UPGRADING_BIT while holding the bucket lock,
+                // otherwise we might miss a thread trying to upgrade.
+                if self.state.load(Ordering::Relaxed) & UPGRADING_BIT == 0 {
+                    match additional_guards.get().checked_add(token) {
                         Some(x) => {
                             additional_guards.set(x);
                             FilterOp::Unpark
                         }
                         None => FilterOp::Stop,
-                    },
-                    Some(false) => {
-                        if token & UPGRADING_BIT != 0 {
-                            additional_guards.set(token & !UPGRADING_BIT);
-                            has_upgraded.set(Some(true));
-                            FilterOp::Unpark
-                        } else {
-                            FilterOp::Skip
-                        }
                     }
-                    Some(true) => FilterOp::Stop,
+                } else if has_upgraded.get() {
+                    FilterOp::Stop
+                } else {
+                    if token & UPGRADING_BIT != 0 {
+                        additional_guards.set(token & !UPGRADING_BIT);
+                        has_upgraded.set(true);
+                        FilterOp::Unpark
+                    } else {
+                        FilterOp::Skip
+                    }
                 }
             };
             let callback = |result: UnparkResult| {
@@ -992,7 +990,7 @@ impl RawRwLock {
                     }
 
                     // Clear the upgrading bit if we are upgrading a thread.
-                    if let Some(true) = has_upgraded.get() {
+                    if has_upgraded.get() {
                         new_state &= !UPGRADING_BIT;
                     }
 
