@@ -558,28 +558,6 @@ where
     B: FnOnce(),
     T: FnOnce(usize, bool),
 {
-    let mut v = Some(validate);
-    let mut b = Some(before_sleep);
-    let mut t = Some(timed_out);
-    park_internal(
-        key,
-        &mut || v.take().unchecked_unwrap()(),
-        &mut || b.take().unchecked_unwrap()(),
-        &mut |key, was_last_thread| t.take().unchecked_unwrap()(key, was_last_thread),
-        park_token,
-        timeout,
-    )
-}
-
-// Non-generic version to reduce monomorphization cost
-unsafe fn park_internal(
-    key: usize,
-    validate: &mut FnMut() -> bool,
-    before_sleep: &mut FnMut(),
-    timed_out: &mut FnMut(usize, bool),
-    park_token: ParkToken,
-    timeout: Option<Instant>,
-) -> ParkResult {
     // Grab our thread data, this also ensures that the hash table exists
     with_thread_data(|thread_data| {
         // Lock the bucket for the given key
@@ -706,15 +684,6 @@ pub unsafe fn unpark_one<C>(key: usize, callback: C) -> UnparkResult
 where
     C: FnOnce(UnparkResult) -> UnparkToken,
 {
-    let mut c = Some(callback);
-    unpark_one_internal(key, &mut |result| c.take().unchecked_unwrap()(result))
-}
-
-// Non-generic version to reduce monomorphization cost
-unsafe fn unpark_one_internal(
-    key: usize,
-    callback: &mut FnMut(UnparkResult) -> UnparkToken,
-) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -869,23 +838,6 @@ where
     V: FnOnce() -> RequeueOp,
     C: FnOnce(RequeueOp, UnparkResult) -> UnparkToken,
 {
-    let mut v = Some(validate);
-    let mut c = Some(callback);
-    unpark_requeue_internal(
-        key_from,
-        key_to,
-        &mut || v.take().unchecked_unwrap()(),
-        &mut |op, r| c.take().unchecked_unwrap()(op, r),
-    )
-}
-
-// Non-generic version to reduce monomorphization cost
-unsafe fn unpark_requeue_internal(
-    key_from: usize,
-    key_to: usize,
-    validate: &mut FnMut() -> RequeueOp,
-    callback: &mut FnMut(RequeueOp, UnparkResult) -> UnparkToken,
-) -> UnparkResult {
     // Lock the two buckets for the given key
     let (bucket_from, bucket_to) = lock_bucket_pair(key_from, key_to);
 
@@ -1014,16 +966,6 @@ where
     F: FnMut(ParkToken) -> FilterOp,
     C: FnOnce(UnparkResult) -> UnparkToken,
 {
-    let mut c = Some(callback);
-    unpark_filter_internal(key, &mut filter, &mut |r| c.take().unchecked_unwrap()(r))
-}
-
-// Non-generic version to reduce monomorphization cost
-unsafe fn unpark_filter_internal(
-    key: usize,
-    filter: &mut FnMut(ParkToken) -> FilterOp,
-    callback: &mut FnMut(UnparkResult) -> UnparkToken,
-) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
