@@ -82,7 +82,7 @@ unsafe impl RawMutexTrait for RawMutex {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
         if self
             .state
-            .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
             return;
@@ -97,7 +97,7 @@ unsafe impl RawMutexFair for RawMutex {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
         if self
             .state
-            .compare_exchange_weak(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
             .is_ok()
         {
             return;
@@ -263,15 +263,6 @@ impl RawMutex {
     #[cold]
     #[inline(never)]
     fn unlock_slow(&self, force_fair: bool) {
-        // Unlock directly if there are no parked threads
-        if self
-            .state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
-        {
-            return;
-        }
-
         // Unpark one thread and leave the parked bit set if there might
         // still be parked threads on this address.
         unsafe {
