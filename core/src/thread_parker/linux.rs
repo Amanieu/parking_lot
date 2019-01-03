@@ -32,6 +32,7 @@ pub struct ThreadParker {
 impl ThreadParker {
     pub const IS_CHEAP_TO_CONSTRUCT: bool = true;
 
+    #[inline]
     pub fn new() -> ThreadParker {
         ThreadParker {
             futex: AtomicI32::new(0),
@@ -39,18 +40,21 @@ impl ThreadParker {
     }
 
     // Prepares the parker. This should be called before adding it to the queue.
+    #[inline]
     pub fn prepare_park(&self) {
         self.futex.store(1, Ordering::Relaxed);
     }
 
     // Checks if the park timed out. This should be called while holding the
     // queue lock after park_until has returned false.
+    #[inline]
     pub fn timed_out(&self) -> bool {
         self.futex.load(Ordering::Relaxed) != 0
     }
 
     // Parks the thread until it is unparked. This should be called after it has
     // been added to the queue, after unlocking the queue.
+    #[inline]
     pub fn park(&self) {
         while self.futex.load(Ordering::Acquire) != 0 {
             self.futex_wait(None);
@@ -60,6 +64,7 @@ impl ThreadParker {
     // Parks the thread until it is unparked or the timeout is reached. This
     // should be called after it has been added to the queue, after unlocking
     // the queue. Returns true if we were unparked and false if we timed out.
+    #[inline]
     pub fn park_until(&self, timeout: Instant) -> bool {
         while self.futex.load(Ordering::Acquire) != 0 {
             let now = Instant::now();
@@ -111,6 +116,7 @@ impl ThreadParker {
     // Locks the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
+    #[inline]
     pub fn unpark_lock(&self) -> UnparkHandle {
         // We don't need to lock anything, just clear the state
         self.futex.store(0, Ordering::Release);
@@ -129,6 +135,7 @@ pub struct UnparkHandle {
 impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
+    #[inline]
     pub fn unpark(self) {
         // The thread data may have been freed at this point, but it doesn't
         // matter since the syscall will just return EFAULT in that case.

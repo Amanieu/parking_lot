@@ -33,6 +33,7 @@ pub struct ThreadParker {
 impl ThreadParker {
     pub const IS_CHEAP_TO_CONSTRUCT: bool = false;
 
+    #[inline]
     pub fn new() -> ThreadParker {
         ThreadParker {
             should_park: Cell::new(false),
@@ -44,8 +45,10 @@ impl ThreadParker {
 
     // Initializes the condvar to use CLOCK_MONOTONIC instead of CLOCK_REALTIME.
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android"))]
+    #[inline]
     unsafe fn init(&self) {}
     #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
+    #[inline]
     unsafe fn init(&self) {
         let mut attr: libc::pthread_condattr_t = mem::uninitialized();
         let r = libc::pthread_condattr_init(&mut attr);
@@ -59,6 +62,7 @@ impl ThreadParker {
     }
 
     // Prepares the parker. This should be called before adding it to the queue.
+    #[inline]
     pub unsafe fn prepare_park(&self) {
         self.should_park.set(true);
         if !self.initialized.get() {
@@ -69,6 +73,7 @@ impl ThreadParker {
 
     // Checks if the park timed out. This should be called while holding the
     // queue lock after park_until has returned false.
+    #[inline]
     pub unsafe fn timed_out(&self) -> bool {
         // We need to grab the mutex here because another thread may be
         // concurrently executing UnparkHandle::unpark, which is done without
@@ -83,6 +88,7 @@ impl ThreadParker {
 
     // Parks the thread until it is unparked. This should be called after it has
     // been added to the queue, after unlocking the queue.
+    #[inline]
     pub unsafe fn park(&self) {
         let r = libc::pthread_mutex_lock(self.mutex.get());
         debug_assert_eq!(r, 0);
@@ -97,6 +103,7 @@ impl ThreadParker {
     // Parks the thread until it is unparked or the timeout is reached. This
     // should be called after it has been added to the queue, after unlocking
     // the queue. Returns true if we were unparked and false if we timed out.
+    #[inline]
     pub unsafe fn park_until(&self, timeout: Instant) -> bool {
         let r = libc::pthread_mutex_lock(self.mutex.get());
         debug_assert_eq!(r, 0);
@@ -132,6 +139,7 @@ impl ThreadParker {
     // Locks the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
+    #[inline]
     pub unsafe fn unpark_lock(&self) -> UnparkHandle {
         let r = libc::pthread_mutex_lock(self.mutex.get());
         debug_assert_eq!(r, 0);
@@ -143,6 +151,7 @@ impl ThreadParker {
 }
 
 impl Drop for ThreadParker {
+    #[inline]
     fn drop(&mut self) {
         // On DragonFly pthread_mutex_destroy() returns EINVAL if called on a
         // mutex that was just initialized with libc::PTHREAD_MUTEX_INITIALIZER.
@@ -175,6 +184,7 @@ pub struct UnparkHandle {
 impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
+    #[inline]
     pub unsafe fn unpark(self) {
         (*self.thread_parker).should_park.set(false);
 
@@ -190,6 +200,7 @@ impl UnparkHandle {
 
 // Returns the current time on the clock used by pthread_cond_t as a timespec.
 #[cfg(any(target_os = "macos", target_os = "ios"))]
+#[inline]
 fn timespec_now() -> libc::timespec {
     let mut now: libc::timeval = unsafe { mem::uninitialized() };
     let r = unsafe { libc::gettimeofday(&mut now, ptr::null_mut()) };
@@ -200,6 +211,7 @@ fn timespec_now() -> libc::timespec {
     }
 }
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[inline]
 fn timespec_now() -> libc::timespec {
     let mut now: libc::timespec = unsafe { mem::uninitialized() };
     let clock = if cfg!(target_os = "android") {
@@ -216,6 +228,7 @@ fn timespec_now() -> libc::timespec {
 
 // Converts a relative timeout into an absolute timeout in the clock used by
 // pthread_cond_t.
+#[inline]
 fn timeout_to_timespec(timeout: Duration) -> Option<libc::timespec> {
     // Handle overflows early on
     if timeout.as_secs() > libc::time_t::max_value() as u64 {

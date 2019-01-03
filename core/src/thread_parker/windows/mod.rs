@@ -18,16 +18,23 @@ enum Backend {
     WaitAddress(waitaddress::WaitAddress),
 }
 
-impl Backend {
-    fn get() -> &'static Backend {
-        static BACKEND: AtomicPtr<Backend> = AtomicPtr::new(ptr::null_mut());
+static BACKEND: AtomicPtr<Backend> = AtomicPtr::new(ptr::null_mut());
 
+impl Backend {
+    #[inline]
+    fn get() -> &'static Backend {
         // Fast path: use the existing object
         let backend_ptr = BACKEND.load(Ordering::Acquire);
         if !backend_ptr.is_null() {
             return unsafe { &*backend_ptr };
         };
 
+        Backend::create()
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn create() -> &'static Backend {
         // Try to create a new Backend
         let backend;
         if let Some(waitaddress) = waitaddress::WaitAddress::create() {
@@ -70,6 +77,7 @@ pub struct ThreadParker {
 impl ThreadParker {
     pub const IS_CHEAP_TO_CONSTRUCT: bool = true;
 
+    #[inline]
     pub fn new() -> ThreadParker {
         // Initialize the backend here to ensure we don't get any panics
         // later on, which could leave synchronization primitives in a broken
@@ -81,6 +89,7 @@ impl ThreadParker {
     }
 
     // Prepares the parker. This should be called before adding it to the queue.
+    #[inline]
     pub fn prepare_park(&self) {
         match *self.backend {
             Backend::KeyedEvent(ref x) => x.prepare_park(&self.key),
@@ -90,6 +99,7 @@ impl ThreadParker {
 
     // Checks if the park timed out. This should be called while holding the
     // queue lock after park_until has returned false.
+    #[inline]
     pub fn timed_out(&self) -> bool {
         match *self.backend {
             Backend::KeyedEvent(ref x) => x.timed_out(&self.key),
@@ -99,6 +109,7 @@ impl ThreadParker {
 
     // Parks the thread until it is unparked. This should be called after it has
     // been added to the queue, after unlocking the queue.
+    #[inline]
     pub unsafe fn park(&self) {
         match *self.backend {
             Backend::KeyedEvent(ref x) => x.park(&self.key),
@@ -109,6 +120,7 @@ impl ThreadParker {
     // Parks the thread until it is unparked or the timeout is reached. This
     // should be called after it has been added to the queue, after unlocking
     // the queue. Returns true if we were unparked and false if we timed out.
+    #[inline]
     pub unsafe fn park_until(&self, timeout: Instant) -> bool {
         match *self.backend {
             Backend::KeyedEvent(ref x) => x.park_until(&self.key, timeout),
@@ -119,6 +131,7 @@ impl ThreadParker {
     // Locks the parker to prevent the target thread from exiting. This is
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
+    #[inline]
     pub unsafe fn unpark_lock(&self) -> UnparkHandle {
         match *self.backend {
             Backend::KeyedEvent(ref x) => UnparkHandle::KeyedEvent(x.unpark_lock(&self.key)),
@@ -138,6 +151,7 @@ pub enum UnparkHandle {
 impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
+    #[inline]
     pub unsafe fn unpark(self) {
         match self {
             UnparkHandle::KeyedEvent(x) => x.unpark(),
