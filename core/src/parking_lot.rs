@@ -12,14 +12,14 @@ use std::cell::{Cell, UnsafeCell};
 #[cfg(not(has_localkey_try_with))]
 use std::panic;
 use std::ptr;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::thread::LocalKey;
 use std::time::{Duration, Instant};
 use thread_parker::ThreadParker;
 use util::UncheckedOptionExt;
 use word_lock::WordLock;
 
-static NUM_THREADS: AtomicUsize = ATOMIC_USIZE_INIT;
+static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
 static HASHTABLE: AtomicPtr<HashTable> = AtomicPtr::new(ptr::null_mut());
 
 // Even with 3x more buckets than threads, the memory overhead per thread is

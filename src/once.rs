@@ -5,15 +5,13 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::atomic::{fence, Ordering};
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{AtomicU8, ATOMIC_U8_INIT};
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::{fence, Ordering};
 #[cfg(feature = "nightly")]
 type U8 = u8;
 #[cfg(not(feature = "nightly"))]
 use std::sync::atomic::AtomicUsize as AtomicU8;
-#[cfg(not(feature = "nightly"))]
-use std::sync::atomic::ATOMIC_USIZE_INIT as ATOMIC_U8_INIT;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
@@ -92,21 +90,21 @@ impl OnceState {
 pub struct Once(AtomicU8);
 
 /// Initialization value for static `Once` values.
-pub const ONCE_INIT: Once = Once(ATOMIC_U8_INIT);
+pub const ONCE_INIT: Once = Once(AtomicU8::new(0));
 
 impl Once {
     /// Creates a new `Once` value.
     #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> Once {
-        Once(ATOMIC_U8_INIT)
+        ONCE_INIT
     }
 
     /// Creates a new `Once` value.
     #[cfg(not(feature = "nightly"))]
     #[inline]
     pub fn new() -> Once {
-        Once(ATOMIC_U8_INIT)
+        ONCE_INIT
     }
 
     /// Returns the current state of this `Once`.
@@ -353,7 +351,6 @@ impl fmt::Debug for Once {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "nightly")]
     use std::panic;
     use std::sync::mpsc::channel;
     use std::thread;
@@ -405,7 +402,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "nightly")]
     #[test]
     fn poison_bad() {
         static O: Once = ONCE_INIT;
@@ -434,7 +430,6 @@ mod tests {
         O.call_once(|| {});
     }
 
-    #[cfg(feature = "nightly")]
     #[test]
     fn wait_for_force_to_finish() {
         static O: Once = ONCE_INIT;

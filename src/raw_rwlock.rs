@@ -15,7 +15,7 @@ use lock_api::{
 use parking_lot_core::{self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult};
 use raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use std::cell::Cell;
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use util;
 
@@ -45,7 +45,7 @@ pub struct RawRwLock {
 
 unsafe impl RawRwLockTrait for RawRwLock {
     const INIT: RawRwLock = RawRwLock {
-        state: ATOMIC_USIZE_INIT,
+        state: AtomicUsize::new(0),
     };
 
     type GuardMarker = GuardNoSend;

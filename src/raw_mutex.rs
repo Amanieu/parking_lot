@@ -5,15 +5,13 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::atomic::Ordering;
 #[cfg(feature = "nightly")]
-use std::sync::atomic::{AtomicU8, ATOMIC_U8_INIT};
+use std::sync::atomic::AtomicU8;
+use std::sync::atomic::Ordering;
 #[cfg(feature = "nightly")]
 type U8 = u8;
 #[cfg(not(feature = "nightly"))]
 use std::sync::atomic::AtomicUsize as AtomicU8;
-#[cfg(not(feature = "nightly"))]
-use std::sync::atomic::ATOMIC_USIZE_INIT as ATOMIC_U8_INIT;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use deadlock;
@@ -40,7 +38,7 @@ pub struct RawMutex {
 
 unsafe impl RawMutexTrait for RawMutex {
     const INIT: RawMutex = RawMutex {
-        state: ATOMIC_U8_INIT,
+        state: AtomicU8::new(0),
     };
 
     type GuardMarker = GuardNoSend;
