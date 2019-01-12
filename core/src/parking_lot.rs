@@ -71,7 +71,7 @@ struct Bucket {
 impl Bucket {
     pub fn new() -> Self {
         Self {
-            mutex: WordLock::new(),
+            mutex: WordLock::INIT,
             queue_head: Cell::new(ptr::null()),
             queue_tail: Cell::new(ptr::null()),
             fair_timeout: UnsafeCell::new(FairTimeout::new()),
@@ -1149,6 +1149,7 @@ mod deadlock_impl {
     use std::sync::atomic::Ordering;
     use std::sync::mpsc;
     use thread_id;
+    use word_lock::WordLock;
 
     /// Representation of a deadlocked thread
     pub struct DeadlockedThread {
@@ -1282,6 +1283,9 @@ mod deadlock_impl {
     // Returns all detected thread wait cycles.
     // Note that once a cycle is reported it's never reported again.
     unsafe fn check_wait_graph_slow() -> Vec<Vec<DeadlockedThread>> {
+        static DEADLOCK_DETECTION_LOCK: WordLock = WordLock::INIT;
+        DEADLOCK_DETECTION_LOCK.lock();
+
         let mut table = get_hashtable();
         loop {
             // Lock all buckets in the old table
@@ -1354,6 +1358,8 @@ mod deadlock_impl {
             drop(sender);
             results.push(receiver.iter().collect());
         }
+
+        DEADLOCK_DETECTION_LOCK.unlock();
 
         results
     }
