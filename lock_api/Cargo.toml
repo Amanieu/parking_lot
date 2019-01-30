@@ -9,7 +9,7 @@ keywords = ["mutex", "rwlock", "lock", "no_std"]
 categories = ["concurrency", "no-std"]
 
 [dependencies]
-scopeguard = { version = "0.3", default-features = false }
+scopeguard = { version = "1.0", default-features = false }
 owning_ref = { version = "0.4", optional = true }
 
 [features]
