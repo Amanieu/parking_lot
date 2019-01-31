@@ -18,6 +18,11 @@
 extern crate lock_api;
 extern crate parking_lot_core;
 
+#[cfg(test)]
+#[cfg(feature = "deadlock_detection")]
+#[macro_use]
+extern crate lazy_static;
+
 mod condvar;
 mod elision;
 mod mutex;
