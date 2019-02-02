@@ -555,7 +555,7 @@ mod tests {
 }"
         );
         let _lock = x.write();
-        assert_eq!(format!("{:?}", x), "RwLock { <locked> }");
+        assert_eq!(format!("{:?}", x), "RwLock { data: <locked> }");
     }
 
     #[test]

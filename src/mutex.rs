@@ -294,6 +294,6 @@ mod tests {
 }"
         );
         let _lock = mutex.lock();
-        assert_eq!(format!("{:?}", mutex), "Mutex { <locked> }");
+        assert_eq!(format!("{:?}", mutex), "Mutex { data: <locked> }");
     }
 }
