@@ -40,10 +40,12 @@ pub struct KeyedEvent {
 }
 
 impl KeyedEvent {
+    #[inline]
     unsafe fn wait_for(&self, key: PVOID, timeout: PLARGE_INTEGER) -> NTSTATUS {
         (self.NtWaitForKeyedEvent)(self.handle, key, 0, timeout)
     }
 
+    #[inline]
     unsafe fn release(&self, key: PVOID) -> NTSTATUS {
         (self.NtReleaseKeyedEvent)(self.handle, key, 0, ptr::null_mut())
     }
@@ -97,19 +99,23 @@ impl KeyedEvent {
         }
     }
 
+    #[inline]
     pub fn prepare_park(&'static self, key: &AtomicUsize) {
         key.store(STATE_PARKED, Ordering::Relaxed);
     }
 
+    #[inline]
     pub fn timed_out(&'static self, key: &AtomicUsize) -> bool {
         key.load(Ordering::Relaxed) == STATE_TIMED_OUT
     }
 
+    #[inline]
     pub unsafe fn park(&'static self, key: &AtomicUsize) {
         let status = self.wait_for(key as *const _ as PVOID, ptr::null_mut());
         debug_assert_eq!(status, STATUS_SUCCESS);
     }
 
+    #[inline]
     pub unsafe fn park_until(&'static self, key: &AtomicUsize, timeout: Instant) -> bool {
         let now = Instant::now();
         if timeout <= now {
@@ -155,6 +161,7 @@ impl KeyedEvent {
         false
     }
 
+    #[inline]
     pub unsafe fn unpark_lock(&'static self, key: &AtomicUsize) -> UnparkHandle {
         // If the state was STATE_PARKED then we need to wake up the thread
         if key.swap(STATE_UNPARKED, Ordering::Relaxed) == STATE_PARKED {
@@ -172,6 +179,7 @@ impl KeyedEvent {
 }
 
 impl Drop for KeyedEvent {
+    #[inline]
     fn drop(&mut self) {
         unsafe {
             let ok = CloseHandle(self.handle);
@@ -191,6 +199,7 @@ pub struct UnparkHandle {
 impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
+    #[inline]
     pub unsafe fn unpark(self) {
         if !self.key.is_null() {
             let status = self.keyed_event.release(self.key as PVOID);

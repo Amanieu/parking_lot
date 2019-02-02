@@ -38,6 +38,7 @@ struct HashTable {
 }
 
 impl HashTable {
+    #[inline]
     fn new(num_threads: usize, prev: *const HashTable) -> Box<HashTable> {
         let new_size = (num_threads * LOAD_FACTOR).next_power_of_two();
         let hash_bits = 0usize.leading_zeros() - new_size.leading_zeros() - 1;
@@ -69,6 +70,7 @@ struct Bucket {
 }
 
 impl Bucket {
+    #[inline]
     pub fn new() -> Self {
         Self {
             mutex: WordLock::INIT,
@@ -83,6 +85,7 @@ impl Bucket {
 
 // Implementation of Clone for Bucket, needed to make vec![] work
 impl Clone for Bucket {
+    #[inline]
     fn clone(&self) -> Self {
         Self::new()
     }
@@ -97,6 +100,7 @@ struct FairTimeout {
 }
 
 impl FairTimeout {
+    #[inline]
     fn new() -> FairTimeout {
         FairTimeout {
             timeout: Instant::now(),
@@ -105,6 +109,7 @@ impl FairTimeout {
     }
 
     // Determine whether we should force a fair unlock, and update the timeout
+    #[inline]
     fn should_timeout(&mut self) -> bool {
         let now = Instant::now();
         if now > self.timeout {
@@ -163,6 +168,7 @@ impl ThreadData {
 }
 
 // Invokes the given closure with a reference to the current thread `ThreadData`.
+#[inline(always)]
 fn with_thread_data<F, T>(f: F) -> T
 where
     F: FnOnce(&ThreadData) -> T,
@@ -196,32 +202,41 @@ impl Drop for ThreadData {
 }
 
 // Get a pointer to the latest hash table, creating one if it doesn't exist yet.
+#[inline]
 fn get_hashtable() -> *mut HashTable {
-    let mut table = HASHTABLE.load(Ordering::Acquire);
+    let table = HASHTABLE.load(Ordering::Acquire);
 
     // If there is no table, create one
     if table.is_null() {
-        let new_table = Box::into_raw(HashTable::new(LOAD_FACTOR, ptr::null()));
+        create_hashtable()
+    } else {
+        table
+    }
+}
 
-        // If this fails then it means some other thread created the hash
-        // table first.
-        match HASHTABLE.compare_exchange(
-            ptr::null_mut(),
-            new_table,
-            Ordering::Release,
-            Ordering::Relaxed,
-        ) {
-            Ok(_) => return new_table,
-            Err(x) => table = x,
-        }
+// Get a pointer to the latest hash table, creating one if it doesn't exist yet.
+#[cold]
+#[inline(never)]
+fn create_hashtable() -> *mut HashTable {
+    let new_table = Box::into_raw(HashTable::new(LOAD_FACTOR, ptr::null()));
 
-        // Free the table we created
-        unsafe {
-            Box::from_raw(new_table);
+    // If this fails then it means some other thread created the hash
+    // table first.
+    match HASHTABLE.compare_exchange(
+        ptr::null_mut(),
+        new_table,
+        Ordering::Release,
+        Ordering::Relaxed,
+    ) {
+        Ok(_) => new_table,
+        Err(old_table) => {
+            // Free the table we created
+            unsafe {
+                Box::from_raw(new_table);
+            }
+            old_table
         }
     }
-
-    table
 }
 
 // Grow the hash table so that it is big enough for the given number of threads.
@@ -312,15 +327,18 @@ unsafe fn grow_hashtable(num_threads: usize) {
 
 // Hash function for addresses
 #[cfg(target_pointer_width = "32")]
+#[inline]
 fn hash(key: usize, bits: u32) -> usize {
     key.wrapping_mul(0x9E3779B9) >> (32 - bits)
 }
 #[cfg(target_pointer_width = "64")]
+#[inline]
 fn hash(key: usize, bits: u32) -> usize {
     key.wrapping_mul(0x9E3779B97F4A7C15) >> (64 - bits)
 }
 
 // Lock the bucket for the given key
+#[inline]
 unsafe fn lock_bucket<'a>(key: usize) -> &'a Bucket {
     let mut bucket;
     loop {
@@ -345,6 +363,7 @@ unsafe fn lock_bucket<'a>(key: usize) -> &'a Bucket {
 
 // Lock the bucket for the given key, but check that the key hasn't been changed
 // in the meantime due to a requeue.
+#[inline]
 unsafe fn lock_bucket_checked<'a>(key: &AtomicUsize) -> (usize, &'a Bucket) {
     let mut bucket;
     loop {
@@ -372,6 +391,7 @@ unsafe fn lock_bucket_checked<'a>(key: &AtomicUsize) -> (usize, &'a Bucket) {
 }
 
 // Lock the two buckets for the given pair of keys
+#[inline]
 unsafe fn lock_bucket_pair<'a>(key1: usize, key2: usize) -> (&'a Bucket, &'a Bucket) {
     let mut bucket1;
     loop {
@@ -412,6 +432,7 @@ unsafe fn lock_bucket_pair<'a>(key1: usize, key2: usize) -> (&'a Bucket, &'a Buc
 }
 
 // Unlock a pair of buckets
+#[inline]
 unsafe fn unlock_bucket_pair(bucket1: &Bucket, bucket2: &Bucket) {
     if bucket1 as *const _ == bucket2 as *const _ {
         bucket1.mutex.unlock();
@@ -439,6 +460,7 @@ pub enum ParkResult {
 
 impl ParkResult {
     /// Returns true if we were unparked by another thread.
+    #[inline]
     pub fn is_unparked(self) -> bool {
         if let ParkResult::Unparked(_) = self {
             true
@@ -558,28 +580,6 @@ where
     B: FnOnce(),
     T: FnOnce(usize, bool),
 {
-    let mut v = Some(validate);
-    let mut b = Some(before_sleep);
-    let mut t = Some(timed_out);
-    park_internal(
-        key,
-        &mut || v.take().unchecked_unwrap()(),
-        &mut || b.take().unchecked_unwrap()(),
-        &mut |key, was_last_thread| t.take().unchecked_unwrap()(key, was_last_thread),
-        park_token,
-        timeout,
-    )
-}
-
-// Non-generic version to reduce monomorphization cost
-unsafe fn park_internal(
-    key: usize,
-    validate: &mut FnMut() -> bool,
-    before_sleep: &mut FnMut(),
-    timed_out: &mut FnMut(usize, bool),
-    park_token: ParkToken,
-    timeout: Option<Instant>,
-) -> ParkResult {
     // Grab our thread data, this also ensures that the hash table exists
     with_thread_data(|thread_data| {
         // Lock the bucket for the given key
@@ -706,15 +706,6 @@ pub unsafe fn unpark_one<C>(key: usize, callback: C) -> UnparkResult
 where
     C: FnOnce(UnparkResult) -> UnparkToken,
 {
-    let mut c = Some(callback);
-    unpark_one_internal(key, &mut |result| c.take().unchecked_unwrap()(result))
-}
-
-// Non-generic version to reduce monomorphization cost
-unsafe fn unpark_one_internal(
-    key: usize,
-    callback: &mut FnMut(UnparkResult) -> UnparkToken,
-) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -785,6 +776,7 @@ unsafe fn unpark_one_internal(
 /// You should only call this function with an address that you control, since
 /// you could otherwise interfere with the operation of other synchronization
 /// primitives.
+#[inline]
 pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
@@ -869,23 +861,6 @@ where
     V: FnOnce() -> RequeueOp,
     C: FnOnce(RequeueOp, UnparkResult) -> UnparkToken,
 {
-    let mut v = Some(validate);
-    let mut c = Some(callback);
-    unpark_requeue_internal(
-        key_from,
-        key_to,
-        &mut || v.take().unchecked_unwrap()(),
-        &mut |op, r| c.take().unchecked_unwrap()(op, r),
-    )
-}
-
-// Non-generic version to reduce monomorphization cost
-unsafe fn unpark_requeue_internal(
-    key_from: usize,
-    key_to: usize,
-    validate: &mut FnMut() -> RequeueOp,
-    callback: &mut FnMut(RequeueOp, UnparkResult) -> UnparkToken,
-) -> UnparkResult {
     // Lock the two buckets for the given key
     let (bucket_from, bucket_to) = lock_bucket_pair(key_from, key_to);
 
@@ -1014,16 +989,6 @@ where
     F: FnMut(ParkToken) -> FilterOp,
     C: FnOnce(UnparkResult) -> UnparkToken,
 {
-    let mut c = Some(callback);
-    unpark_filter_internal(key, &mut filter, &mut |r| c.take().unchecked_unwrap()(r))
-}
-
-// Non-generic version to reduce monomorphization cost
-unsafe fn unpark_filter_internal(
-    key: usize,
-    filter: &mut FnMut(ParkToken) -> FilterOp,
-    callback: &mut FnMut(UnparkResult) -> UnparkToken,
-) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 

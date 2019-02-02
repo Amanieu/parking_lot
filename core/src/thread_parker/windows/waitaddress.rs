@@ -56,14 +56,17 @@ impl WaitAddress {
         }
     }
 
+    #[inline]
     pub fn prepare_park(&'static self, key: &AtomicUsize) {
         key.store(1, Ordering::Relaxed);
     }
 
+    #[inline]
     pub fn timed_out(&'static self, key: &AtomicUsize) -> bool {
         key.load(Ordering::Relaxed) != 0
     }
 
+    #[inline]
     pub fn park(&'static self, key: &AtomicUsize) {
         while key.load(Ordering::Acquire) != 0 {
             let r = self.wait_on_address(key, INFINITE);
@@ -71,6 +74,7 @@ impl WaitAddress {
         }
     }
 
+    #[inline]
     pub fn park_until(&'static self, key: &AtomicUsize, timeout: Instant) -> bool {
         while key.load(Ordering::Acquire) != 0 {
             let now = Instant::now();
@@ -97,6 +101,7 @@ impl WaitAddress {
         true
     }
 
+    #[inline]
     pub fn unpark_lock(&'static self, key: &AtomicUsize) -> UnparkHandle {
         // We don't need to lock anything, just clear the state
         key.store(0, Ordering::Release);
@@ -130,6 +135,7 @@ pub struct UnparkHandle {
 impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
+    #[inline]
     pub fn unpark(self) {
         (self.waitaddress.WakeByAddressSingle)(self.key as PVOID);
     }

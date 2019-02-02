@@ -69,7 +69,7 @@ use raw_mutex::RawMutex;
 ///
 /// let (tx, rx) = channel();
 /// for _ in 0..10 {
-///     let (data, tx) = (data.clone(), tx.clone());
+///     let (data, tx) = (Arc::clone(&data), tx.clone());
 ///     thread::spawn(move || {
 ///         // The shared state can only be accessed once the lock is held.
 ///         // Our non-atomic increment is safe because we're the only thread
@@ -294,6 +294,6 @@ mod tests {
 }"
         );
         let _lock = mutex.lock();
-        assert_eq!(format!("{:?}", mutex), "Mutex { <locked> }");
+        assert_eq!(format!("{:?}", mutex), "Mutex { data: <locked> }");
     }
 }

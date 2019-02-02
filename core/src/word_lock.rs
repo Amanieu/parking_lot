@@ -36,6 +36,7 @@ struct ThreadData {
 }
 
 impl ThreadData {
+    #[inline]
     fn new() -> ThreadData {
         assert!(mem::align_of::<ThreadData>() > !QUEUE_MASK);
         ThreadData {
@@ -48,6 +49,7 @@ impl ThreadData {
 }
 
 // Invokes the given closure with a reference to the current thread `ThreadData`.
+#[inline]
 fn with_thread_data<F, T>(f: F) -> T
 where
     F: FnOnce(&ThreadData) -> T,
