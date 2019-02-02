@@ -292,7 +292,7 @@ impl<R: RawMutex, T: ?Sized + fmt::Debug> fmt::Debug for Mutex<R, T> {
 ///
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` and `DerefMut` implementations.
-#[must_use]
+#[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
     mutex: &'a Mutex<R, T>,
     marker: PhantomData<(&'a mut T, R::GuardMarker)>,
@@ -449,7 +449,7 @@ unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
-#[must_use]
+#[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MappedMutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
     raw: &'a R,
     data: *mut T,

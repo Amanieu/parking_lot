@@ -359,7 +359,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized + fmt::Debug> fmt::Debug for Reentra
 ///
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` implementation.
-#[must_use]
+#[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct ReentrantMutexGuard<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> {
     remutex: &'a ReentrantMutex<R, G, T>,
     marker: PhantomData<(&'a T, GuardNoSend)>,
@@ -524,7 +524,7 @@ unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAdd
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
-#[must_use]
+#[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct MappedReentrantMutexGuard<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> {
     raw: &'a RawReentrantMutex<R, G>,
     data: *const T,

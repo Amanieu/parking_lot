@@ -688,7 +688,7 @@ impl<R: RawRwLock, T: ?Sized + fmt::Debug> fmt::Debug for RwLock<R, T> {
 
 /// RAII structure used to release the shared read access of a lock when
 /// dropped.
-#[must_use]
+#[must_use = "if unused the RwLock will immediately unlock"]
 pub struct RwLockReadGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
     rwlock: &'a RwLock<R, T>,
     marker: PhantomData<(&'a T, R::GuardMarker)>,
@@ -835,7 +835,7 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress for RwLockReadG
 
 /// RAII structure used to release the exclusive write access of a lock when
 /// dropped.
-#[must_use]
+#[must_use = "if unused the RwLock will immediately unlock"]
 pub struct RwLockWriteGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
     rwlock: &'a RwLock<R, T>,
     marker: PhantomData<(&'a mut T, R::GuardMarker)>,
@@ -1023,7 +1023,7 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress for RwLockWrite
 
 /// RAII structure used to release the upgradable read access of a lock when
 /// dropped.
-#[must_use]
+#[must_use = "if unused the RwLock will immediately unlock"]
 pub struct RwLockUpgradableReadGuard<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> {
     rwlock: &'a RwLock<R, T>,
     marker: PhantomData<(&'a T, R::GuardMarker)>,
@@ -1221,7 +1221,7 @@ unsafe impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> StableAddress
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
-#[must_use]
+#[must_use = "if unused the RwLock will immediately unlock"]
 pub struct MappedRwLockReadGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
     raw: &'a R,
     data: *const T,
@@ -1334,7 +1334,7 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
-#[must_use]
+#[must_use = "if unused the RwLock will immediately unlock"]
 pub struct MappedRwLockWriteGuard<'a, R: RawRwLock + 'a, T: ?Sized + 'a> {
     raw: &'a R,
     data: *mut T,
