@@ -88,21 +88,21 @@
 #![warn(rust_2018_idioms)]
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 
-#[cfg(not(feature = "i-am-libstd"))]
-#[macro_use]
-extern crate scopeguard;
-
 /// Marker type which indicates that the Guard type for a lock is `Send`.
 pub struct GuardSend(());
 
 /// Marker type which indicates that the Guard type for a lock is not `Send`.
 pub struct GuardNoSend(*mut ());
 
+#[cfg(not(feature = "i-am-libstd"))]
+#[macro_use]
+mod scopeguard;
+
 mod mutex;
-pub use crate::mutex::*;
+pub use self::mutex::*;
 
 mod remutex;
-pub use crate::remutex::*;
+pub use self::remutex::*;
 
 mod rwlock;
-pub use crate::rwlock::*;
+pub use self::rwlock::*;
