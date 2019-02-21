@@ -10,6 +10,13 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
     time::Instant,
 };
+#[cfg(feature = "i-am-libstd")]
+use sys::c::{
+    CloseHandle, GetModuleHandleA, GetProcAddress, ACCESS_MASK, BOOLEAN, GENERIC_READ,
+    GENERIC_WRITE, HANDLE, LARGE_INTEGER, LPCSTR, LPHANDLE as PHANDLE, LPVOID as PVOID, NTSTATUS,
+    PLARGE_INTEGER, STATUS_SUCCESS, STATUS_TIMEOUT, TRUE, ULONG,
+};
+#[cfg(not(feature = "i-am-libstd"))]
 use winapi::{
     shared::{
         minwindef::{TRUE, ULONG},

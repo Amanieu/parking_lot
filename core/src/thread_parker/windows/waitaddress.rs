@@ -10,6 +10,12 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 use std::time::Instant;
+#[cfg(feature = "i-am-libstd")]
+use sys::c::{
+    GetLastError, GetModuleHandleA, GetProcAddress, BOOL, DWORD, ERROR_TIMEOUT, FALSE, INFINITE,
+    LPCSTR, LPVOID as PVOID, SIZE_T, TRUE,
+};
+#[cfg(not(feature = "i-am-libstd"))]
 use winapi::{
     shared::{
         basetsd::SIZE_T,

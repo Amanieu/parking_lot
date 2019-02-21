@@ -164,6 +164,10 @@ impl UnparkHandle {
 // Yields the rest of the current timeslice to the OS
 #[inline]
 pub fn thread_yield() {
+    #[cfg(feature = "i-am-libstd")]
+    use sys::c::DWORD;
+    #[cfg(not(feature = "i-am-libstd"))]
+    use winapi::shared::minwindef::DWORD;
     // Note that this is manually defined here rather than using the definition
     // through `winapi`. The `winapi` definition comes from the `synchapi`
     // header which enables the "synchronization.lib" library. It turns out,
@@ -178,7 +182,7 @@ pub fn thread_yield() {
     // libraries, but that'll probably take a lot longer than patching this here
     // and avoiding the `synchapi` feature entirely.
     extern "system" {
-        fn Sleep(a: winapi::shared::minwindef::DWORD);
+        fn Sleep(a: DWORD);
     }
     unsafe {
         // We don't use SwitchToThread here because it doesn't consider all
