@@ -146,6 +146,9 @@ impl KeyedEvent {
 
         // NT uses a timeout in units of 100ns. We use a negative value to
         // indicate a relative timeout based on a monotonic clock.
+        #[cfg(feature = "i-am-libstd")]
+        let mut nt_timeout: LARGE_INTEGER;
+        #[cfg(not(feature = "i-am-libstd"))]
         let mut nt_timeout: LARGE_INTEGER = mem::zeroed();
         let diff = timeout - now;
         let value = (diff.as_secs() as i64)
@@ -153,6 +156,9 @@ impl KeyedEvent {
             .and_then(|x| x.checked_sub((diff.subsec_nanos() as i64 + 99) / 100));
 
         match value {
+            #[cfg(feature = "i-am-libstd")]
+            Some(x) => nt_timeout = x,
+            #[cfg(not(feature = "i-am-libstd"))]
             Some(x) => *nt_timeout.QuadPart_mut() = x,
             None => {
                 // Timeout overflowed, just sleep indefinitely
