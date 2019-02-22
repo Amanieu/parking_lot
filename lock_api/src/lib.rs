@@ -27,6 +27,8 @@
 //! # Example
 //!
 //! ```
+//! # #[cfg(not(feature = "i-am-libstd"))]
+//! # fn main() {
 //! use lock_api::{RawMutex, Mutex, GuardSend};
 //! use std::sync::atomic::{AtomicBool, Ordering};
 //!
@@ -58,6 +60,9 @@
 //! // 3. Export the wrappers. This are the types that your users will actually use.
 //! pub type Spinlock<T> = lock_api::Mutex<RawSpinlock, T>;
 //! pub type SpinlockGuard<'a, T> = lock_api::MutexGuard<'a, RawSpinlock, T>;
+//! # }
+//! # #[cfg(feature = "i-am-libstd")]
+//! # fn main() {}
 //! ```
 //!
 //! # Extension traits

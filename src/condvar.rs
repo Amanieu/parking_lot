@@ -60,6 +60,8 @@ impl WaitTimeoutResult {
 /// # Examples
 ///
 /// ```
+/// # #[cfg(not(feature = "i-am-libstd"))]
+/// # fn main() {
 /// use parking_lot::{Mutex, Condvar};
 /// use std::sync::Arc;
 /// use std::thread;
@@ -81,6 +83,9 @@ impl WaitTimeoutResult {
 /// while !*started {
 ///     cvar.wait(&mut started);
 /// }
+/// # }
+/// # #[cfg(feature = "i-am-libstd")]
+/// # fn main() {}
 /// ```
 pub struct Condvar {
     state: AtomicPtr<RawMutex>,
@@ -109,6 +114,8 @@ impl Condvar {
     /// # Examples
     ///
     /// ```
+    /// # #[cfg(not(feature = "i-am-libstd"))]
+    /// # fn main() {
     /// use parking_lot::Condvar;
     ///
     /// let condvar = Condvar::new();
@@ -118,6 +125,9 @@ impl Condvar {
     /// if !condvar.notify_one() {
     ///     println!("Nobody was listening for this.");
     /// }
+    /// # }
+    /// # #[cfg(feature = "i-am-libstd")]
+    /// # fn main() {}
     /// ```
     #[inline]
     pub fn notify_one(&self) -> bool {

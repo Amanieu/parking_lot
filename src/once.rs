@@ -81,6 +81,8 @@ impl OnceState {
 /// # Examples
 ///
 /// ```
+/// # #[cfg(not(feature = "i-am-libstd"))]
+/// # fn main() {
 /// use parking_lot::Once;
 ///
 /// static START: Once = Once::new();
@@ -88,6 +90,9 @@ impl OnceState {
 /// START.call_once(|| {
 ///     // run initialization here
 /// });
+/// # }
+/// # #[cfg(feature = "i-am-libstd")]
+/// # fn main() {}
 /// ```
 pub struct Once(AtomicU8);
 
@@ -130,6 +135,8 @@ impl Once {
     /// # Examples
     ///
     /// ```
+    /// # #[cfg(not(feature = "i-am-libstd"))]
+    /// # fn main() {
     /// use parking_lot::Once;
     ///
     /// static mut VAL: usize = 0;
@@ -154,6 +161,9 @@ impl Once {
     ///     // ...
     /// # 2
     /// }
+    /// # }
+    /// # #[cfg(feature = "i-am-libstd")]
+    /// # fn main() {}
     /// ```
     ///
     /// # Panics

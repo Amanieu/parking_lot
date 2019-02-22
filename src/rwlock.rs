@@ -67,6 +67,8 @@ use lock_api;
 /// # Examples
 ///
 /// ```
+/// # #[cfg(not(feature = "i-am-libstd"))]
+/// # fn main() {
 /// use parking_lot::RwLock;
 ///
 /// let lock = RwLock::new(5);
@@ -85,6 +87,9 @@ use lock_api;
 ///     *w += 1;
 ///     assert_eq!(*w, 6);
 /// } // write lock is dropped here
+/// # }
+/// # #[cfg(feature = "i-am-libstd")]
+/// # fn main() {}
 /// ```
 pub type RwLock<T> = lock_api::RwLock<RawRwLock, T>;
 

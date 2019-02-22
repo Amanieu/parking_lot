@@ -53,6 +53,8 @@ use lock_api;
 /// # Examples
 ///
 /// ```
+/// # #[cfg(not(feature = "i-am-libstd"))]
+/// # fn main() {
 /// use std::sync::Arc;
 /// use parking_lot::Mutex;
 /// use std::thread;
@@ -84,6 +86,9 @@ use lock_api;
 /// }
 ///
 /// rx.recv().unwrap();
+/// # }
+/// # #[cfg(feature = "i-am-libstd")]
+/// # fn main() {}
 /// ```
 pub type Mutex<T> = lock_api::Mutex<RawMutex, T>;
 
