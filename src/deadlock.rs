@@ -34,8 +34,8 @@
 //! ```
 
 #[cfg(feature = "deadlock_detection")]
-pub use parking_lot_core::deadlock::check_deadlock;
-pub(crate) use parking_lot_core::deadlock::{acquire_resource, release_resource};
+pub use super::parking_lot_core::deadlock::check_deadlock;
+pub(crate) use super::parking_lot_core::deadlock::{acquire_resource, release_resource};
 
 #[cfg(all(test, not(feature = "i-am-libstd")))]
 #[cfg(feature = "deadlock_detection")]

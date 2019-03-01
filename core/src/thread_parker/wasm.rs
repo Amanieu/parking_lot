@@ -8,8 +8,9 @@
 use core::{
     arch::wasm32,
     sync::atomic::{AtomicI32, Ordering},
+    convert::TryFrom,
 };
-use std::{convert::TryFrom, thread, time::Instant};
+use super::libstd::{thread, time::Instant};
 
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {

@@ -13,6 +13,17 @@
 #![warn(rust_2018_idioms)]
 #![cfg_attr(feature = "nightly", feature(asm))]
 
+mod libstd {
+    #[cfg(feature = "i-am-libstd")]
+    pub use crate::*;
+    #[cfg(not(feature = "i-am-libstd"))]
+    pub use std::*;
+}
+#[cfg(feature = "i-am-libstd")]
+use crate::{lock_api, parking_lot_core};
+#[cfg(not(feature = "i-am-libstd"))]
+use {lock_api, parking_lot_core};
+
 mod condvar;
 mod elision;
 mod mutex;

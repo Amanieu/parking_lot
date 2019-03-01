@@ -5,12 +5,12 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::libstd::{thread, time::Instant};
 use core::{
     ptr,
     sync::atomic::{AtomicI32, Ordering},
 };
 use libc;
-use std::{thread, time::Instant};
 
 const FUTEX_WAIT: i32 = 0;
 const FUTEX_WAKE: i32 = 1;

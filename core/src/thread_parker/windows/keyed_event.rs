@@ -5,16 +5,16 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use core::{mem, ptr};
-use std::{
-    sync::atomic::{AtomicUsize, Ordering},
-    time::Instant,
-};
+use super::super::libstd::time::Instant;
 #[cfg(feature = "i-am-libstd")]
-use sys::c::{
+use crate::sys::c::{
     CloseHandle, GetModuleHandleA, GetProcAddress, ACCESS_MASK, BOOLEAN, GENERIC_READ,
     GENERIC_WRITE, HANDLE, LARGE_INTEGER, LPCSTR, LPHANDLE as PHANDLE, LPVOID as PVOID, NTSTATUS,
     PLARGE_INTEGER, STATUS_SUCCESS, STATUS_TIMEOUT, TRUE, ULONG,
+};
+use core::{
+    mem, ptr,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 #[cfg(not(feature = "i-am-libstd"))]
 use winapi::{

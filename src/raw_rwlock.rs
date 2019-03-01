@@ -6,21 +6,21 @@
 // copied, modified, or distributed except according to those terms.
 
 use super::elision::{have_elision, AtomicElisionExt};
+use super::libstd::time::{Duration, Instant};
+use super::lock_api::{
+    GuardNoSend, RawRwLock as RawRwLockTrait, RawRwLockDowngrade, RawRwLockFair,
+    RawRwLockRecursive, RawRwLockRecursiveTimed, RawRwLockTimed, RawRwLockUpgrade,
+    RawRwLockUpgradeDowngrade, RawRwLockUpgradeFair, RawRwLockUpgradeTimed,
+};
+use super::parking_lot_core::{
+    self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken,
+};
 use super::raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use super::{deadlock, util};
 use core::{
     cell::Cell,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use lock_api::{
-    GuardNoSend, RawRwLock as RawRwLockTrait, RawRwLockDowngrade, RawRwLockFair,
-    RawRwLockRecursive, RawRwLockRecursiveTimed, RawRwLockTimed, RawRwLockUpgrade,
-    RawRwLockUpgradeDowngrade, RawRwLockUpgradeFair, RawRwLockUpgradeTimed,
-};
-use parking_lot_core::{
-    self, deadlock, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken,
-};
-use std::time::{Duration, Instant};
 
 // This reader-writer lock implementation is based on Boost's upgrade_mutex:
 // https://github.com/boostorg/thread/blob/fc08c1fe2840baeeee143440fba31ef9e9a813c8/include/boost/thread/v2/shared_mutex.hpp#L432

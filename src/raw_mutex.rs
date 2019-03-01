@@ -5,15 +5,17 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::libstd::time::Instant;
+use super::lock_api::{GuardNoSend, RawMutex as RawMutexTrait, RawMutexFair, RawMutexTimed};
+use super::parking_lot_core::{
+    self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN,
+};
 use super::{deadlock, util};
 #[cfg(any(has_sized_atomics, feature = "i-am-libstd"))]
 use core::sync::atomic::AtomicU8;
 #[cfg(not(any(has_sized_atomics, feature = "i-am-libstd")))]
 use core::sync::atomic::AtomicUsize as AtomicU8;
 use core::{sync::atomic::Ordering, time::Duration};
-use lock_api::{GuardNoSend, RawMutex as RawMutexTrait, RawMutexFair, RawMutexTimed};
-use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
-use std::time::Instant;
 
 #[cfg(any(has_sized_atomics, feature = "i-am-libstd"))]
 type U8 = u8;

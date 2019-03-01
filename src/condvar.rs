@@ -5,16 +5,16 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::libstd::time::{Duration, Instant};
+use super::lock_api::RawMutex as RawMutexTrait;
 use super::mutex::MutexGuard;
+use super::parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
 use super::raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
 use super::{deadlock, util};
 use core::{
     fmt, ptr,
     sync::atomic::{AtomicPtr, Ordering},
 };
-use lock_api::RawMutex as RawMutexTrait;
-use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
-use std::time::{Duration, Instant};
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.

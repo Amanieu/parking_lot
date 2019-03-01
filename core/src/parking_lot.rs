@@ -5,6 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::libstd::time::{Duration, Instant};
 use super::thread_parker::ThreadParker;
 use super::util::UncheckedOptionExt;
 use super::word_lock::WordLock;
@@ -17,7 +18,6 @@ use core::{
 use rand::{rngs::SmallRng, FromEntropy, Rng};
 #[cfg(not(feature = "i-am-libstd"))]
 use smallvec::SmallVec;
-use std::time::{Duration, Instant};
 
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
 static HASHTABLE: AtomicPtr<HashTable> = AtomicPtr::new(ptr::null_mut());

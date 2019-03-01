@@ -5,8 +5,9 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::lock_api::{self, GetThreadId};
 use super::raw_mutex::RawMutex;
-use lock_api::{self, GetThreadId};
+use core::mem;
 
 /// Implementation of the `GetThreadId` trait for `lock_api::ReentrantMutex`.
 pub struct RawThreadId;
@@ -17,7 +18,7 @@ unsafe impl GetThreadId for RawThreadId {
     fn nonzero_thread_id(&self) -> usize {
         // The address of a thread-local variable is guaranteed to be unique to the
         // current thread, and is also guaranteed to be non-zero.
-        thread_local!(static KEY: u8 = unsafe { ::std::mem::uninitialized() });
+        thread_local!(static KEY: u8 = unsafe { mem::uninitialized() });
         KEY.with(|x| x as *const _ as usize)
     }
 }

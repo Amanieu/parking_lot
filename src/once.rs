@@ -5,6 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 use super::util::UncheckedOptionExt;
 #[cfg(any(has_sized_atomics, feature = "i-am-libstd"))]
 use core::sync::atomic::AtomicU8;
@@ -14,7 +15,6 @@ use core::{
     fmt, mem,
     sync::atomic::{fence, Ordering},
 };
-use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 
 #[cfg(any(has_sized_atomics, feature = "i-am-libstd"))]
 type U8 = u8;

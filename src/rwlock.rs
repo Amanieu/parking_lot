@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::lock_api;
 use super::raw_rwlock::RawRwLock;
-use lock_api;
 
 /// A reader-writer lock
 ///

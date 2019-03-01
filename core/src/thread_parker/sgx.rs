@@ -5,8 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use core::sync::atomic::{AtomicBool, Ordering};
-use std::{
+use super::libstd::{
     io,
     os::fortanix_sgx::{
         thread::current as current_tcs,
@@ -18,6 +17,7 @@ use std::{
     thread,
     time::Instant,
 };
+use core::sync::atomic::{AtomicBool, Ordering};
 
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {

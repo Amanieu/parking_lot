@@ -10,8 +10,9 @@ use core::{
     cell::Cell,
     mem,
     sync::atomic::{AtomicU32, Ordering},
+    convert::TryFrom,
 };
-use std::{convert::TryFrom, thread, time::Instant};
+use super::libstd::{thread, time::Instant};
 
 extern "C" {
     #[thread_local]

@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::lock_api;
 use super::raw_mutex::RawMutex;
-use lock_api;
 
 /// A mutual exclusion primitive useful for protecting shared data
 ///

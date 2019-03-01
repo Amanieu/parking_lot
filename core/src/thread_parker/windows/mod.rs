@@ -5,11 +5,11 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::libstd::time::Instant;
 use core::{
     ptr,
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
-use std::time::Instant;
 
 mod keyed_event;
 mod waitaddress;
@@ -165,7 +165,7 @@ impl UnparkHandle {
 #[inline]
 pub fn thread_yield() {
     #[cfg(feature = "i-am-libstd")]
-    use sys::c::DWORD;
+    use crate::sys::c::DWORD;
     #[cfg(not(feature = "i-am-libstd"))]
     use winapi::shared::minwindef::DWORD;
     // Note that this is manually defined here rather than using the definition

@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::sync::atomic::AtomicUsize;
+use core::sync::atomic::AtomicUsize;
 
 // Extension trait to add lock elision primitives to atomic types
 pub trait AtomicElisionExt {

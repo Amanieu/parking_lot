@@ -5,15 +5,15 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use super::super::libstd::time::Instant;
+#[cfg(feature = "i-am-libstd")]
+use crate::sys::c::{
+    GetLastError, GetModuleHandleA, GetProcAddress, BOOL, DWORD, ERROR_TIMEOUT, FALSE, INFINITE,
+    LPCSTR, LPVOID as PVOID, SIZE_T, TRUE,
+};
 use core::{
     mem,
     sync::atomic::{AtomicUsize, Ordering},
-};
-use std::time::Instant;
-#[cfg(feature = "i-am-libstd")]
-use sys::c::{
-    GetLastError, GetModuleHandleA, GetProcAddress, BOOL, DWORD, ERROR_TIMEOUT, FALSE, INFINITE,
-    LPCSTR, LPVOID as PVOID, SIZE_T, TRUE,
 };
 #[cfg(not(feature = "i-am-libstd"))]
 use winapi::{

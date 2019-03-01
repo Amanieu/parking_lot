@@ -8,8 +8,8 @@
 //! A simple spin lock based thread parker. Used on platforms without better
 //! parking facilities available.
 
+use super::libstd::{thread, time::Instant};
 use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
-use std::{thread, time::Instant};
 
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {

@@ -59,6 +59,13 @@
 #[cfg(not(feature = "i-am-libstd"))]
 use cfg_if::cfg_if;
 
+mod libstd {
+    #[cfg(feature = "i-am-libstd")]
+    pub use crate::*;
+    #[cfg(not(feature = "i-am-libstd"))]
+    pub use std::*;
+}
+
 cfg_if! {
     if #[cfg(all(any(has_sized_atomics, feature = "i-am-libstd"), target_os = "linux"))] {
         #[path = "thread_parker/linux.rs"]
