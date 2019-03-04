@@ -38,6 +38,7 @@
 //! reference count and the two mutex bits in the same atomic word.
 
 #![warn(missing_docs)]
+#![warn(rust_2018_idioms)]
 #![cfg_attr(
     all(feature = "nightly", target_os = "linux"),
     feature(integer_atomics)

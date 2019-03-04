@@ -10,6 +10,7 @@
 //! standard library. It also provides a `ReentrantMutex` type.
 
 #![warn(missing_docs)]
+#![warn(rust_2018_idioms)]
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 #![cfg_attr(feature = "nightly", feature(integer_atomics))]
 #![cfg_attr(feature = "nightly", feature(asm))]

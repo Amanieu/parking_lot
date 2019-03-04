@@ -85,6 +85,7 @@
 
 #![no_std]
 #![warn(missing_docs)]
+#![warn(rust_2018_idioms)]
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 
 #[macro_use]
