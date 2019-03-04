@@ -39,10 +39,6 @@
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
-#![cfg_attr(
-    all(feature = "nightly", target_os = "linux"),
-    feature(integer_atomics)
-)]
 
 #[cfg(all(feature = "nightly", target_os = "linux"))]
 #[path = "thread_parker/linux.rs"]
