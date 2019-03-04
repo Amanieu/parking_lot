@@ -5,17 +5,24 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::mem;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use core::{
+    mem,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use std::time::Instant;
-
-use winapi::shared::basetsd::SIZE_T;
-use winapi::shared::minwindef::{BOOL, DWORD, FALSE, TRUE};
-use winapi::shared::winerror::ERROR_TIMEOUT;
-use winapi::um::errhandlingapi::GetLastError;
-use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
-use winapi::um::winbase::INFINITE;
-use winapi::um::winnt::{LPCSTR, PVOID};
+use winapi::{
+    shared::{
+        basetsd::SIZE_T,
+        minwindef::{BOOL, DWORD, FALSE, TRUE},
+        winerror::ERROR_TIMEOUT,
+    },
+    um::{
+        errhandlingapi::GetLastError,
+        libloaderapi::{GetModuleHandleA, GetProcAddress},
+        winbase::INFINITE,
+        winnt::{LPCSTR, PVOID},
+    },
+};
 
 #[allow(non_snake_case)]
 pub struct WaitAddress {

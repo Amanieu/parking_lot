@@ -15,9 +15,8 @@ use std::sync::atomic::AtomicUsize as AtomicU8;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use crate::util::UncheckedOptionExt;
+use core::{fmt, mem};
 use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
-use std::fmt;
-use std::mem;
 
 const DONE_BIT: U8 = 1;
 const POISON_BIT: U8 = 2;

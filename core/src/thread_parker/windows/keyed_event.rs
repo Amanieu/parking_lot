@@ -5,18 +5,26 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::mem;
-use std::ptr;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
-
-use winapi::shared::minwindef::{TRUE, ULONG};
-use winapi::shared::ntdef::NTSTATUS;
-use winapi::shared::ntstatus::{STATUS_SUCCESS, STATUS_TIMEOUT};
-use winapi::um::handleapi::CloseHandle;
-use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
-use winapi::um::winnt::{ACCESS_MASK, GENERIC_READ, GENERIC_WRITE, LPCSTR};
-use winapi::um::winnt::{BOOLEAN, HANDLE, LARGE_INTEGER, PHANDLE, PLARGE_INTEGER, PVOID};
+use core::{mem, ptr};
+use std::{
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Instant,
+};
+use winapi::{
+    shared::{
+        minwindef::{TRUE, ULONG},
+        ntdef::NTSTATUS,
+        ntstatus::{STATUS_SUCCESS, STATUS_TIMEOUT},
+    },
+    um::{
+        handleapi::CloseHandle,
+        libloaderapi::{GetModuleHandleA, GetProcAddress},
+        winnt::{
+            ACCESS_MASK, BOOLEAN, GENERIC_READ, GENERIC_WRITE, HANDLE, LARGE_INTEGER, LPCSTR,
+            PHANDLE, PLARGE_INTEGER, PVOID,
+        },
+    },
+};
 
 const STATE_UNPARKED: usize = 0;
 const STATE_PARKED: usize = 1;

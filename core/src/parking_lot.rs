@@ -8,12 +8,13 @@
 use crate::thread_parker::ThreadParker;
 use crate::util::UncheckedOptionExt;
 use crate::word_lock::WordLock;
-use rand::rngs::SmallRng;
-use rand::{FromEntropy, Rng};
+use core::{
+    cell::{Cell, UnsafeCell},
+    ptr,
+    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
+};
+use rand::{rngs::SmallRng, FromEntropy, Rng};
 use smallvec::SmallVec;
-use std::cell::{Cell, UnsafeCell};
-use std::ptr;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);

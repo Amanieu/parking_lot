@@ -8,6 +8,10 @@
 use crate::elision::{have_elision, AtomicElisionExt};
 use crate::raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use crate::util;
+use core::{
+    cell::Cell,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 use lock_api::{
     GuardNoSend, RawRwLock as RawRwLockTrait, RawRwLockDowngrade, RawRwLockFair,
     RawRwLockRecursive, RawRwLockRecursiveTimed, RawRwLockTimed, RawRwLockUpgrade,
@@ -16,8 +20,6 @@ use lock_api::{
 use parking_lot_core::{
     self, deadlock, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken,
 };
-use std::cell::Cell;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 // This reader-writer lock implementation is based on Boost's upgrade_mutex:

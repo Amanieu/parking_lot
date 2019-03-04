@@ -5,15 +5,16 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::deadlock;
 use crate::mutex::MutexGuard;
 use crate::raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
-use crate::util;
+use crate::{deadlock, util};
+use core::{
+    fmt, ptr,
+    sync::atomic::{AtomicPtr, Ordering},
+};
 use lock_api::RawMutex as RawMutexTrait;
 use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
-use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
-use std::{fmt, ptr};
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.

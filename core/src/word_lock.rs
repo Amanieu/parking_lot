@@ -7,10 +7,11 @@
 
 use crate::spinwait::SpinWait;
 use crate::thread_parker::ThreadParker;
-use std::cell::Cell;
-use std::mem;
-use std::ptr;
-use std::sync::atomic::{fence, AtomicUsize, Ordering};
+use core::{
+    cell::Cell,
+    mem, ptr,
+    sync::atomic::{fence, AtomicUsize, Ordering},
+};
 
 struct ThreadData {
     parker: ThreadParker,

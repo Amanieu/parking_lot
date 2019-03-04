@@ -6,12 +6,12 @@
 // copied, modified, or distributed except according to those terms.
 
 #[cfg(feature = "nightly")]
-use std::sync::atomic::AtomicU8;
-use std::sync::atomic::Ordering;
+use core::sync::atomic::AtomicU8;
+use core::sync::atomic::Ordering;
 #[cfg(feature = "nightly")]
 type U8 = u8;
 #[cfg(not(feature = "nightly"))]
-use std::sync::atomic::AtomicUsize as AtomicU8;
+use core::sync::atomic::AtomicUsize as AtomicU8;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
 use crate::deadlock;
