@@ -50,7 +50,7 @@ impl HashTable {
     }
 }
 
-#[cfg_attr(has_repr_align, repr(align(64)))]
+#[repr(align(64))]
 struct Bucket {
     // Lock protecting the queue
     mutex: WordLock,
@@ -61,12 +61,6 @@ struct Bucket {
 
     // Next time at which point be_fair should be set
     fair_timeout: UnsafeCell<FairTimeout>,
-
-    // Padding to avoid false sharing between buckets. Ideally we would just
-    // align the bucket structure to 64 bytes, but Rust doesn't support that
-    // yet. Remove this field when dropping support for Rust < 1.25
-    #[cfg(not(has_repr_align))]
-    _padding: [u8; 64],
 }
 
 impl Bucket {
@@ -77,8 +71,6 @@ impl Bucket {
             queue_head: Cell::new(ptr::null()),
             queue_tail: Cell::new(ptr::null()),
             fair_timeout: UnsafeCell::new(FairTimeout::new()),
-            #[cfg(not(has_repr_align))]
-            _padding: unsafe { ::std::mem::uninitialized() },
         }
     }
 }
