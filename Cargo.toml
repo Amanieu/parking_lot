@@ -18,7 +18,7 @@ rand = "0.6"
 lazy_static = "1.0"
 
 [features]
-default = ["owning_ref"]
+default = []
 owning_ref = ["lock_api/owning_ref"]
 nightly = ["parking_lot_core/nightly", "lock_api/nightly"]
 deadlock_detection = ["parking_lot_core/deadlock_detection"]
