@@ -5,15 +5,13 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use spinwait::SpinWait;
-use std::cell::Cell;
-use std::mem;
-#[cfg(not(has_localkey_try_with))]
-use std::panic;
-use std::ptr;
-use std::sync::atomic::{fence, AtomicUsize, Ordering};
-use std::thread::LocalKey;
-use thread_parker::ThreadParker;
+use crate::spinwait::SpinWait;
+use crate::thread_parker::ThreadParker;
+use core::{
+    cell::Cell,
+    mem, ptr,
+    sync::atomic::{fence, AtomicUsize, Ordering},
+};
 
 struct ThreadData {
     parker: ThreadParker,
@@ -54,23 +52,12 @@ fn with_thread_data<F, T>(f: F) -> T
 where
     F: FnOnce(&ThreadData) -> T,
 {
-    // Try to read from thread-local storage, but return None if the TLS has
-    // already been destroyed.
-    #[cfg(has_localkey_try_with)]
-    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
-        key.try_with(|x| x as *const ThreadData).ok()
-    }
-    #[cfg(not(has_localkey_try_with))]
-    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
-        panic::catch_unwind(|| key.with(|x| x as *const ThreadData)).ok()
-    }
-
     let mut thread_data_ptr = ptr::null();
     // If ThreadData is expensive to construct, then we want to use a cached
     // version in thread-local storage if possible.
     if !ThreadParker::IS_CHEAP_TO_CONSTRUCT {
         thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
-        if let Some(tls_thread_data) = try_get_tls(&THREAD_DATA) {
+        if let Ok(tls_thread_data) = THREAD_DATA.try_with(|x| x as *const ThreadData) {
             thread_data_ptr = tls_thread_data;
         }
     }

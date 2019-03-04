@@ -40,13 +40,13 @@ pub(crate) use parking_lot_core::deadlock::{acquire_resource, release_resource};
 #[cfg(test)]
 #[cfg(feature = "deadlock_detection")]
 mod tests {
+    use crate::{Mutex, ReentrantMutex, RwLock};
     use std::sync::{Arc, Barrier};
     use std::thread::{self, sleep};
     use std::time::Duration;
-    use {Mutex, ReentrantMutex, RwLock};
 
     // We need to serialize these tests since deadlock detection uses global state
-    lazy_static! {
+    lazy_static::lazy_static! {
         static ref DEADLOCK_DETECTION_LOCK: Mutex<()> = Mutex::new(());
     }
 

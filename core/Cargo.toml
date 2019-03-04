@@ -1,12 +1,13 @@
 [package]
 name = "parking_lot_core"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 description = "An advanced API for creating custom synchronization primitives."
 license = "Apache-2.0/MIT"
 repository = "https://github.com/Amanieu/parking_lot"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 categories = ["concurrency"]
+edition = "2018"
 
 [dependencies]
 smallvec = "0.6"
@@ -25,6 +26,3 @@ winapi = { version = "0.3", features = ["winnt", "ntstatus", "minwindef",
 [features]
 nightly = []
 deadlock_detection = ["petgraph", "thread-id", "backtrace"]
-
-[build-dependencies]
-rustc_version = "0.2"

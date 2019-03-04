@@ -85,13 +85,11 @@
 
 #![no_std]
 #![warn(missing_docs)]
+#![warn(rust_2018_idioms)]
 #![cfg_attr(feature = "nightly", feature(const_fn))]
 
 #[macro_use]
 extern crate scopeguard;
-
-#[cfg(feature = "owning_ref")]
-extern crate owning_ref;
 
 /// Marker type which indicates that the Guard type for a lock is `Send`.
 pub struct GuardSend(());
@@ -100,10 +98,10 @@ pub struct GuardSend(());
 pub struct GuardNoSend(*mut ());
 
 mod mutex;
-pub use mutex::*;
+pub use crate::mutex::*;
 
 mod remutex;
-pub use remutex::*;
+pub use crate::remutex::*;
 
 mod rwlock;
-pub use rwlock::*;
+pub use crate::rwlock::*;

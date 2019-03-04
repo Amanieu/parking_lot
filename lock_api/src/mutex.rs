@@ -127,7 +127,7 @@ impl<R: RawMutex, T> Mutex<R, T> {
 
 impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     #[inline]
-    fn guard(&self) -> MutexGuard<R, T> {
+    fn guard(&self) -> MutexGuard<'_, R, T> {
         MutexGuard {
             mutex: self,
             marker: PhantomData,
@@ -144,7 +144,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// Attempts to lock a mutex in the thread which already holds the lock will
     /// result in a deadlock.
     #[inline]
-    pub fn lock(&self) -> MutexGuard<R, T> {
+    pub fn lock(&self) -> MutexGuard<'_, R, T> {
         self.raw.lock();
         self.guard()
     }
@@ -157,7 +157,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     ///
     /// This function does not block.
     #[inline]
-    pub fn try_lock(&self) -> Option<MutexGuard<R, T>> {
+    pub fn try_lock(&self) -> Option<MutexGuard<'_, R, T>> {
         if self.raw.try_lock() {
             Some(self.guard())
         } else {
@@ -230,7 +230,7 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
     /// be unlocked when the guard is dropped.
     #[inline]
-    pub fn try_lock_for(&self, timeout: R::Duration) -> Option<MutexGuard<R, T>> {
+    pub fn try_lock_for(&self, timeout: R::Duration) -> Option<MutexGuard<'_, R, T>> {
         if self.raw.try_lock_for(timeout) {
             Some(self.guard())
         } else {
@@ -244,7 +244,7 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
     /// be unlocked when the guard is dropped.
     #[inline]
-    pub fn try_lock_until(&self, timeout: R::Instant) -> Option<MutexGuard<R, T>> {
+    pub fn try_lock_until(&self, timeout: R::Instant) -> Option<MutexGuard<'_, R, T>> {
         if self.raw.try_lock_until(timeout) {
             Some(self.guard())
         } else {
@@ -268,13 +268,13 @@ impl<R: RawMutex, T> From<T> for Mutex<R, T> {
 }
 
 impl<R: RawMutex, T: ?Sized + fmt::Debug> fmt::Debug for Mutex<R, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.try_lock() {
             Some(guard) => f.debug_struct("Mutex").field("data", &&*guard).finish(),
             None => {
                 struct LockedPlaceholder;
                 impl fmt::Debug for LockedPlaceholder {
-                    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                         f.write_str("<locked>")
                     }
                 }
@@ -293,7 +293,7 @@ impl<R: RawMutex, T: ?Sized + fmt::Debug> fmt::Debug for Mutex<R, T> {
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` and `DerefMut` implementations.
 #[must_use = "if unused the Mutex will immediately unlock"]
-pub struct MutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
+pub struct MutexGuard<'a, R: RawMutex, T: ?Sized> {
     mutex: &'a Mutex<R, T>,
     marker: PhantomData<(&'a mut T, R::GuardMarker)>,
 }
@@ -440,13 +440,13 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MutexGuard<'a, R, T> {
 }
 
 impl<'a, R: RawMutex + 'a, T: fmt::Debug + ?Sized + 'a> fmt::Debug for MutexGuard<'a, R, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
 impl<'a, R: RawMutex + 'a, T: fmt::Display + ?Sized + 'a> fmt::Display for MutexGuard<'a, R, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
@@ -462,7 +462,7 @@ unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
 #[must_use = "if unused the Mutex will immediately unlock"]
-pub struct MappedMutexGuard<'a, R: RawMutex + 'a, T: ?Sized + 'a> {
+pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized> {
     raw: &'a R,
     data: *mut T,
     marker: PhantomData<&'a mut T>,
@@ -572,7 +572,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MappedMutexGuard<'a, R, T> {
 }
 
 impl<'a, R: RawMutex + 'a, T: fmt::Debug + ?Sized + 'a> fmt::Debug for MappedMutexGuard<'a, R, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
@@ -580,7 +580,7 @@ impl<'a, R: RawMutex + 'a, T: fmt::Debug + ?Sized + 'a> fmt::Debug for MappedMut
 impl<'a, R: RawMutex + 'a, T: fmt::Display + ?Sized + 'a> fmt::Display
     for MappedMutexGuard<'a, R, T>
 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }

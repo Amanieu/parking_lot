@@ -5,19 +5,17 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use rand::rngs::SmallRng;
-use rand::{FromEntropy, Rng};
+use crate::thread_parker::ThreadParker;
+use crate::util::UncheckedOptionExt;
+use crate::word_lock::WordLock;
+use core::{
+    cell::{Cell, UnsafeCell},
+    ptr,
+    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
+};
+use rand::{rngs::SmallRng, FromEntropy, Rng};
 use smallvec::SmallVec;
-use std::cell::{Cell, UnsafeCell};
-#[cfg(not(has_localkey_try_with))]
-use std::panic;
-use std::ptr;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-use std::thread::LocalKey;
 use std::time::{Duration, Instant};
-use thread_parker::ThreadParker;
-use util::UncheckedOptionExt;
-use word_lock::WordLock;
 
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
 static HASHTABLE: AtomicPtr<HashTable> = AtomicPtr::new(ptr::null_mut());
@@ -50,7 +48,7 @@ impl HashTable {
     }
 }
 
-#[cfg_attr(has_repr_align, repr(align(64)))]
+#[repr(align(64))]
 struct Bucket {
     // Lock protecting the queue
     mutex: WordLock,
@@ -61,12 +59,6 @@ struct Bucket {
 
     // Next time at which point be_fair should be set
     fair_timeout: UnsafeCell<FairTimeout>,
-
-    // Padding to avoid false sharing between buckets. Ideally we would just
-    // align the bucket structure to 64 bytes, but Rust doesn't support that
-    // yet. Remove this field when dropping support for Rust < 1.25
-    #[cfg(not(has_repr_align))]
-    _padding: [u8; 64],
 }
 
 impl Bucket {
@@ -77,8 +69,6 @@ impl Bucket {
             queue_head: Cell::new(ptr::null()),
             queue_tail: Cell::new(ptr::null()),
             fair_timeout: UnsafeCell::new(FairTimeout::new()),
-            #[cfg(not(has_repr_align))]
-            _padding: unsafe { ::std::mem::uninitialized() },
         }
     }
 }
@@ -173,24 +163,14 @@ fn with_thread_data<F, T>(f: F) -> T
 where
     F: FnOnce(&ThreadData) -> T,
 {
-    // Try to read from thread-local storage, but return None if the TLS has
-    // already been destroyed.
-    #[cfg(has_localkey_try_with)]
-    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
-        key.try_with(|x| x as *const ThreadData).ok()
-    }
-    #[cfg(not(has_localkey_try_with))]
-    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
-        panic::catch_unwind(|| key.with(|x| x as *const ThreadData)).ok()
-    }
-
     // Unlike word_lock::ThreadData, parking_lot::ThreadData is always expensive
     // to construct. Try to use a thread-local version if possible. Otherwise just
     // create a ThreadData on the stack
     let mut thread_data_storage = None;
     thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
-    let thread_data_ptr = try_get_tls(&THREAD_DATA)
-        .unwrap_or_else(|| thread_data_storage.get_or_insert_with(ThreadData::new));
+    let thread_data_ptr = THREAD_DATA
+        .try_with(|x| x as *const ThreadData)
+        .unwrap_or_else(|_| thread_data_storage.get_or_insert_with(ThreadData::new));
 
     f(unsafe { &*thread_data_ptr })
 }
@@ -1106,6 +1086,7 @@ pub mod deadlock {
 #[cfg(feature = "deadlock_detection")]
 mod deadlock_impl {
     use super::{get_hashtable, lock_bucket, with_thread_data, ThreadData, NUM_THREADS};
+    use crate::word_lock::WordLock;
     use backtrace::Backtrace;
     use petgraph;
     use petgraph::graphmap::DiGraphMap;
@@ -1114,7 +1095,6 @@ mod deadlock_impl {
     use std::sync::atomic::Ordering;
     use std::sync::mpsc;
     use thread_id;
-    use word_lock::WordLock;
 
     /// Representation of a deadlocked thread
     pub struct DeadlockedThread {

@@ -5,10 +5,11 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::ptr;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use core::{
+    ptr,
+    sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
+};
 use std::time::Instant;
-use winapi;
 
 mod keyed_event;
 mod waitaddress;
