@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::thread_parker;
 use std::sync::atomic::spin_loop_hint;
-use thread_parker;
 
 // Wastes some CPU time for the given number of iterations,
 // using a hint to indicate to the CPU that we are spinning.

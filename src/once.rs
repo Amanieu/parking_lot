@@ -14,10 +14,10 @@ type U8 = u8;
 use std::sync::atomic::AtomicUsize as AtomicU8;
 #[cfg(not(feature = "nightly"))]
 type U8 = usize;
+use crate::util::UncheckedOptionExt;
 use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 use std::fmt;
 use std::mem;
-use util::UncheckedOptionExt;
 
 const DONE_BIT: U8 = 1;
 const POISON_BIT: U8 = 2;
@@ -221,7 +221,7 @@ impl Once {
     // without some allocation overhead.
     #[cold]
     #[inline(never)]
-    fn call_once_slow(&self, ignore_poison: bool, f: &mut FnMut(OnceState)) {
+    fn call_once_slow(&self, ignore_poison: bool, f: &mut dyn FnMut(OnceState)) {
         let mut spinwait = SpinWait::new();
         let mut state = self.0.load(Ordering::Relaxed);
         loop {
@@ -342,7 +342,7 @@ impl Default for Once {
 }
 
 impl fmt::Debug for Once {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Once")
             .field("state", &self.state())
             .finish()
@@ -351,10 +351,10 @@ impl fmt::Debug for Once {
 
 #[cfg(test)]
 mod tests {
+    use crate::{Once, ONCE_INIT};
     use std::panic;
     use std::sync::mpsc::channel;
     use std::thread;
-    use {Once, ONCE_INIT};
 
     #[test]
     fn smoke_once() {

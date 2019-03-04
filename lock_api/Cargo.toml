@@ -7,6 +7,7 @@ license = "Apache-2.0/MIT"
 repository = "https://github.com/Amanieu/parking_lot"
 keywords = ["mutex", "rwlock", "lock", "no_std"]
 categories = ["concurrency", "no-std"]
+edition = "2018"
 
 [dependencies]
 scopeguard = { version = "1.0", default-features = false }

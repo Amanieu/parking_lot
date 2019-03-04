@@ -8,7 +8,6 @@
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::time::Instant;
-use winapi;
 
 mod keyed_event;
 mod waitaddress;

@@ -5,15 +5,15 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use deadlock;
+use crate::deadlock;
+use crate::mutex::MutexGuard;
+use crate::raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
+use crate::util;
 use lock_api::RawMutex as RawMutexTrait;
-use mutex::MutexGuard;
 use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
-use raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::time::{Duration, Instant};
 use std::{fmt, ptr};
-use util;
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.
@@ -263,7 +263,7 @@ impl Condvar {
     /// This function will panic if another thread is waiting on the `Condvar`
     /// with a different `Mutex` object.
     #[inline]
-    pub fn wait<T: ?Sized>(&self, mutex_guard: &mut MutexGuard<T>) {
+    pub fn wait<T: ?Sized>(&self, mutex_guard: &mut MutexGuard<'_, T>) {
         self.wait_until_internal(unsafe { MutexGuard::mutex(mutex_guard).raw() }, None);
     }
 
@@ -293,7 +293,7 @@ impl Condvar {
     #[inline]
     pub fn wait_until<T: ?Sized>(
         &self,
-        mutex_guard: &mut MutexGuard<T>,
+        mutex_guard: &mut MutexGuard<'_, T>,
         timeout: Instant,
     ) -> WaitTimeoutResult {
         self.wait_until_internal(
@@ -397,7 +397,7 @@ impl Condvar {
     #[inline]
     pub fn wait_for<T: ?Sized>(
         &self,
-        mutex_guard: &mut MutexGuard<T>,
+        mutex_guard: &mut MutexGuard<'_, T>,
         timeout: Duration,
     ) -> WaitTimeoutResult {
         let deadline = util::to_deadline(timeout);
@@ -413,18 +413,18 @@ impl Default for Condvar {
 }
 
 impl fmt::Debug for Condvar {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.pad("Condvar { .. }")
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::{Condvar, Mutex, MutexGuard};
     use std::sync::mpsc::channel;
     use std::sync::Arc;
     use std::thread;
     use std::time::{Duration, Instant};
-    use {Condvar, Mutex};
 
     #[test]
     fn smoke() {
@@ -668,7 +668,7 @@ mod tests {
         let mut g = m.lock();
         while !c.notify_one() {
             // Wait for the thread to get into wait()
-            ::MutexGuard::bump(&mut g);
+            MutexGuard::bump(&mut g);
         }
         // The thread should have been requeued to the mutex, which we wake up now.
         drop(g);

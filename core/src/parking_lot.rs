@@ -5,6 +5,9 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::thread_parker::ThreadParker;
+use crate::util::UncheckedOptionExt;
+use crate::word_lock::WordLock;
 use rand::rngs::SmallRng;
 use rand::{FromEntropy, Rng};
 use smallvec::SmallVec;
@@ -12,9 +15,6 @@ use std::cell::{Cell, UnsafeCell};
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use thread_parker::ThreadParker;
-use util::UncheckedOptionExt;
-use word_lock::WordLock;
 
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
 static HASHTABLE: AtomicPtr<HashTable> = AtomicPtr::new(ptr::null_mut());
@@ -1085,6 +1085,7 @@ pub mod deadlock {
 #[cfg(feature = "deadlock_detection")]
 mod deadlock_impl {
     use super::{get_hashtable, lock_bucket, with_thread_data, ThreadData, NUM_THREADS};
+    use crate::word_lock::WordLock;
     use backtrace::Backtrace;
     use petgraph;
     use petgraph::graphmap::DiGraphMap;
@@ -1093,7 +1094,6 @@ mod deadlock_impl {
     use std::sync::atomic::Ordering;
     use std::sync::mpsc;
     use thread_id;
-    use word_lock::WordLock;
 
     /// Representation of a deadlocked thread
     pub struct DeadlockedThread {

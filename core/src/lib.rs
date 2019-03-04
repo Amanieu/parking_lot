@@ -43,22 +43,6 @@
     feature(integer_atomics)
 )]
 
-extern crate rand;
-extern crate smallvec;
-
-#[cfg(feature = "deadlock_detection")]
-extern crate backtrace;
-#[cfg(feature = "deadlock_detection")]
-extern crate petgraph;
-#[cfg(feature = "deadlock_detection")]
-extern crate thread_id;
-
-#[cfg(unix)]
-extern crate libc;
-
-#[cfg(windows)]
-extern crate winapi;
-
 #[cfg(all(feature = "nightly", target_os = "linux"))]
 #[path = "thread_parker/linux.rs"]
 mod thread_parker;
@@ -77,8 +61,10 @@ mod spinwait;
 mod util;
 mod word_lock;
 
-pub use parking_lot::deadlock;
-pub use parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
-pub use parking_lot::{FilterOp, ParkResult, ParkToken, RequeueOp, UnparkResult, UnparkToken};
-pub use parking_lot::{DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
-pub use spinwait::SpinWait;
+pub use self::parking_lot::deadlock;
+pub use self::parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
+pub use self::parking_lot::{
+    FilterOp, ParkResult, ParkToken, RequeueOp, UnparkResult, UnparkToken,
+};
+pub use self::parking_lot::{DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+pub use self::spinwait::SpinWait;

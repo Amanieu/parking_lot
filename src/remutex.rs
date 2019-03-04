@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::raw_mutex::RawMutex;
 use lock_api::{self, GetThreadId};
-use raw_mutex::RawMutex;
 
 /// Implementation of the `GetThreadId` trait for `lock_api::ReentrantMutex`.
 pub struct RawThreadId;
@@ -54,10 +54,10 @@ pub type MappedReentrantMutexGuard<'a, T> =
 
 #[cfg(test)]
 mod tests {
+    use crate::ReentrantMutex;
     use std::cell::RefCell;
     use std::sync::Arc;
     use std::thread;
-    use ReentrantMutex;
 
     #[test]
     fn smoke() {

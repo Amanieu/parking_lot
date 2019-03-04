@@ -5,12 +5,12 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use spinwait::SpinWait;
+use crate::spinwait::SpinWait;
+use crate::thread_parker::ThreadParker;
 use std::cell::Cell;
 use std::mem;
 use std::ptr;
 use std::sync::atomic::{fence, AtomicUsize, Ordering};
-use thread_parker::ThreadParker;
 
 struct ThreadData {
     parker: ThreadParker,

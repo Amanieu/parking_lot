@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::raw_mutex::RawMutex;
 use lock_api;
-use raw_mutex::RawMutex;
 
 /// A mutual exclusion primitive useful for protecting shared data
 ///
@@ -105,11 +105,11 @@ pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawMutex, T>;
 
 #[cfg(test)]
 mod tests {
+    use crate::{Condvar, Mutex};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::channel;
     use std::sync::Arc;
     use std::thread;
-    use {Condvar, Mutex};
 
     struct Packet<T>(Arc<(Mutex<T>, Condvar)>);
 

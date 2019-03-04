@@ -8,6 +8,7 @@ repository = "https://github.com/Amanieu/parking_lot"
 readme = "README.md"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 categories = ["concurrency"]
+edition = "2018"
 
 [dependencies]
 parking_lot_core = { path = "core", version = "0.4" }
