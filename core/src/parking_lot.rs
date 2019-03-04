@@ -9,11 +9,8 @@ use rand::rngs::SmallRng;
 use rand::{FromEntropy, Rng};
 use smallvec::SmallVec;
 use std::cell::{Cell, UnsafeCell};
-#[cfg(not(has_localkey_try_with))]
-use std::panic;
 use std::ptr;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
-use std::thread::LocalKey;
 use std::time::{Duration, Instant};
 use thread_parker::ThreadParker;
 use util::UncheckedOptionExt;
@@ -165,24 +162,14 @@ fn with_thread_data<F, T>(f: F) -> T
 where
     F: FnOnce(&ThreadData) -> T,
 {
-    // Try to read from thread-local storage, but return None if the TLS has
-    // already been destroyed.
-    #[cfg(has_localkey_try_with)]
-    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
-        key.try_with(|x| x as *const ThreadData).ok()
-    }
-    #[cfg(not(has_localkey_try_with))]
-    fn try_get_tls(key: &'static LocalKey<ThreadData>) -> Option<*const ThreadData> {
-        panic::catch_unwind(|| key.with(|x| x as *const ThreadData)).ok()
-    }
-
     // Unlike word_lock::ThreadData, parking_lot::ThreadData is always expensive
     // to construct. Try to use a thread-local version if possible. Otherwise just
     // create a ThreadData on the stack
     let mut thread_data_storage = None;
     thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
-    let thread_data_ptr = try_get_tls(&THREAD_DATA)
-        .unwrap_or_else(|| thread_data_storage.get_or_insert_with(ThreadData::new));
+    let thread_data_ptr = THREAD_DATA
+        .try_with(|x| x as *const ThreadData)
+        .unwrap_or_else(|_| thread_data_storage.get_or_insert_with(ThreadData::new));
 
     f(unsafe { &*thread_data_ptr })
 }

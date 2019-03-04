@@ -25,6 +25,3 @@ winapi = { version = "0.3", features = ["winnt", "ntstatus", "minwindef",
 [features]
 nightly = []
 deadlock_detection = ["petgraph", "thread-id", "backtrace"]
-
-[build-dependencies]
-rustc_version = "0.2"
