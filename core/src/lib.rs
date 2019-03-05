@@ -39,17 +39,28 @@
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
+#![cfg_attr(
+    all(target_vendor = "fortanix", target_env = "sgx"),
+    feature(sgx_platform)
+)]
 
 #[cfg(all(feature = "nightly", target_os = "linux"))]
 #[path = "thread_parker/linux.rs"]
 mod thread_parker;
+
 #[cfg(all(unix, not(all(feature = "nightly", target_os = "linux"))))]
 #[path = "thread_parker/unix.rs"]
 mod thread_parker;
+
 #[cfg(windows)]
 #[path = "thread_parker/windows/mod.rs"]
 mod thread_parker;
-#[cfg(not(any(windows, unix)))]
+
+#[cfg(all(target_vendor = "fortanix", target_env = "sgx"))]
+#[path = "thread_parker/sgx.rs"]
+mod thread_parker;
+
+#[cfg(not(any(windows, unix, all(target_vendor = "fortanix", target_env = "sgx"))))]
 #[path = "thread_parker/generic.rs"]
 mod thread_parker;
 
