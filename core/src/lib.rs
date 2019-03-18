@@ -40,7 +40,7 @@
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
 #![cfg_attr(
-    all(target_vendor = "fortanix", target_env = "sgx"),
+    all(target_env = "sgx", target_vendor = "fortanix"),
     feature(sgx_platform)
 )]
 
@@ -56,11 +56,11 @@ mod thread_parker;
 #[path = "thread_parker/windows/mod.rs"]
 mod thread_parker;
 
-#[cfg(all(target_vendor = "fortanix", target_env = "sgx"))]
+#[cfg(all(target_env = "sgx", target_vendor = "fortanix"))]
 #[path = "thread_parker/sgx.rs"]
 mod thread_parker;
 
-#[cfg(not(any(windows, unix, all(target_vendor = "fortanix", target_env = "sgx"))))]
+#[cfg(not(any(windows, unix, all(target_env = "sgx", target_vendor = "fortanix"))))]
 #[path = "thread_parker/generic.rs"]
 mod thread_parker;
 
