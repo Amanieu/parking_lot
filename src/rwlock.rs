@@ -533,7 +533,15 @@ mod tests {
         thread::spawn(move || {
             let _lock = arc2.write();
         });
-        thread::sleep(Duration::from_millis(100));
+
+        if cfg!(not(all(target_env = "sgx", target_vendor = "fortanix"))) {
+            thread::sleep(Duration::from_millis(100));
+        } else {
+            // FIXME: https://github.com/fortanix/rust-sgx/issues/31
+            for _ in 0..100 {
+                thread::yield_now();
+            }
+        }
 
         // A normal read would block here since there is a pending writer
         let _lock2 = arc.read_recursive();
