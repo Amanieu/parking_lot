@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, Ordering};
 use std::{
     os::fortanix_sgx::{
         thread::current as current_tcs,
@@ -62,16 +62,9 @@ impl ThreadParker {
     // should be called after it has been added to the queue, after unlocking
     // the queue. Returns true if we were unparked and false if we timed out.
     #[inline]
-    pub fn park_until(&self, timeout: Instant) -> bool {
-        while self.parked.load(Ordering::Acquire) {
-            if Instant::now() >= timeout {
-                return false;
-            }
-            // SGX currently does not support waiting for an event with a
-            // timeout. So we just implement this as a spin loop.
-            spin_loop_hint();
-        }
-        true
+    pub fn park_until(&self, _timeout: Instant) -> bool {
+        // FIXME: https://github.com/fortanix/rust-sgx/issues/31
+        panic!("timeout not supported in SGX");
     }
 
     // Locks the parker to prevent the target thread from exiting. This is
