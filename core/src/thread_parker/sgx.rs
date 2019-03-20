@@ -89,9 +89,14 @@ impl UnparkHandle {
     // released to avoid blocking the queue for too long.
     #[inline]
     pub fn unpark(self) {
-        if let Err(error) = usercalls::send(EV_UNPARK, Some(self.0)) {
-            if error.kind() != io::ErrorKind::InvalidInput {
-                panic!("send returned an unexpected error: {:?}", error);
+        let result = usercalls::send(EV_UNPARK, Some(self.0));
+        if cfg!(debug_assertions) {
+            if let Err(error) = result {
+                // `InvalidInput` may be returned if the thread we send to has
+                // already been unparked and exited.
+                if error.kind() != io::ErrorKind::InvalidInput {
+                    panic!("send returned an unexpected error: {:?}", error);
+                }
             }
         }
     }
