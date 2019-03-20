@@ -7,6 +7,7 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use std::{
+    io,
     os::fortanix_sgx::{
         thread::current as current_tcs,
         usercalls::{
@@ -88,7 +89,11 @@ impl UnparkHandle {
     // released to avoid blocking the queue for too long.
     #[inline]
     pub fn unpark(self) {
-        usercalls::send(EV_UNPARK, Some(self.0)).expect("send returned error");
+        if let Err(error) = usercalls::send(EV_UNPARK, Some(self.0)) {
+            if error.kind() != io::ErrorKind::InvalidInput {
+                panic!("send returned an unexpected error: {:?}", error);
+            }
+        }
     }
 }
 
