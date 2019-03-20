@@ -40,11 +40,16 @@
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
 #![cfg_attr(
-    all(target_env = "sgx", target_vendor = "fortanix"),
+    all(
+        not(feature = "i-am-libstd"),
+        target_env = "sgx",
+        target_vendor = "fortanix"
+    ),
     feature(sgx_platform)
 )]
 #![cfg_attr(
     all(
+        not(feature = "i-am-libstd"),
         feature = "nightly",
         target_arch = "wasm32",
         target_feature = "atomics"
