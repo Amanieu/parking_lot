@@ -54,8 +54,8 @@ impl ThreadParker {
     #[inline]
     pub fn park(&self) {
         while self.parked.load(Ordering::Acquire) {
-            let res = usercalls::wait(EV_UNPARK, WAIT_INDEFINITE).expect("wait returned error");
-            assert_eq!(res & EV_UNPARK, EV_UNPARK);
+            let result = usercalls::wait(EV_UNPARK, WAIT_INDEFINITE);
+            debug_assert_eq!(result.expect("wait returned error") & EV_UNPARK, EV_UNPARK);
         }
     }
 
