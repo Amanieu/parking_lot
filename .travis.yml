@@ -11,6 +11,9 @@ before_script:
 - |
   pip install 'travis-cargo<0.2' --user &&
   export PATH=$HOME/.local/bin:$PATH
+- if [ "${TRAVIS_RUST_VERSION}" = "nightly" ]; then
+    rustup target add x86_64-fortanix-unknown-sgx;
+  fi
 
 script:
 - cd core;
@@ -22,6 +25,7 @@ script:
 - travis-cargo test
 - travis-cargo --only stable test -- --features=deadlock_detection
 - travis-cargo --only beta test -- --features=deadlock_detection
+- travis-cargo --only nightly test -- --all --no-run --target x86_64-fortanix-unknown-sgx
 - travis-cargo --only nightly doc -- --all-features --no-deps -p parking_lot -p parking_lot_core -p lock_api
 - cd benchmark
 - travis-cargo build
