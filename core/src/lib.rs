@@ -43,6 +43,14 @@
     all(target_env = "sgx", target_vendor = "fortanix"),
     feature(sgx_platform)
 )]
+#![cfg_attr(
+    all(
+        feature = "nightly",
+        target_arch = "wasm32",
+        target_feature = "atomics"
+    ),
+    feature(checked_duration_since, stdsimd)
+)]
 
 #[cfg(all(feature = "nightly", target_os = "linux"))]
 #[path = "thread_parker/linux.rs"]
@@ -60,7 +68,24 @@ mod thread_parker;
 #[path = "thread_parker/sgx.rs"]
 mod thread_parker;
 
-#[cfg(not(any(windows, unix, all(target_env = "sgx", target_vendor = "fortanix"))))]
+#[cfg(all(
+    feature = "nightly",
+    target_arch = "wasm32",
+    target_feature = "atomics"
+))]
+#[path = "thread_parker/wasm.rs"]
+mod thread_parker;
+
+#[cfg(not(any(
+    windows,
+    unix,
+    all(target_env = "sgx", target_vendor = "fortanix"),
+    all(
+        feature = "nightly",
+        target_arch = "wasm32",
+        target_feature = "atomics",
+    )
+)))]
 #[path = "thread_parker/generic.rs"]
 mod thread_parker;
 
