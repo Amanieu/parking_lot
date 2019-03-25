@@ -52,42 +52,33 @@
     feature(checked_duration_since, stdsimd)
 )]
 
-#[cfg(all(feature = "nightly", target_os = "linux"))]
-#[path = "thread_parker/linux.rs"]
-mod thread_parker;
+use cfg_if::cfg_if;
 
-#[cfg(all(unix, not(all(feature = "nightly", target_os = "linux"))))]
-#[path = "thread_parker/unix.rs"]
-mod thread_parker;
-
-#[cfg(windows)]
-#[path = "thread_parker/windows/mod.rs"]
-mod thread_parker;
-
-#[cfg(all(target_env = "sgx", target_vendor = "fortanix"))]
-#[path = "thread_parker/sgx.rs"]
-mod thread_parker;
-
-#[cfg(all(
-    feature = "nightly",
-    target_arch = "wasm32",
-    target_feature = "atomics"
-))]
-#[path = "thread_parker/wasm.rs"]
-mod thread_parker;
-
-#[cfg(not(any(
-    windows,
-    unix,
-    all(target_env = "sgx", target_vendor = "fortanix"),
-    all(
+cfg_if! {
+    if #[cfg(all(feature = "nightly", target_os = "linux"))] {
+        #[path = "thread_parker/linux.rs"]
+        mod thread_parker;
+    } else if #[cfg(unix)] {
+        #[path = "thread_parker/unix.rs"]
+        mod thread_parker;
+    } else if #[cfg(windows)] {
+        #[path = "thread_parker/windows/mod.rs"]
+        mod thread_parker;
+    } else if #[cfg(all(target_env = "sgx", target_vendor = "fortanix"))] {
+        #[path = "thread_parker/sgx.rs"]
+        mod thread_parker;
+    } else if #[cfg(all(
         feature = "nightly",
         target_arch = "wasm32",
-        target_feature = "atomics",
-    )
-)))]
-#[path = "thread_parker/generic.rs"]
-mod thread_parker;
+        target_feature = "atomics"
+    ))] {
+        #[path = "thread_parker/wasm.rs"]
+        mod thread_parker;
+    } else {
+        #[path = "thread_parker/generic.rs"]
+        mod thread_parker;
+    }
+}
 
 mod parking_lot;
 mod spinwait;
