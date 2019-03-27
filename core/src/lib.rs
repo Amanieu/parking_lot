@@ -97,6 +97,8 @@ cfg_if! {
     } else if #[cfg(all(any(feature = "nightly", feature = "i-am-libstd"), target_os = "cloudabi"))] {
         #[path = "thread_parker/cloudabi.rs"]
         mod thread_parker;
+    } else if #[cfg(all(feature = "i-am-libstd", not(target_arch = "wasm32")))] {
+        compile_error!("Not allowed to fall back to generic spin lock based thread parker");
     } else {
         #[path = "thread_parker/generic.rs"]
         mod thread_parker;
