@@ -35,9 +35,9 @@ unsafe fn unreachable() -> ! {
 
 #[inline]
 pub fn to_deadline(timeout: Duration) -> Option<Instant> {
-    #[cfg(has_checked_instant)]
+    #[cfg(any(has_checked_instant, feature = "i-am-libstd"))]
     let deadline = Instant::now().checked_add(timeout);
-    #[cfg(not(has_checked_instant))]
+    #[cfg(not(any(has_checked_instant, feature = "i-am-libstd")))]
     let deadline = Some(Instant::now() + timeout);
 
     deadline

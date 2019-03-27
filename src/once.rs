@@ -6,9 +6,9 @@
 // copied, modified, or distributed except according to those terms.
 
 use super::util::UncheckedOptionExt;
-#[cfg(has_sized_atomics)]
+#[cfg(any(has_sized_atomics, feature = "i-am-libstd"))]
 use core::sync::atomic::AtomicU8;
-#[cfg(not(has_sized_atomics))]
+#[cfg(not(any(has_sized_atomics, feature = "i-am-libstd")))]
 use core::sync::atomic::AtomicUsize as AtomicU8;
 use core::{
     fmt, mem,
@@ -16,9 +16,9 @@ use core::{
 };
 use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 
-#[cfg(has_sized_atomics)]
+#[cfg(any(has_sized_atomics, feature = "i-am-libstd"))]
 type U8 = u8;
-#[cfg(not(has_sized_atomics))]
+#[cfg(not(any(has_sized_atomics, feature = "i-am-libstd")))]
 type U8 = usize;
 
 const DONE_BIT: U8 = 1;
