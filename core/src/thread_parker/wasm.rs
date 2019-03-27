@@ -7,18 +7,17 @@
 
 use core::{
     arch::wasm32,
-    mem,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::atomic::{AtomicI32, Ordering},
 };
 use std::{convert::TryFrom, thread, time::Instant};
 
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {
-    parked: AtomicUsize,
+    parked: AtomicI32,
 }
 
-const UNPARKED: usize = 0;
-const PARKED: usize = 1;
+const UNPARKED: i32 = 0;
+const PARKED: i32 = 1;
 
 impl ThreadParker {
     pub const IS_CHEAP_TO_CONSTRUCT: bool = true;
@@ -26,7 +25,7 @@ impl ThreadParker {
     #[inline]
     pub fn new() -> ThreadParker {
         ThreadParker {
-            parked: AtomicUsize::new(UNPARKED),
+            parked: AtomicI32::new(UNPARKED),
         }
     }
 
@@ -48,16 +47,10 @@ impl ThreadParker {
     #[inline]
     pub fn park(&self) {
         while self.parked.load(Ordering::Acquire) == PARKED {
-            let val = unsafe {
-                wasm32::i32_atomic_wait(
-                    ptr(&self.parked),
-                    PARKED as i32, // we expect our thread is parked
-                    -1,            // wait infinitely
-                )
-            };
+            let r = unsafe { wasm32::i32_atomic_wait(self.ptr(), PARKED, -1) };
             // we should have either woken up (0) or got a not-equal due to a
             // race (1). We should never time out (2)
-            debug_assert!(val == 0 || val == 1);
+            debug_assert!(r == 0 || r == 1);
         }
     }
 
@@ -69,9 +62,8 @@ impl ThreadParker {
         while self.parked.load(Ordering::Acquire) == PARKED {
             if let Some(left) = timeout.checked_duration_since(Instant::now()) {
                 let nanos_left = i64::try_from(left.as_nanos()).unwrap_or(i64::max_value());
-                unsafe {
-                    wasm32::i32_atomic_wait(ptr(&self.parked), PARKED as i32, nanos_left);
-                }
+                let r = unsafe { wasm32::i32_atomic_wait(self.ptr(), PARKED, nanos_left) };
+                debug_assert!(r == 0 || r == 1 || r == 2);
             } else {
                 return false;
             }
@@ -83,33 +75,31 @@ impl ThreadParker {
     // necessary to ensure that thread-local ThreadData objects remain valid.
     // This should be called while holding the queue lock.
     #[inline]
-    pub fn unpark_lock(&self) -> UnparkHandle<'_> {
+    pub fn unpark_lock(&self) -> UnparkHandle {
         // We don't need to lock anything, just clear the state
         self.parked.store(UNPARKED, Ordering::Release);
-        UnparkHandle(&self.parked)
+        UnparkHandle(self.ptr())
+    }
+
+    #[inline]
+    fn ptr(&self) -> *mut i32 {
+        &self.parked as *const AtomicI32 as *mut i32
     }
 }
 
 // Handle for a thread that is about to be unparked. We need to mark the thread
 // as unparked while holding the queue lock, but we delay the actual unparking
 // until after the queue lock is released.
-pub struct UnparkHandle<'a>(&'a AtomicUsize);
+pub struct UnparkHandle(*mut i32);
 
-impl<'a> UnparkHandle<'a> {
+impl UnparkHandle {
     // Wakes up the parked thread. This should be called after the queue lock is
     // released to avoid blocking the queue for too long.
     #[inline]
     pub fn unpark(self) {
-        unsafe {
-            wasm32::atomic_notify(ptr(self.0), 1);
-        }
+        let num_notified = unsafe { wasm32::atomic_notify(self.0 as *mut i32, 1) };
+        debug_assert!(num_notified == 0 || num_notified == 1);
     }
-}
-
-#[inline]
-fn ptr(i: &AtomicUsize) -> *mut i32 {
-    debug_assert_eq!(mem::size_of::<usize>(), mem::size_of::<i32>());
-    i as *const AtomicUsize as *mut isize as *mut i32
 }
 
 #[inline]
