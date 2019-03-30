@@ -157,7 +157,7 @@ impl Condvar {
     }
 
     /// Waits for a signal on the condvar.
-    /// Returns false if it times out before a signal was received.
+    /// Returns false if it times out before anyone notified us.
     #[inline]
     pub fn wait_timeout(&self, lock: &LockGuard<'_>, timeout: abi::timestamp) -> bool {
         unsafe {
@@ -202,7 +202,7 @@ impl Condvar {
     }
 
     #[inline]
-    pub fn signal(&self) {
+    pub fn notify(&self) {
         let ret = unsafe { abi::condvar_signal(self.ptr(), abi::scope::PRIVATE, 1) };
         debug_assert_eq!(ret, abi::errno::SUCCESS);
     }
@@ -314,7 +314,7 @@ impl UnparkHandle<'_> {
             // We notify while holding the lock here to avoid races with the target
             // thread. In particular, the thread could exit after we unlock the
             // mutex, which would make the condvar access invalid memory.
-            (*self.thread_parker).condvar.signal();
+            (*self.thread_parker).condvar.notify();
         }
     }
 }
