@@ -51,6 +51,10 @@
     ),
     feature(checked_duration_since, stdsimd)
 )]
+#![cfg_attr(
+    all(feature = "nightly", target_os = "cloudabi",),
+    feature(thread_local, checked_duration_since)
+)]
 
 use cfg_if::cfg_if;
 
@@ -76,6 +80,9 @@ cfg_if! {
         target_feature = "atomics"
     ))] {
         #[path = "thread_parker/wasm.rs"]
+        mod thread_parker;
+    } else if #[cfg(all(feature = "nightly", target_os = "cloudabi"))] {
+        #[path = "thread_parker/cloudabi.rs"]
         mod thread_parker;
     } else {
         #[path = "thread_parker/generic.rs"]

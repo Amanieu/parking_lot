@@ -23,6 +23,9 @@ libc = "0.2.27"
 [target.'cfg(target_os = "redox")'.dependencies]
 redox_syscall = "0.1"
 
+[target.'cfg(target_os = "cloudabi")'.dependencies]
+cloudabi = "0.0.3"
+
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winnt", "ntstatus", "minwindef",
     "winerror", "winbase", "errhandlingapi", "handleapi"] }
