@@ -5,8 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use std::env;
-use std::process;
+use std::{env, process};
 
 #[derive(Copy, Clone)]
 pub struct ArgRange {
