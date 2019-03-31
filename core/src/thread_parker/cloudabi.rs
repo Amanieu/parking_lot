@@ -5,7 +5,10 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+#[cfg(not(feature = "i-am-libstd"))]
 use cloudabi as abi;
+#[cfg(feature = "i-am-libstd")]
+use crate::sys::abi;
 use core::{
     cell::Cell,
     mem,
