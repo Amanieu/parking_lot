@@ -64,6 +64,9 @@ cfg_if! {
     } else if #[cfg(windows)] {
         #[path = "thread_parker/windows/mod.rs"]
         mod thread_parker;
+    } else if #[cfg(all(feature = "nightly", target_os = "redox"))] {
+        #[path = "thread_parker/redox.rs"]
+        mod thread_parker;
     } else if #[cfg(all(target_env = "sgx", target_vendor = "fortanix"))] {
         #[path = "thread_parker/sgx.rs"]
         mod thread_parker;
