@@ -5,18 +5,19 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-extern crate libc;
-extern crate parking_lot;
-
 mod args;
-use args::ArgRange;
+use crate::args::ArgRange;
 
 #[cfg(unix)]
 use std::cell::UnsafeCell;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Barrier};
-use std::thread;
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Barrier,
+    },
+    thread,
+    time::Duration,
+};
 
 trait Mutex<T> {
     fn new(v: T) -> Self;

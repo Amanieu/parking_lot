@@ -2,6 +2,7 @@
 name = "parking_lot-benchmark"
 version = "0.0.0"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
+edition = "2018"
 
 [dependencies]
 parking_lot = {path = ".."}
