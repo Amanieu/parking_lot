@@ -19,6 +19,15 @@ use super::libstd::{
 };
 use core::sync::atomic::{AtomicBool, Ordering};
 
+macro_rules! abort {
+    ($($t:tt)*) => {{
+        #[cfg(not(feature = "i-am-libstd"))]
+        std::process::abort();
+        #[cfg(feature = "i-am-libstd")]
+        rtabort!($($t)*);
+    }}
+}
+
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {
     parked: AtomicBool,
@@ -55,7 +64,10 @@ impl ThreadParker {
     pub fn park(&self) {
         while self.parked.load(Ordering::Acquire) {
             let result = usercalls::wait(EV_UNPARK, WAIT_INDEFINITE);
-            debug_assert_eq!(result.expect("wait returned error") & EV_UNPARK, EV_UNPARK);
+            match result.map(|eventset| eventset & EV_UNPARK) {
+                Ok(EV_UNPARK) => {}
+                _ => abort!("usercall wait returned an invalid value"),
+            }
         }
     }
 
@@ -65,7 +77,7 @@ impl ThreadParker {
     #[inline]
     pub fn park_until(&self, _timeout: Instant) -> bool {
         // FIXME: https://github.com/fortanix/rust-sgx/issues/31
-        panic!("timeout not supported in SGX");
+        abort!("timeout not supported in SGX");
     }
 
     // Locks the parker to prevent the target thread from exiting. This is
@@ -90,13 +102,11 @@ impl UnparkHandle {
     #[inline]
     pub fn unpark(self) {
         let result = usercalls::send(EV_UNPARK, Some(self.0));
-        if cfg!(debug_assertions) {
-            if let Err(error) = result {
-                // `InvalidInput` may be returned if the thread we send to has
-                // already been unparked and exited.
-                if error.kind() != io::ErrorKind::InvalidInput {
-                    panic!("send returned an unexpected error: {:?}", error);
-                }
+        if let Err(error) = result {
+            // `InvalidInput` may be returned if the thread we send to has
+            // already been unparked and exited.
+            if error.kind() != io::ErrorKind::InvalidInput {
+                abort!("send returned an unexpected error: {:?}", error);
             }
         }
     }
