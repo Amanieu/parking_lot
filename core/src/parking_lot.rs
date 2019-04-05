@@ -19,7 +19,26 @@ use rand::{rngs::SmallRng, FromEntropy, Rng};
 #[cfg(not(feature = "i-am-libstd"))]
 use smallvec::SmallVec;
 
+// When compiling the tests of std, there are basically two copies of std:
+// one normal one, and one with cfg(test). This means that during testing of
+// std there will be two instances of NUM_THREADS and HASHTABLE unless we make
+// sure both versions of std link to the same instance. It's usually not a
+// problem that different locks are based on different HASHTABLEs. Except if
+// the two locks both think they guard a global resource. Such as the mutexes
+// around the stdio file descriptors.
+// Here we use #[linkage] and #[export_name] to make both versions point to
+// the same instance.
+#[cfg_attr(all(test, feature = "i-am-libstd"), linkage = "available_externally")]
+#[cfg_attr(
+    feature = "i-am-libstd",
+    export_name = "_ZN3std16parking_lot_core11parking_lot11NUM_THREADSE"
+)]
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
+#[cfg_attr(all(test, feature = "i-am-libstd"), linkage = "available_externally")]
+#[cfg_attr(
+    feature = "i-am-libstd",
+    export_name = "_ZN3std16parking_lot_core11parking_lot9HASHTABLEE"
+)]
 static HASHTABLE: AtomicPtr<HashTable> = AtomicPtr::new(ptr::null_mut());
 
 // Even with 3x more buckets than threads, the memory overhead per thread is
