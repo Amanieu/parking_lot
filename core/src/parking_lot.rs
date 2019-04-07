@@ -40,8 +40,15 @@ impl HashTable {
     fn new(num_threads: usize, prev: *const HashTable) -> Box<HashTable> {
         let new_size = (num_threads * LOAD_FACTOR).next_power_of_two();
         let hash_bits = 0usize.leading_zeros() - new_size.leading_zeros() - 1;
+
+        let now = Instant::now();
+        let mut entries = Vec::with_capacity(new_size);
+        for _ in 0..new_size {
+            entries.push(Bucket::new(now));
+        }
+
         Box::new(HashTable {
-            entries: vec![Bucket::new(); new_size].into_boxed_slice(),
+            entries: entries.into_boxed_slice(),
             hash_bits,
             _prev: prev,
         })
@@ -63,21 +70,13 @@ struct Bucket {
 
 impl Bucket {
     #[inline]
-    pub fn new() -> Self {
+    pub fn new(timeout: Instant) -> Self {
         Self {
             mutex: WordLock::INIT,
             queue_head: Cell::new(ptr::null()),
             queue_tail: Cell::new(ptr::null()),
-            fair_timeout: UnsafeCell::new(FairTimeout::new()),
+            fair_timeout: UnsafeCell::new(FairTimeout::new(timeout)),
         }
-    }
-}
-
-// Implementation of Clone for Bucket, needed to make vec![] work
-impl Clone for Bucket {
-    #[inline]
-    fn clone(&self) -> Self {
-        Self::new()
     }
 }
 
@@ -91,9 +90,9 @@ struct FairTimeout {
 
 impl FairTimeout {
     #[inline]
-    fn new() -> FairTimeout {
+    fn new(timeout: Instant) -> FairTimeout {
         FairTimeout {
-            timeout: Instant::now(),
+            timeout,
             rng: SmallRng::from_entropy(),
         }
     }
