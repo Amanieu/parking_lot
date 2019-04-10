@@ -5,20 +5,20 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-#[cfg(feature = "nightly")]
+use crate::{deadlock, util};
+#[cfg(has_sized_atomics)]
 use core::sync::atomic::AtomicU8;
-use core::sync::atomic::Ordering;
-#[cfg(feature = "nightly")]
-type U8 = u8;
-#[cfg(not(feature = "nightly"))]
+#[cfg(not(has_sized_atomics))]
 use core::sync::atomic::AtomicUsize as AtomicU8;
-#[cfg(not(feature = "nightly"))]
-type U8 = usize;
-use crate::deadlock;
-use crate::util;
+use core::{sync::atomic::Ordering, time::Duration};
 use lock_api::{GuardNoSend, RawMutex as RawMutexTrait, RawMutexFair, RawMutexTimed};
 use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
-use std::time::{Duration, Instant};
+use std::time::Instant;
+
+#[cfg(has_sized_atomics)]
+type U8 = u8;
+#[cfg(not(has_sized_atomics))]
+type U8 = usize;
 
 // UnparkToken used to indicate that that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.

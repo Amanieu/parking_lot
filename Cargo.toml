@@ -18,6 +18,9 @@ lock_api = { path = "lock_api", version = "0.2" }
 rand = "0.6"
 lazy_static = "1.0"
 
+[build-dependencies]
+rustc_version = "0.2"
+
 [features]
 default = []
 owning_ref = ["lock_api/owning_ref"]
