@@ -621,11 +621,11 @@ where
         let mut link = &bucket.queue_head;
         let mut current = bucket.queue_head.get();
         let mut previous = ptr::null();
+        let mut was_last_thread = true;
         while !current.is_null() {
             if current == thread_data {
                 let next = (*current).next_in_queue.get();
                 link.set(next);
-                let mut was_last_thread = true;
                 if bucket.queue_tail.get() == current {
                     bucket.queue_tail.set(previous);
                 } else {
@@ -646,6 +646,9 @@ where
                 timed_out(key, was_last_thread);
                 break;
             } else {
+                if (*current).key.load(Ordering::Relaxed) == key {
+                    was_last_thread = false;
+                }
                 link = &(*current).next_in_queue;
                 previous = current;
                 current = link.get();
