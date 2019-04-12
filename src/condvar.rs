@@ -675,4 +675,29 @@ mod tests {
         drop(g);
         t.join().unwrap();
     }
+
+    #[test]
+    fn test_issue_129() {
+        let locks = Arc::new((Mutex::new(()), Condvar::new()));
+
+        let (tx, rx) = channel();
+        for _ in 0..4 {
+            let locks = locks.clone();
+            let tx = tx.clone();
+            thread::spawn(move || {
+                let mut guard = locks.0.lock();
+                locks.1.wait(&mut guard);
+                locks.1.wait_for(&mut guard, Duration::from_millis(1));
+                locks.1.notify_one();
+                tx.send(()).unwrap();
+            });
+        }
+
+        thread::sleep(Duration::from_millis(100));
+        locks.1.notify_one();
+
+        for _ in 0..4 {
+            assert_eq!(rx.recv_timeout(Duration::from_millis(500)), Ok(()));
+        }
+    }
 }

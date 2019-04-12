@@ -284,15 +284,6 @@ mod tests {
         let mutex = Mutex::new(vec![0u8, 10]);
 
         assert_eq!(format!("{:?}", mutex), "Mutex { data: [0, 10] }");
-        assert_eq!(
-            format!("{:#?}", mutex),
-            "Mutex {
-    data: [
-        0,
-        10
-    ]
-}"
-        );
         let _lock = mutex.lock();
         assert_eq!(format!("{:?}", mutex), "Mutex { data: <locked> }");
     }

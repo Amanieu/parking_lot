@@ -472,11 +472,5 @@ mod tests {
         static O: Once = ONCE_INIT;
 
         assert_eq!(format!("{:?}", O), "Once { state: New }");
-        assert_eq!(
-            format!("{:#?}", O),
-            "Once {
-    state: New
-}"
-        );
     }
 }

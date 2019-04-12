@@ -552,15 +552,6 @@ mod tests {
         let x = RwLock::new(vec![0u8, 10]);
 
         assert_eq!(format!("{:?}", x), "RwLock { data: [0, 10] }");
-        assert_eq!(
-            format!("{:#?}", x),
-            "RwLock {
-    data: [
-        0,
-        10
-    ]
-}"
-        );
         let _lock = x.write();
         assert_eq!(format!("{:?}", x), "RwLock { data: <locked> }");
     }
