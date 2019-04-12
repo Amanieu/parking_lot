@@ -113,14 +113,5 @@ mod tests {
         let mutex = ReentrantMutex::new(vec![0u8, 10]);
 
         assert_eq!(format!("{:?}", mutex), "ReentrantMutex { data: [0, 10] }");
-        assert_eq!(
-            format!("{:#?}", mutex),
-            "ReentrantMutex {
-    data: [
-        0,
-        10
-    ]
-}"
-        );
     }
 }
