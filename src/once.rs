@@ -5,18 +5,21 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-#[cfg(feature = "nightly")]
-use std::sync::atomic::AtomicU8;
-use std::sync::atomic::{fence, Ordering};
-#[cfg(feature = "nightly")]
-type U8 = u8;
-#[cfg(not(feature = "nightly"))]
-use std::sync::atomic::AtomicUsize as AtomicU8;
-#[cfg(not(feature = "nightly"))]
-type U8 = usize;
 use crate::util::UncheckedOptionExt;
-use core::{fmt, mem};
+#[cfg(has_sized_atomics)]
+use core::sync::atomic::AtomicU8;
+#[cfg(not(has_sized_atomics))]
+use core::sync::atomic::AtomicUsize as AtomicU8;
+use core::{
+    fmt, mem,
+    sync::atomic::{fence, Ordering},
+};
 use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+
+#[cfg(has_sized_atomics)]
+type U8 = u8;
+#[cfg(not(has_sized_atomics))]
+type U8 = usize;
 
 const DONE_BIT: U8 = 1;
 const POISON_BIT: U8 = 2;

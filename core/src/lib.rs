@@ -59,7 +59,7 @@
 use cfg_if::cfg_if;
 
 cfg_if! {
-    if #[cfg(all(feature = "nightly", target_os = "linux"))] {
+    if #[cfg(all(has_sized_atomics, target_os = "linux"))] {
         #[path = "thread_parker/linux.rs"]
         mod thread_parker;
     } else if #[cfg(unix)] {
@@ -68,7 +68,7 @@ cfg_if! {
     } else if #[cfg(windows)] {
         #[path = "thread_parker/windows/mod.rs"]
         mod thread_parker;
-    } else if #[cfg(all(feature = "nightly", target_os = "redox"))] {
+    } else if #[cfg(all(has_sized_atomics, target_os = "redox"))] {
         #[path = "thread_parker/redox.rs"]
         mod thread_parker;
     } else if #[cfg(all(target_env = "sgx", target_vendor = "fortanix"))] {
