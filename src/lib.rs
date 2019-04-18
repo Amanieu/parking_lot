@@ -30,7 +30,7 @@ mod deadlock;
 
 pub use self::condvar::{Condvar, WaitTimeoutResult};
 pub use self::mutex::{MappedMutexGuard, Mutex, MutexGuard};
-pub use self::once::{Once, OnceState, ONCE_INIT};
+pub use self::once::{Once, OnceState};
 pub use self::raw_mutex::RawMutex;
 pub use self::raw_rwlock::RawRwLock;
 pub use self::remutex::{

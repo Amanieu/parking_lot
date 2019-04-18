@@ -89,19 +89,8 @@ pub struct Condvar {
 impl Condvar {
     /// Creates a new condition variable which is ready to be waited on and
     /// notified.
-    #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> Condvar {
-        Condvar {
-            state: AtomicPtr::new(ptr::null_mut()),
-        }
-    }
-
-    /// Creates a new condition variable which is ready to be waited on and
-    /// notified.
-    #[cfg(not(feature = "nightly"))]
-    #[inline]
-    pub fn new() -> Condvar {
         Condvar {
             state: AtomicPtr::new(ptr::null_mut()),
         }
