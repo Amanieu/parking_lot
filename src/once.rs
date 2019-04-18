@@ -81,9 +81,9 @@ impl OnceState {
 /// # Examples
 ///
 /// ```
-/// use parking_lot::{Once, ONCE_INIT};
+/// use parking_lot::Once;
 ///
-/// static START: Once = ONCE_INIT;
+/// static START: Once = Once::new();
 ///
 /// START.call_once(|| {
 ///     // run initialization here
@@ -91,22 +91,11 @@ impl OnceState {
 /// ```
 pub struct Once(AtomicU8);
 
-/// Initialization value for static `Once` values.
-pub const ONCE_INIT: Once = Once(AtomicU8::new(0));
-
 impl Once {
     /// Creates a new `Once` value.
-    #[cfg(feature = "nightly")]
     #[inline]
     pub const fn new() -> Once {
-        ONCE_INIT
-    }
-
-    /// Creates a new `Once` value.
-    #[cfg(not(feature = "nightly"))]
-    #[inline]
-    pub fn new() -> Once {
-        ONCE_INIT
+        Once(AtomicU8::new(0))
     }
 
     /// Returns the current state of this `Once`.
@@ -141,10 +130,10 @@ impl Once {
     /// # Examples
     ///
     /// ```
-    /// use parking_lot::{Once, ONCE_INIT};
+    /// use parking_lot::Once;
     ///
     /// static mut VAL: usize = 0;
-    /// static INIT: Once = ONCE_INIT;
+    /// static INIT: Once = Once::new();
     ///
     /// // Accessing a `static mut` is unsafe much of the time, but if we do so
     /// // in a synchronized fashion (e.g. write once or read all) then we're
@@ -353,14 +342,14 @@ impl fmt::Debug for Once {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Once, ONCE_INIT};
+    use crate::Once;
     use std::panic;
     use std::sync::mpsc::channel;
     use std::thread;
 
     #[test]
     fn smoke_once() {
-        static O: Once = ONCE_INIT;
+        static O: Once = Once::new();
         let mut a = 0;
         O.call_once(|| a += 1);
         assert_eq!(a, 1);
@@ -370,7 +359,7 @@ mod tests {
 
     #[test]
     fn stampede_once() {
-        static O: Once = ONCE_INIT;
+        static O: Once = Once::new();
         static mut RUN: bool = false;
 
         let (tx, rx) = channel();
@@ -406,7 +395,7 @@ mod tests {
 
     #[test]
     fn poison_bad() {
-        static O: Once = ONCE_INIT;
+        static O: Once = Once::new();
 
         // poison the once
         let t = panic::catch_unwind(|| {
@@ -434,7 +423,7 @@ mod tests {
 
     #[test]
     fn wait_for_force_to_finish() {
-        static O: Once = ONCE_INIT;
+        static O: Once = Once::new();
 
         // poison the once
         let t = panic::catch_unwind(|| {
@@ -472,7 +461,7 @@ mod tests {
 
     #[test]
     fn test_once_debug() {
-        static O: Once = ONCE_INIT;
+        static O: Once = Once::new();
 
         assert_eq!(format!("{:?}", O), "Once { state: New }");
     }
