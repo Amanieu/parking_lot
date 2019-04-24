@@ -68,6 +68,10 @@ in the Rust standard library:
     can be enabled via the `deadlock_detection` feature.
 17. `RwLock` supports atomically upgrading an "upgradable" read lock into a
     write lock.
+18. Optional support for [serde](https://docs.serde.rs/serde/).  Enable via the
+    feature `enable_serde`.  **NOTE!** this support is for `Mutex`,
+    `ReentrantMutex`, and `RwLock` only; `Condvar` and `Once` are not currently
+    supported.
 
 ## The parking lot
 

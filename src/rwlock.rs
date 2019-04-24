@@ -128,6 +128,9 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    #[cfg(feature = "enable_serde")]
+    use bincode::{deserialize, serialize};
+
     #[derive(Eq, PartialEq, Debug)]
     struct NonCopy(i32);
 
@@ -562,5 +565,18 @@ mod tests {
         let a = rwlock.read_recursive();
         let b = a.clone();
         assert_eq!(Arc::strong_count(&b), 2);
+    }
+
+    #[cfg(feature = "enable_serde")]
+    #[test]
+    fn test_serde() {
+        let contents: Vec<u8> = vec![0, 1, 2];
+        let mutex = RwLock::new(contents.clone());
+
+        let serialized = serialize(&mutex).unwrap();
+        let deserialized: RwLock<Vec<u8>> = deserialize(&serialized).unwrap();
+
+        assert_eq!(*(mutex.read()), *(deserialized.read()));
+        assert_eq!(contents, *(deserialized.read()));
     }
 }
