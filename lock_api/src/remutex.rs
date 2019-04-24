@@ -170,7 +170,7 @@ impl<R, G, T> Serialize for ReentrantMutex<R, G, T>
 where
     R: RawMutex,
     G: GetThreadId,
-    T: Serialize + ?Sized
+    T: Serialize + ?Sized,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -183,7 +183,6 @@ where
 // Copied and modified from serde
 #[cfg(feature = "enable_serde")]
 forwarded_impl!((T), ReentrantMutex<R, G, T>, ReentrantMutex::new);
-
 
 unsafe impl<R: RawMutex + Send, G: GetThreadId + Send, T: ?Sized + Send> Send
     for ReentrantMutex<R, G, T>

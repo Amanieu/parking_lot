@@ -259,7 +259,7 @@ pub struct RwLock<R: RawRwLock, T: ?Sized> {
 impl<R, T> Serialize for RwLock<R, T>
 where
     R: RawMutex,
-    T: Serialize + ?Sized
+    T: Serialize + ?Sized,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
