@@ -249,7 +249,6 @@ pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
 /// allow concurrent access through readers. The RAII guards returned from the
 /// locking methods implement `Deref` (and `DerefMut` for the `write` methods)
 /// to allow access to the contained of the lock.
-#[cfg_attr(feature = "enable_serde", derive(Serialize, Deserialize))]
 pub struct RwLock<R: RawRwLock, T: ?Sized> {
     raw: R,
     data: UnsafeCell<T>,

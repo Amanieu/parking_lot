@@ -60,7 +60,6 @@ pub unsafe trait GetThreadId {
     fn nonzero_thread_id(&self) -> usize;
 }
 
-#[cfg_attr(feature = "enable_serde", derive(Serialize, Deserialize))]
 struct RawReentrantMutex<R: RawMutex, G: GetThreadId> {
     owner: AtomicUsize,
     lock_count: Cell<usize>,
@@ -160,7 +159,6 @@ impl<R: RawMutexTimed, G: GetThreadId> RawReentrantMutex<R, G> {
 ///
 /// See [`Mutex`](struct.Mutex.html) for more details about the underlying mutex
 /// primitive.
-#[cfg_attr(feature = "enable_serde", derive(Serialize, Deserialize))]
 pub struct ReentrantMutex<R: RawMutex, G: GetThreadId, T: ?Sized> {
     raw: RawReentrantMutex<R, G>,
     data: UnsafeCell<T>,

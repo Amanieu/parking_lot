@@ -112,7 +112,6 @@ pub unsafe trait RawMutexTimed: RawMutex {
 /// it is protecting. The data can only be accessed through the RAII guards
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
 /// ever accessed when the mutex is locked.
-#[cfg_attr(feature = "enable_serde", derive(Serialize, Deserialize))]
 pub struct Mutex<R: RawMutex, T: ?Sized> {
     raw: R,
     data: UnsafeCell<T>,
