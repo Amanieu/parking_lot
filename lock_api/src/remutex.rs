@@ -17,6 +17,30 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
+#[cfg(feature = "enable_serde")]
+extern crate serde;
+#[cfg(feature = "enable_serde")]
+use self::serde::*;
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+macro_rules! forwarded_impl {
+    (
+        $(#[doc = $doc:tt])*
+        ( $($id: ident),* ), $ty: ty, $func: expr
+    ) => {
+        $(#[doc = $doc])*
+        impl<'de $(, $id : Deserialize<'de>,)*> Deserialize<'de> for $ty {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                Deserialize::deserialize(deserializer).map($func)
+            }
+        }
+    }
+}
+
 /// Helper trait which returns a non-zero thread ID.
 ///
 /// The simplest way to implement this trait is to return the address of a
@@ -36,6 +60,7 @@ pub unsafe trait GetThreadId {
     fn nonzero_thread_id(&self) -> usize;
 }
 
+#[cfg_attr(feature = "enable_serde", derive(Serialize, Deserialize))]
 struct RawReentrantMutex<R: RawMutex, G: GetThreadId> {
     owner: AtomicUsize,
     lock_count: Cell<usize>,
@@ -135,10 +160,32 @@ impl<R: RawMutexTimed, G: GetThreadId> RawReentrantMutex<R, G> {
 ///
 /// See [`Mutex`](struct.Mutex.html) for more details about the underlying mutex
 /// primitive.
+#[cfg_attr(feature = "enable_serde", derive(Serialize, Deserialize))]
 pub struct ReentrantMutex<R: RawMutex, G: GetThreadId, T: ?Sized> {
     raw: RawReentrantMutex<R, G>,
     data: UnsafeCell<T>,
 }
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+impl<R, G, T> Serialize for ReentrantMutex<R, G, T>
+where
+    R: RawMutex,
+    G: GetThreadId,
+    T: Serialize + ?Sized
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.lock().serialize(serializer);
+    }
+}
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+forwarded_impl!((T), ReentrantMutex<R, G, T>, ReentrantMutex::new);
+
 
 unsafe impl<R: RawMutex + Send, G: GetThreadId + Send, T: ?Sized + Send> Send
     for ReentrantMutex<R, G, T>

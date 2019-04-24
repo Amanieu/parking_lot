@@ -14,6 +14,30 @@ use core::ops::{Deref, DerefMut};
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
+#[cfg(feature = "enable_serde")]
+extern crate serde;
+#[cfg(feature = "enable_serde")]
+use self::serde::*;
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+macro_rules! forwarded_impl {
+    (
+        $(#[doc = $doc:tt])*
+        ( $($id: ident),* ), $ty: ty, $func: expr
+    ) => {
+        $(#[doc = $doc])*
+        impl<'de $(, $id : Deserialize<'de>,)*> Deserialize<'de> for $ty {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                Deserialize::deserialize(deserializer).map($func)
+            }
+        }
+    }
+}
+
 /// Basic operations for a reader-writer lock.
 ///
 /// Types implementing this trait can be used by `RwLock` to form a safe and
@@ -225,10 +249,30 @@ pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
 /// allow concurrent access through readers. The RAII guards returned from the
 /// locking methods implement `Deref` (and `DerefMut` for the `write` methods)
 /// to allow access to the contained of the lock.
+#[cfg_attr(feature = "enable_serde", derive(Serialize, Deserialize))]
 pub struct RwLock<R: RawRwLock, T: ?Sized> {
     raw: R,
     data: UnsafeCell<T>,
 }
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+impl<R, T> Serialize for RwLock<R, T>
+where
+    R: RawMutex,
+    T: Serialize + ?Sized
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.lock().serialize(serializer);
+    }
+}
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+forwarded_impl!((T), RwLock<R, T>, RwLock::new);
 
 unsafe impl<R: RawRwLock + Send, T: ?Sized + Send> Send for RwLock<R, T> {}
 unsafe impl<R: RawRwLock + Sync, T: ?Sized + Send + Sync> Sync for RwLock<R, T> {}

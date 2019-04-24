@@ -14,6 +14,30 @@ use core::ops::{Deref, DerefMut};
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
+#[cfg(feature = "enable_serde")]
+extern crate serde;
+#[cfg(feature = "enable_serde")]
+use self::serde::*;
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+macro_rules! forwarded_impl {
+    (
+        $(#[doc = $doc:tt])*
+        ( $($id: ident),* ), $ty: ty, $func: expr
+    ) => {
+        $(#[doc = $doc])*
+        impl<'de $(, $id : Deserialize<'de>,)*> Deserialize<'de> for $ty {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                Deserialize::deserialize(deserializer).map($func)
+            }
+        }
+    }
+}
+
 /// Basic operations for a mutex.
 ///
 /// Types implementing this trait can be used by `Mutex` to form a safe and
@@ -88,10 +112,30 @@ pub unsafe trait RawMutexTimed: RawMutex {
 /// it is protecting. The data can only be accessed through the RAII guards
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
 /// ever accessed when the mutex is locked.
+#[cfg_attr(feature = "enable_serde", derive(Serialize, Deserialize))]
 pub struct Mutex<R: RawMutex, T: ?Sized> {
     raw: R,
     data: UnsafeCell<T>,
 }
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+impl<R, T> Serialize for Mutex<R, T>
+where
+    R: RawMutex,
+    T: Serialize + ?Sized,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.lock().serialize(serializer);
+    }
+}
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+forwarded_impl!((T), Mutex<R, T>, Mutex::new);
 
 unsafe impl<R: RawMutex + Send, T: ?Sized + Send> Send for Mutex<R, T> {}
 unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<R, T> {}
