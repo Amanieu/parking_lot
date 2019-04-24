@@ -22,25 +22,6 @@ extern crate serde;
 #[cfg(feature = "enable_serde")]
 use self::serde::*;
 
-// Copied and modified from serde
-#[cfg(feature = "enable_serde")]
-macro_rules! forwarded_impl {
-    (
-        $(#[doc = $doc:tt])*
-        ( $($id: ident),* ), $ty: ty, $func: expr
-    ) => {
-        $(#[doc = $doc])*
-        impl<'de $(, $id : Deserialize<'de>,)*> Deserialize<'de> for $ty {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                Deserialize::deserialize(deserializer).map($func)
-            }
-        }
-    }
-}
-
 /// Helper trait which returns a non-zero thread ID.
 ///
 /// The simplest way to implement this trait is to return the address of a
@@ -176,13 +157,24 @@ where
     where
         S: Serializer,
     {
-        self.lock().serialize(serializer);
+        self.lock().serialize(serializer)
     }
 }
 
-// Copied and modified from serde
 #[cfg(feature = "enable_serde")]
-forwarded_impl!((T), ReentrantMutex<R, G, T>, ReentrantMutex::new);
+impl<'de, R, G, T> Deserialize<'de> for ReentrantMutex<R, G, T>
+where
+    R: RawMutex,
+    G: GetThreadId,
+    T: Deserialize<'de> + ?Sized
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Deserialize::deserialize(deserializer).map(|value| ReentrantMutex::new(value))
+    }
+}
 
 unsafe impl<R: RawMutex + Send, G: GetThreadId + Send, T: ?Sized + Send> Send
     for ReentrantMutex<R, G, T>

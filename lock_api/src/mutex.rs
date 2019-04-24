@@ -19,25 +19,6 @@ extern crate serde;
 #[cfg(feature = "enable_serde")]
 use self::serde::*;
 
-// Copied and modified from serde
-#[cfg(feature = "enable_serde")]
-macro_rules! forwarded_impl {
-    (
-        $(#[doc = $doc:tt])*
-        ( $($id: ident),* ), $ty: ty, $func: expr
-    ) => {
-        $(#[doc = $doc])*
-        impl<'de $(, $id : Deserialize<'de>,)*> Deserialize<'de> for $ty {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                Deserialize::deserialize(deserializer).map($func)
-            }
-        }
-    }
-}
-
 /// Basic operations for a mutex.
 ///
 /// Types implementing this trait can be used by `Mutex` to form a safe and
@@ -128,13 +109,23 @@ where
     where
         S: Serializer,
     {
-        self.lock().serialize(serializer);
+        self.lock().serialize(serializer)
     }
 }
 
-// Copied and modified from serde
 #[cfg(feature = "enable_serde")]
-forwarded_impl!((T), Mutex<R, T>, Mutex::new);
+impl<'de, R, T> Deserialize<'de> for Mutex<R, T>
+where
+    R: RawMutex,
+    T: Deserialize<'de> + ?Sized
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Deserialize::deserialize(deserializer).map(|value| Mutex::new(value))
+    }
+}
 
 unsafe impl<R: RawMutex + Send, T: ?Sized + Send> Send for Mutex<R, T> {}
 unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<R, T> {}

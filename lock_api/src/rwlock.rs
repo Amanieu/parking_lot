@@ -19,25 +19,6 @@ extern crate serde;
 #[cfg(feature = "enable_serde")]
 use self::serde::*;
 
-// Copied and modified from serde
-#[cfg(feature = "enable_serde")]
-macro_rules! forwarded_impl {
-    (
-        $(#[doc = $doc:tt])*
-        ( $($id: ident),* ), $ty: ty, $func: expr
-    ) => {
-        $(#[doc = $doc])*
-        impl<'de $(, $id : Deserialize<'de>,)*> Deserialize<'de> for $ty {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: Deserializer<'de>,
-            {
-                Deserialize::deserialize(deserializer).map($func)
-            }
-        }
-    }
-}
-
 /// Basic operations for a reader-writer lock.
 ///
 /// Types implementing this trait can be used by `RwLock` to form a safe and
@@ -258,20 +239,34 @@ pub struct RwLock<R: RawRwLock, T: ?Sized> {
 #[cfg(feature = "enable_serde")]
 impl<R, T> Serialize for RwLock<R, T>
 where
-    R: RawMutex,
+    R: RawRwLock,
     T: Serialize + ?Sized,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        self.lock().serialize(serializer);
+        // FIXME It may be possible to use self.read() here instead, but using
+        // self.write() is the conservative choice.  If it *is* possible
+        // (meaning that race conditions are impossible, etc.), then we should
+        // use self.read() instead for performance reasons.
+        self.write().serialize(serializer)
     }
 }
 
-// Copied and modified from serde
 #[cfg(feature = "enable_serde")]
-forwarded_impl!((T), RwLock<R, T>, RwLock::new);
+impl<'de, R, T> Deserialize<'de> for RwLock<R, T>
+where
+    R: RawRwLock,
+    T: Deserialize<'de> + ?Sized
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Deserialize::deserialize(deserializer).map(|value| RwLock::new(value))
+    }
+}
 
 unsafe impl<R: RawRwLock + Send, T: ?Sized + Send> Send for RwLock<R, T> {}
 unsafe impl<R: RawRwLock + Sync, T: ?Sized + Send + Sync> Sync for RwLock<R, T> {}
