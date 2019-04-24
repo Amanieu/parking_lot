@@ -14,6 +14,11 @@ use core::ops::{Deref, DerefMut};
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
+#[cfg(feature = "enable_serde")]
+extern crate serde;
+#[cfg(feature = "enable_serde")]
+use self::serde::*;
+
 /// Basic operations for a reader-writer lock.
 ///
 /// Types implementing this trait can be used by `RwLock` to form a safe and
@@ -228,6 +233,39 @@ pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
 pub struct RwLock<R: RawRwLock, T: ?Sized> {
     raw: R,
     data: UnsafeCell<T>,
+}
+
+// Copied and modified from serde
+#[cfg(feature = "enable_serde")]
+impl<R, T> Serialize for RwLock<R, T>
+where
+    R: RawRwLock,
+    T: Serialize + ?Sized,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // FIXME It may be possible to use self.read() here instead, but using
+        // self.write() is the conservative choice.  If it *is* possible
+        // (meaning that race conditions are impossible, etc.), then we should
+        // use self.read() instead for performance reasons.
+        self.write().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "enable_serde")]
+impl<'de, R, T> Deserialize<'de> for RwLock<R, T>
+where
+    R: RawRwLock,
+    T: Deserialize<'de> + ?Sized
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Deserialize::deserialize(deserializer).map(|value| RwLock::new(value))
+    }
 }
 
 unsafe impl<R: RawRwLock + Send, T: ?Sized + Send> Send for RwLock<R, T> {}
