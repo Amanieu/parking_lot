@@ -246,11 +246,7 @@ where
     where
         S: Serializer,
     {
-        // FIXME It may be possible to use self.read() here instead, but using
-        // self.write() is the conservative choice.  If it *is* possible
-        // (meaning that race conditions are impossible, etc.), then we should
-        // use self.read() instead for performance reasons.
-        self.write().serialize(serializer)
+        self.read().serialize(serializer)
     }
 }
 
