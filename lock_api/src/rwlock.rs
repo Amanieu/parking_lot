@@ -260,7 +260,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        Deserialize::deserialize(deserializer).map(|value| RwLock::new(value))
+        Deserialize::deserialize(deserializer).map(RwLock::new)
     }
 }
 

@@ -172,7 +172,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        Deserialize::deserialize(deserializer).map(|value| ReentrantMutex::new(value))
+        Deserialize::deserialize(deserializer).map(ReentrantMutex::new)
     }
 }
 

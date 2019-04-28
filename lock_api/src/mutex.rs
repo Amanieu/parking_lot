@@ -123,7 +123,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        Deserialize::deserialize(deserializer).map(|value| Mutex::new(value))
+        Deserialize::deserialize(deserializer).map(Mutex::new)
     }
 }
 
