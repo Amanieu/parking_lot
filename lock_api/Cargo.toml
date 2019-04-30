@@ -15,7 +15,7 @@ owning_ref = { version = "0.4", optional = true }
 
 # Optional dependency for supporting serde.  Use the feature "enable_serde" to
 # get access to this.
-serde = {version = "1.0.90", features = ["derive", "rc", "std"], optional = true}
+serde = {version = "1.0.90", default-features = false, optional = true}
 
 [dev-dependencies]
 # Used when testing out serde support.
