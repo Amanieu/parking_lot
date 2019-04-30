@@ -8,14 +8,7 @@
 use crate::raw_mutex::RawMutex;
 use lock_api::{self, GetThreadId};
 
-
-#[cfg(feature = "enable_serde")]
-extern crate serde;
-#[cfg(feature = "enable_serde")]
-use self::serde::*;
-
 /// Implementation of the `GetThreadId` trait for `lock_api::ReentrantMutex`.
-#[cfg_attr(feature = "enable_serde", derive(Serialize, Deserialize))]
 pub struct RawThreadId;
 
 unsafe impl GetThreadId for RawThreadId {
