@@ -14,9 +14,9 @@ use core::ops::{Deref, DerefMut};
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
-#[cfg(feature = "enable_serde")]
+#[cfg(feature = "serde")]
 extern crate serde;
-#[cfg(feature = "enable_serde")]
+#[cfg(feature = "serde")]
 use self::serde::*;
 
 /// Basic operations for a mutex.
@@ -99,7 +99,7 @@ pub struct Mutex<R: RawMutex, T: ?Sized> {
 }
 
 // Copied and modified from serde
-#[cfg(feature = "enable_serde")]
+#[cfg(feature = "serde")]
 impl<R, T> Serialize for Mutex<R, T>
 where
     R: RawMutex,
@@ -113,7 +113,7 @@ where
     }
 }
 
-#[cfg(feature = "enable_serde")]
+#[cfg(feature = "serde")]
 impl<'de, R, T> Deserialize<'de> for Mutex<R, T>
 where
     R: RawMutex,

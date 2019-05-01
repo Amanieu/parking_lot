@@ -17,9 +17,9 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
-#[cfg(feature = "enable_serde")]
+#[cfg(feature = "serde")]
 extern crate serde;
-#[cfg(feature = "enable_serde")]
+#[cfg(feature = "serde")]
 use self::serde::*;
 
 /// Helper trait which returns a non-zero thread ID.
@@ -146,7 +146,7 @@ pub struct ReentrantMutex<R: RawMutex, G: GetThreadId, T: ?Sized> {
 }
 
 // Copied and modified from serde
-#[cfg(feature = "enable_serde")]
+#[cfg(feature = "serde")]
 impl<R, G, T> Serialize for ReentrantMutex<R, G, T>
 where
     R: RawMutex,
@@ -161,7 +161,7 @@ where
     }
 }
 
-#[cfg(feature = "enable_serde")]
+#[cfg(feature = "serde")]
 impl<'de, R, G, T> Deserialize<'de> for ReentrantMutex<R, G, T>
 where
     R: RawMutex,
