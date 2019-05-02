@@ -25,6 +25,8 @@ script:
 - cd ..;
 - travis-cargo build
 - travis-cargo test
+- travis-cargo build -- --features serde
+- travis-cargo test -- --features serde
 - travis-cargo --only stable test -- --features=deadlock_detection
 - travis-cargo --only beta test -- --features=deadlock_detection
 - travis-cargo --only nightly test -- --all --no-run --target x86_64-fortanix-unknown-sgx

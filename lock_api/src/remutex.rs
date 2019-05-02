@@ -17,6 +17,11 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
+#[cfg(feature = "serde")]
+extern crate serde;
+#[cfg(feature = "serde")]
+use self::serde::*;
+
 /// Helper trait which returns a non-zero thread ID.
 ///
 /// The simplest way to implement this trait is to return the address of a
@@ -138,6 +143,37 @@ impl<R: RawMutexTimed, G: GetThreadId> RawReentrantMutex<R, G> {
 pub struct ReentrantMutex<R: RawMutex, G: GetThreadId, T: ?Sized> {
     raw: RawReentrantMutex<R, G>,
     data: UnsafeCell<T>,
+}
+
+// Copied and modified from serde
+#[cfg(feature = "serde")]
+impl<R, G, T> Serialize for ReentrantMutex<R, G, T>
+where
+    R: RawMutex,
+    G: GetThreadId,
+    T: Serialize + ?Sized,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.lock().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, R, G, T> Deserialize<'de> for ReentrantMutex<R, G, T>
+where
+    R: RawMutex,
+    G: GetThreadId,
+    T: Deserialize<'de> + ?Sized
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Deserialize::deserialize(deserializer).map(ReentrantMutex::new)
+    }
 }
 
 unsafe impl<R: RawMutex + Send, G: GetThreadId + Send, T: ?Sized + Send> Send

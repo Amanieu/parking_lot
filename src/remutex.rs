@@ -59,6 +59,9 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
+    #[cfg(feature = "serde")]
+    use bincode::{deserialize, serialize};
+
     #[test]
     fn smoke() {
         let m = ReentrantMutex::new(());
@@ -113,5 +116,18 @@ mod tests {
         let mutex = ReentrantMutex::new(vec![0u8, 10]);
 
         assert_eq!(format!("{:?}", mutex), "ReentrantMutex { data: [0, 10] }");
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde() {
+        let contents: Vec<u8> = vec![0, 1, 2];
+        let mutex = ReentrantMutex::new(contents.clone());
+
+        let serialized = serialize(&mutex).unwrap();
+        let deserialized: ReentrantMutex<Vec<u8>> = deserialize(&serialized).unwrap();
+
+        assert_eq!(*(mutex.lock()), *(deserialized.lock()));
+        assert_eq!(contents, *(deserialized.lock()));
     }
 }
