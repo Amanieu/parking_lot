@@ -15,9 +15,7 @@ use core::ops::{Deref, DerefMut};
 use owning_ref::StableAddress;
 
 #[cfg(feature = "serde")]
-extern crate serde;
-#[cfg(feature = "serde")]
-use self::serde::*;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Basic operations for a reader-writer lock.
 ///
@@ -254,7 +252,7 @@ where
 impl<'de, R, T> Deserialize<'de> for RwLock<R, T>
 where
     R: RawRwLock,
-    T: Deserialize<'de> + ?Sized
+    T: Deserialize<'de> + ?Sized,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where

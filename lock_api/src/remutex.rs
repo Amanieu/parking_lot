@@ -18,9 +18,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use owning_ref::StableAddress;
 
 #[cfg(feature = "serde")]
-extern crate serde;
-#[cfg(feature = "serde")]
-use self::serde::*;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Helper trait which returns a non-zero thread ID.
 ///
@@ -166,7 +164,7 @@ impl<'de, R, G, T> Deserialize<'de> for ReentrantMutex<R, G, T>
 where
     R: RawMutex,
     G: GetThreadId,
-    T: Deserialize<'de> + ?Sized
+    T: Deserialize<'de> + ?Sized,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
