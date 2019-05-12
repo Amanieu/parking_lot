@@ -395,13 +395,8 @@ unsafe fn lock_bucket_pair<'a>(key1: usize, key2: usize) -> (&'a Bucket, &'a Buc
 // Unlock a pair of buckets
 #[inline]
 unsafe fn unlock_bucket_pair(bucket1: &Bucket, bucket2: &Bucket) {
-    if bucket1 as *const _ == bucket2 as *const _ {
-        bucket1.mutex.unlock();
-    } else if bucket1 as *const _ < bucket2 as *const _ {
-        bucket2.mutex.unlock();
-        bucket1.mutex.unlock();
-    } else {
-        bucket1.mutex.unlock();
+    bucket1.mutex.unlock();
+    if !ptr::eq(bucket1, bucket2) {
         bucket2.mutex.unlock();
     }
 }
