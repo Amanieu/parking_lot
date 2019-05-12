@@ -151,10 +151,7 @@ impl ThreadData {
 
 // Invokes the given closure with a reference to the current thread `ThreadData`.
 #[inline(always)]
-fn with_thread_data<F, T>(f: F) -> T
-where
-    F: FnOnce(&ThreadData) -> T,
-{
+fn with_thread_data<T>(f: impl FnOnce(&ThreadData) -> T) -> T {
     // Unlike word_lock::ThreadData, parking_lot::ThreadData is always expensive
     // to construct. Try to use a thread-local version if possible. Otherwise just
     // create a ThreadData on the stack
@@ -523,19 +520,14 @@ pub const DEFAULT_PARK_TOKEN: ParkToken = ParkToken(0);
 /// to call `unpark_one`, `unpark_all`, `unpark_requeue` or `unpark_filter`, but
 /// it is not allowed to call `park` or panic.
 #[inline]
-pub unsafe fn park<V, B, T>(
+pub unsafe fn park(
     key: usize,
-    validate: V,
-    before_sleep: B,
-    timed_out: T,
+    validate: impl FnOnce() -> bool,
+    before_sleep: impl FnOnce(),
+    timed_out: impl FnOnce(usize, bool),
     park_token: ParkToken,
     timeout: Option<Instant>,
-) -> ParkResult
-where
-    V: FnOnce() -> bool,
-    B: FnOnce(),
-    T: FnOnce(usize, bool),
-{
+) -> ParkResult {
     // Grab our thread data, this also ensures that the hash table exists
     with_thread_data(|thread_data| {
         // Lock the bucket for the given key
@@ -661,10 +653,10 @@ where
 /// The `callback` function is called while the queue is locked and must not
 /// panic or call into any function in `parking_lot`.
 #[inline]
-pub unsafe fn unpark_one<C>(key: usize, callback: C) -> UnparkResult
-where
-    C: FnOnce(UnparkResult) -> UnparkToken,
-{
+pub unsafe fn unpark_one(
+    key: usize,
+    callback: impl FnOnce(UnparkResult) -> UnparkToken,
+) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -810,16 +802,12 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
 /// The `validate` and `callback` functions are called while the queue is locked
 /// and must not panic or call into any function in `parking_lot`.
 #[inline]
-pub unsafe fn unpark_requeue<V, C>(
+pub unsafe fn unpark_requeue(
     key_from: usize,
     key_to: usize,
-    validate: V,
-    callback: C,
-) -> UnparkResult
-where
-    V: FnOnce() -> RequeueOp,
-    C: FnOnce(RequeueOp, UnparkResult) -> UnparkToken,
-{
+    validate: impl FnOnce() -> RequeueOp,
+    callback: impl FnOnce(RequeueOp, UnparkResult) -> UnparkToken,
+) -> UnparkResult {
     // Lock the two buckets for the given key
     let (bucket_from, bucket_to) = lock_bucket_pair(key_from, key_to);
 
@@ -941,11 +929,11 @@ where
 /// The `filter` and `callback` functions are called while the queue is locked
 /// and must not panic or call into any function in `parking_lot`.
 #[inline]
-pub unsafe fn unpark_filter<F, C>(key: usize, mut filter: F, callback: C) -> UnparkResult
-where
-    F: FnMut(ParkToken) -> FilterOp,
-    C: FnOnce(UnparkResult) -> UnparkToken,
-{
+pub unsafe fn unpark_filter(
+    key: usize,
+    mut filter: impl FnMut(ParkToken) -> FilterOp,
+    callback: impl FnOnce(UnparkResult) -> UnparkToken,
+) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 

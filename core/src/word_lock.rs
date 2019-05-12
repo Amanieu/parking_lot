@@ -48,10 +48,7 @@ impl ThreadData {
 
 // Invokes the given closure with a reference to the current thread `ThreadData`.
 #[inline]
-fn with_thread_data<F, T>(f: F) -> T
-where
-    F: FnOnce(&ThreadData) -> T,
-{
+fn with_thread_data<T>(f: impl FnOnce(&ThreadData) -> T) -> T {
     let mut thread_data_ptr = ptr::null();
     // If ThreadData is expensive to construct, then we want to use a cached
     // version in thread-local storage if possible.
