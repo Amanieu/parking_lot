@@ -556,9 +556,9 @@ pub unsafe fn park(
         // Invoke the pre-sleep callback
         before_sleep();
 
-        // Park our thread and determine whether we were woken up by an unpark or by
-        // our timeout. Note that this isn't precise: we can still be unparked since
-        // we are still in the queue.
+        // Park our thread and determine whether we were woken up by an unpark
+        // or by our timeout. Note that this isn't precise: we can still be
+        // unparked since we are still in the queue.
         let unparked = match timeout {
             Some(timeout) => thread_data.parker.park_until(timeout),
             None => {
