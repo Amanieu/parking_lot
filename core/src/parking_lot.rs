@@ -181,7 +181,6 @@ fn get_hashtable() -> *mut HashTable {
 
 // Get a pointer to the latest hash table, creating one if it doesn't exist yet.
 #[cold]
-#[inline(never)]
 fn create_hashtable() -> *mut HashTable {
     let new_table = Box::into_raw(HashTable::new(LOAD_FACTOR, ptr::null()));
 

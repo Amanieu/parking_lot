@@ -209,7 +209,6 @@ impl Once {
     // currently no way to take an `FnOnce` and call it via virtual dispatch
     // without some allocation overhead.
     #[cold]
-    #[inline(never)]
     fn call_once_slow(&self, ignore_poison: bool, f: &mut dyn FnMut(OnceState)) {
         let mut spinwait = SpinWait::new();
         let mut state = self.0.load(Ordering::Relaxed);

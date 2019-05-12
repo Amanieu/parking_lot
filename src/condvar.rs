@@ -129,7 +129,6 @@ impl Condvar {
     }
 
     #[cold]
-    #[inline(never)]
     fn notify_one_slow(&self, mutex: *mut RawMutex) -> bool {
         unsafe {
             // Unpark one thread and requeue the rest onto the mutex
@@ -191,7 +190,6 @@ impl Condvar {
     }
 
     #[cold]
-    #[inline(never)]
     fn notify_all_slow(&self, mutex: *mut RawMutex) -> usize {
         unsafe {
             // Unpark one thread and requeue the rest onto the mutex

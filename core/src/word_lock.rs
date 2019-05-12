@@ -103,7 +103,6 @@ impl WordLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn lock_slow(&self) {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
@@ -171,7 +170,6 @@ impl WordLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn unlock_slow(&self) {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
