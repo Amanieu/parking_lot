@@ -220,11 +220,13 @@ pub struct ThreadParker {
     condvar: Condvar,
 }
 
-impl ThreadParker {
-    pub const IS_CHEAP_TO_CONSTRUCT: bool = true;
+impl super::ThreadParkerT for ThreadParker {
+    type UnparkHandle = UnparkHandle<'_>;
+
+    const IS_CHEAP_TO_CONSTRUCT: bool = true;
 
     #[inline]
-    pub fn new() -> ThreadParker {
+    fn new() -> ThreadParker {
         ThreadParker {
             should_park: Cell::new(false),
             lock: Lock::new(),
@@ -232,16 +234,13 @@ impl ThreadParker {
         }
     }
 
-    // Prepares the parker. This should be called before adding it to the queue.
     #[inline]
-    pub fn prepare_park(&self) {
+    fn prepare_park(&self) {
         self.should_park.set(true);
     }
 
-    // Checks if the park timed out. This should be called while holding the
-    // queue lock after park_until has returned false.
     #[inline]
-    pub fn timed_out(&self) -> bool {
+    fn timed_out(&self) -> bool {
         // We need to grab the lock here because another thread may be
         // concurrently executing UnparkHandle::unpark, which is done without
         // holding the queue lock.
@@ -249,21 +248,16 @@ impl ThreadParker {
         self.should_park.get()
     }
 
-    // Parks the thread until it is unparked. This should be called after it has
-    // been added to the queue, after unlocking the queue.
     #[inline]
-    pub fn park(&self) {
+    fn park(&self) {
         let guard = self.lock.lock();
         while self.should_park.get() {
             self.condvar.wait(&guard);
         }
     }
 
-    // Parks the thread until it is unparked or the timeout is reached. This
-    // should be called after it has been added to the queue, after unlocking
-    // the queue. Returns true if we were unparked and false if we timed out.
     #[inline]
-    pub fn park_until(&self, timeout: Instant) -> bool {
+    fn park_until(&self, timeout: Instant) -> bool {
         let guard = self.lock.lock();
         while self.should_park.get() {
             if let Some(duration_left) = timeout.checked_duration_since(Instant::now()) {
@@ -281,11 +275,8 @@ impl ThreadParker {
         true
     }
 
-    // Locks the parker to prevent the target thread from exiting. This is
-    // necessary to ensure that thread-local ThreadData objects remain valid.
-    // This should be called while holding the queue lock.
     #[inline]
-    pub fn unpark_lock(&self) -> UnparkHandle<'_> {
+    fn unpark_lock(&self) -> UnparkHandle<'_> {
         let _lock_guard = self.lock.lock();
 
         UnparkHandle {
@@ -295,19 +286,14 @@ impl ThreadParker {
     }
 }
 
-// Handle for a thread that is about to be unparked. We need to mark the thread
-// as unparked while holding the queue lock, but we delay the actual unparking
-// until after the queue lock is released.
 pub struct UnparkHandle<'a> {
     thread_parker: *const ThreadParker,
     _lock_guard: LockGuard<'a>,
 }
 
-impl UnparkHandle<'_> {
-    // Wakes up the parked thread. This should be called after the queue lock is
-    // released to avoid blocking the queue for too long.
+impl super::UnparkHandleT for UnparkHandle<'_> {
     #[inline]
-    pub fn unpark(self) {
+    fn unpark(self) {
         unsafe {
             (*self.thread_parker).should_park.set(false);
 

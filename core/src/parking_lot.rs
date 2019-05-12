@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::thread_parker::ThreadParker;
+use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::util::UncheckedOptionExt;
 use crate::word_lock::WordLock;
 use core::{
@@ -1050,6 +1050,7 @@ pub mod deadlock {
 #[cfg(feature = "deadlock_detection")]
 mod deadlock_impl {
     use super::{get_hashtable, lock_bucket, with_thread_data, ThreadData, NUM_THREADS};
+    use crate::thread_parker::{ThreadParkerT, UnparkHandleT};
     use crate::word_lock::WordLock;
     use backtrace::Backtrace;
     use petgraph;
