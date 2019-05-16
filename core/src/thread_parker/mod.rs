@@ -52,7 +52,7 @@ pub trait UnparkHandleT {
 }
 
 cfg_if! {
-    if #[cfg(all(has_sized_atomics, target_os = "linux"))] {
+    if #[cfg(all(has_sized_atomics, any(target_os = "linux", target_os = "android")))] {
         #[path = "linux.rs"]
         mod imp;
     } else if #[cfg(unix)] {
