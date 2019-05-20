@@ -52,10 +52,7 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
         let id = self.get_thread_id.nonzero_thread_id();
         if self.owner.load(Ordering::Relaxed) == id {
             self.lock_count.set(
-                self.lock_count
-                    .get()
-                    .checked_add(1)
-                    .expect("ReentrantMutex lock count overflow"),
+                self.lock_count.get().checked_add(1).expect("ReentrantMutex lock count overflow"),
             );
         } else {
             if !try_lock() {
@@ -225,10 +222,7 @@ impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
 impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     #[inline]
     fn guard(&self) -> ReentrantMutexGuard<'_, R, G, T> {
-        ReentrantMutexGuard {
-            remutex: &self,
-            marker: PhantomData,
-        }
+        ReentrantMutexGuard { remutex: &self, marker: PhantomData }
     }
 
     /// Acquires a reentrant mutex, blocking the current thread until it is able
@@ -256,11 +250,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// This function does not block.
     #[inline]
     pub fn try_lock(&self) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
-        if self.raw.try_lock() {
-            Some(self.guard())
-        } else {
-            None
-        }
+        if self.raw.try_lock() { Some(self.guard()) } else { None }
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -329,11 +319,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// be unlocked when the guard is dropped.
     #[inline]
     pub fn try_lock_for(&self, timeout: R::Duration) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
-        if self.raw.try_lock_for(timeout) {
-            Some(self.guard())
-        } else {
-            None
-        }
+        if self.raw.try_lock_for(timeout) { Some(self.guard()) } else { None }
     }
 
     /// Attempts to acquire this lock until a timeout is reached.
@@ -343,11 +329,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// be unlocked when the guard is dropped.
     #[inline]
     pub fn try_lock_until(&self, timeout: R::Instant) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
-        if self.raw.try_lock_until(timeout) {
-            Some(self.guard())
-        } else {
-            None
-        }
+        if self.raw.try_lock_until(timeout) { Some(self.guard()) } else { None }
     }
 }
 
@@ -368,10 +350,7 @@ impl<R: RawMutex, G: GetThreadId, T> From<T> for ReentrantMutex<R, G, T> {
 impl<R: RawMutex, G: GetThreadId, T: ?Sized + fmt::Debug> fmt::Debug for ReentrantMutex<R, G, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.try_lock() {
-            Some(guard) => f
-                .debug_struct("ReentrantMutex")
-                .field("data", &&*guard)
-                .finish(),
+            Some(guard) => f.debug_struct("ReentrantMutex").field("data", &&*guard).finish(),
             None => {
                 struct LockedPlaceholder;
                 impl fmt::Debug for LockedPlaceholder {
@@ -380,9 +359,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized + fmt::Debug> fmt::Debug for Reentra
                     }
                 }
 
-                f.debug_struct("ReentrantMutex")
-                    .field("data", &LockedPlaceholder)
-                    .finish()
+                f.debug_struct("ReentrantMutex").field("data", &LockedPlaceholder).finish()
             }
         }
     }
@@ -426,11 +403,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         let raw = &s.remutex.raw;
         let data = f(unsafe { &*s.remutex.data.get() });
         mem::forget(s);
-        MappedReentrantMutexGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        }
+        MappedReentrantMutexGuard { raw, data, marker: PhantomData }
     }
 
     /// Attempts to make  a new `MappedReentrantMutexGuard` for a component of the
@@ -456,11 +429,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
             None => return Err(s),
         };
         mem::forget(s);
-        Ok(MappedReentrantMutexGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        })
+        Ok(MappedReentrantMutexGuard { raw, data, marker: PhantomData })
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
@@ -605,11 +574,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
         let raw = s.raw;
         let data = f(unsafe { &*s.data });
         mem::forget(s);
-        MappedReentrantMutexGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        }
+        MappedReentrantMutexGuard { raw, data, marker: PhantomData }
     }
 
     /// Attempts to make  a new `MappedReentrantMutexGuard` for a component of the
@@ -635,11 +600,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
             None => return Err(s),
         };
         mem::forget(s);
-        Ok(MappedReentrantMutexGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        })
+        Ok(MappedReentrantMutexGuard { raw, data, marker: PhantomData })
     }
 }
 
