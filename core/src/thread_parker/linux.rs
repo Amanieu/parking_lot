@@ -12,10 +12,6 @@ use core::{
 use libc;
 use std::{thread, time::Instant};
 
-const FUTEX_WAIT: i32 = 0;
-const FUTEX_WAKE: i32 = 1;
-const FUTEX_PRIVATE: i32 = 128;
-
 // x32 Linux uses a non-standard type for tv_nsec in timespec.
 // See https://sourceware.org/bugzilla/show_bug.cgi?id=16437
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
@@ -104,7 +100,7 @@ impl ThreadParker {
             libc::syscall(
                 libc::SYS_futex,
                 &self.futex,
-                FUTEX_WAIT | FUTEX_PRIVATE,
+                libc::FUTEX_WAIT | libc::FUTEX_PRIVATE_FLAG,
                 1,
                 ts_ptr,
             )
@@ -132,7 +128,7 @@ impl super::UnparkHandleT for UnparkHandle {
         // The thread data may have been freed at this point, but it doesn't
         // matter since the syscall will just return EFAULT in that case.
         let r =
-            unsafe { libc::syscall(libc::SYS_futex, self.futex, FUTEX_WAKE | FUTEX_PRIVATE, 1) };
+            unsafe { libc::syscall(libc::SYS_futex, self.futex, libc::FUTEX_WAKE | libc::FUTEX_PRIVATE_FLAG, 1) };
         debug_assert!(r == 0 || r == 1 || r == -1);
         if r == -1 {
             debug_assert_eq!(unsafe { *libc::__errno_location() }, libc::EFAULT);
