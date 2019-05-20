@@ -124,7 +124,7 @@ impl super::UnparkHandleT for UnparkHandle {
     unsafe fn unpark(self) {
         // The thread data may have been freed at this point, but it doesn't
         // matter since the syscall will just return EFAULT in that case.
-        let r = unsafe { futex(self.futex, FUTEX_WAKE, PARKED, 0, ptr::null_mut()) };
+        let r = futex(self.futex, FUTEX_WAKE, PARKED, 0, ptr::null_mut());
         match r {
             Ok(num_woken) => debug_assert!(num_woken == 0 || num_woken == 1),
             Err(Error { errno }) => debug_assert_eq!(errno, EFAULT),

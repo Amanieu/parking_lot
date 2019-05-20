@@ -128,10 +128,10 @@ impl super::UnparkHandleT for UnparkHandle {
         // The thread data may have been freed at this point, but it doesn't
         // matter since the syscall will just return EFAULT in that case.
         let r =
-            unsafe { libc::syscall(libc::SYS_futex, self.futex, libc::FUTEX_WAKE | libc::FUTEX_PRIVATE_FLAG, 1) };
+            libc::syscall(libc::SYS_futex, self.futex, libc::FUTEX_WAKE | libc::FUTEX_PRIVATE_FLAG, 1);
         debug_assert!(r == 0 || r == 1 || r == -1);
         if r == -1 {
-            debug_assert_eq!(unsafe { *libc::__errno_location() }, libc::EFAULT);
+            debug_assert_eq!(*libc::__errno_location(), libc::EFAULT);
         }
     }
 }
