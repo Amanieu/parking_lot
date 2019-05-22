@@ -37,9 +37,7 @@ pub struct RawMutex {
 }
 
 unsafe impl RawMutexTrait for RawMutex {
-    const INIT: RawMutex = RawMutex {
-        state: AtomicU8::new(0),
-    };
+    const INIT: RawMutex = RawMutex { state: AtomicU8::new(0) };
 
     type GuardMarker = GuardNoSend;
 
@@ -80,10 +78,7 @@ unsafe impl RawMutexTrait for RawMutex {
     #[inline]
     fn unlock(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
-        if self
-            .state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
+        if self.state.compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed).is_ok()
         {
             return;
         }
@@ -95,10 +90,7 @@ unsafe impl RawMutexFair for RawMutex {
     #[inline]
     fn unlock_fair(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
-        if self
-            .state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
+        if self.state.compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed).is_ok()
         {
             return;
         }

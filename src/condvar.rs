@@ -91,9 +91,7 @@ impl Condvar {
     /// notified.
     #[inline]
     pub const fn new() -> Condvar {
-        Condvar {
-            state: AtomicPtr::new(ptr::null_mut()),
-        }
+        Condvar { state: AtomicPtr::new(ptr::null_mut()) }
     }
 
     /// Wakes up one blocked thread on this condvar.
@@ -286,10 +284,7 @@ impl Condvar {
         mutex_guard: &mut MutexGuard<'_, T>,
         timeout: Instant,
     ) -> WaitTimeoutResult {
-        self.wait_until_internal(
-            unsafe { MutexGuard::mutex(mutex_guard).raw() },
-            Some(timeout),
-        )
+        self.wait_until_internal(unsafe { MutexGuard::mutex(mutex_guard).raw() }, Some(timeout))
     }
 
     // This is a non-generic function to reduce the monomorphization cost of
@@ -580,10 +575,8 @@ mod tests {
             let _g = m2.lock();
             c2.notify_one();
         });
-        let timeout_res = c.wait_until(
-            &mut g,
-            Instant::now() + Duration::from_millis(u32::max_value() as u64),
-        );
+        let timeout_res =
+            c.wait_until(&mut g, Instant::now() + Duration::from_millis(u32::max_value() as u64));
         assert!(!timeout_res.timed_out());
         drop(g);
     }
