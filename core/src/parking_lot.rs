@@ -95,7 +95,7 @@ impl FairTimeout {
     fn should_timeout(&mut self) -> bool {
         let now = Instant::now();
         if now > self.timeout {
-            // Random time between 0 and 1ms.
+            // Time between 0 and 1ms.
             let nanos = self.gen_u32() % 1_000_000;
             self.timeout = now + Duration::new(0, nanos);
             true
