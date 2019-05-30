@@ -42,8 +42,9 @@ impl HashTable {
 
         let now = Instant::now();
         let mut entries = Vec::with_capacity(new_size);
-        for _ in 0..new_size {
-            entries.push(Bucket::new(now));
+        for i in 0..new_size {
+            // We must ensure the seed is not zero
+            entries.push(Bucket::new(now, i as u32 + 1));
         }
 
         Box::new(HashTable { entries: entries.into_boxed_slice(), hash_bits, _prev: prev })
@@ -65,12 +66,12 @@ struct Bucket {
 
 impl Bucket {
     #[inline]
-    pub fn new(timeout: Instant) -> Self {
+    pub fn new(timeout: Instant, seed: u32) -> Self {
         Self {
             mutex: WordLock::INIT,
             queue_head: Cell::new(ptr::null()),
             queue_tail: Cell::new(ptr::null()),
-            fair_timeout: UnsafeCell::new(FairTimeout::new(timeout)),
+            fair_timeout: UnsafeCell::new(FairTimeout::new(timeout, seed)),
         }
     }
 }
@@ -85,8 +86,8 @@ struct FairTimeout {
 
 impl FairTimeout {
     #[inline]
-    fn new(timeout: Instant) -> FairTimeout {
-        FairTimeout { timeout, seed: &timeout as *const _ as usize as u32 }
+    fn new(timeout: Instant, seed: u32) -> FairTimeout {
+        FairTimeout { timeout, seed }
     }
 
     // Determine whether we should force a fair unlock, and update the timeout
