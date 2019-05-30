@@ -13,7 +13,6 @@ use core::{
     ptr,
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
-use rand::{rngs::SmallRng, FromEntropy, Rng};
 use smallvec::SmallVec;
 use std::time::{Duration, Instant};
 
@@ -80,14 +79,14 @@ struct FairTimeout {
     // Next time at which point be_fair should be set
     timeout: Instant,
 
-    // Random number generator for calculating the next timeout
-    rng: SmallRng,
+    // the PRNG state for calculating the next timeout
+    seed: u32,
 }
 
 impl FairTimeout {
     #[inline]
     fn new(timeout: Instant) -> FairTimeout {
-        FairTimeout { timeout, rng: SmallRng::from_entropy() }
+        FairTimeout { timeout, seed: &timeout as *const _ as usize as u32 }
     }
 
     // Determine whether we should force a fair unlock, and update the timeout
@@ -95,11 +94,21 @@ impl FairTimeout {
     fn should_timeout(&mut self) -> bool {
         let now = Instant::now();
         if now > self.timeout {
-            self.timeout = now + Duration::new(0, self.rng.gen_range(0, 1000000));
+            // Random time between 0 and 1ms.
+            let nanos = self.gen_u32() % 1_000_000;
+            self.timeout = now + Duration::new(0, nanos);
             true
         } else {
             false
         }
+    }
+
+    // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
+    fn gen_u32(&mut self) -> u32 {
+        self.seed ^= self.seed << 13;
+        self.seed ^= self.seed >> 17;
+        self.seed ^= self.seed << 5;
+        self.seed
     }
 }
 
