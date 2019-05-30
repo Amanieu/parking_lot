@@ -13,7 +13,6 @@ use core::{
     ptr,
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
-use rand::{rngs::SmallRng, FromEntropy, Rng};
 use smallvec::SmallVec;
 use std::time::{Duration, Instant};
 
@@ -43,8 +42,9 @@ impl HashTable {
 
         let now = Instant::now();
         let mut entries = Vec::with_capacity(new_size);
-        for _ in 0..new_size {
-            entries.push(Bucket::new(now));
+        for i in 0..new_size {
+            // We must ensure the seed is not zero
+            entries.push(Bucket::new(now, i as u32 + 1));
         }
 
         Box::new(HashTable { entries: entries.into_boxed_slice(), hash_bits, _prev: prev })
@@ -66,12 +66,12 @@ struct Bucket {
 
 impl Bucket {
     #[inline]
-    pub fn new(timeout: Instant) -> Self {
+    pub fn new(timeout: Instant, seed: u32) -> Self {
         Self {
             mutex: WordLock::INIT,
             queue_head: Cell::new(ptr::null()),
             queue_tail: Cell::new(ptr::null()),
-            fair_timeout: UnsafeCell::new(FairTimeout::new(timeout)),
+            fair_timeout: UnsafeCell::new(FairTimeout::new(timeout, seed)),
         }
     }
 }
@@ -80,14 +80,14 @@ struct FairTimeout {
     // Next time at which point be_fair should be set
     timeout: Instant,
 
-    // Random number generator for calculating the next timeout
-    rng: SmallRng,
+    // the PRNG state for calculating the next timeout
+    seed: u32,
 }
 
 impl FairTimeout {
     #[inline]
-    fn new(timeout: Instant) -> FairTimeout {
-        FairTimeout { timeout, rng: SmallRng::from_entropy() }
+    fn new(timeout: Instant, seed: u32) -> FairTimeout {
+        FairTimeout { timeout, seed }
     }
 
     // Determine whether we should force a fair unlock, and update the timeout
@@ -95,11 +95,21 @@ impl FairTimeout {
     fn should_timeout(&mut self) -> bool {
         let now = Instant::now();
         if now > self.timeout {
-            self.timeout = now + Duration::new(0, self.rng.gen_range(0, 1000000));
+            // Time between 0 and 1ms.
+            let nanos = self.gen_u32() % 1_000_000;
+            self.timeout = now + Duration::new(0, nanos);
             true
         } else {
             false
         }
+    }
+
+    // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
+    fn gen_u32(&mut self) -> u32 {
+        self.seed ^= self.seed << 13;
+        self.seed ^= self.seed >> 17;
+        self.seed ^= self.seed << 5;
+        self.seed
     }
 }
 
