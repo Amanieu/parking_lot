@@ -492,7 +492,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn try_lock_shared_slow(&self, recursive: bool) -> bool {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -541,7 +540,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn try_lock_upgradable_slow(&self) -> bool {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -565,7 +563,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn lock_exclusive_slow(&self, timeout: Option<Instant>) -> bool {
         // Step 1: grab exclusive ownership of WRITER_BIT
         let timed_out = !self.lock_common(
@@ -600,7 +597,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn unlock_exclusive_slow(&self, force_fair: bool) {
         // There are threads to unpark. Try to unpark as many as we can.
         let callback = |mut new_state, result: UnparkResult| {
@@ -626,7 +622,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn lock_shared_slow(&self, recursive: bool, timeout: Option<Instant>) -> bool {
         self.lock_common(
             timeout,
@@ -676,7 +671,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn unlock_shared_slow(&self) {
         // At this point WRITER_PARKED_BIT is set and READER_MASK is empty. We
         // just need to wake up a potentially sleeping pending writer.
@@ -695,7 +689,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn lock_upgradable_slow(&self, timeout: Option<Instant>) -> bool {
         self.lock_common(
             timeout,
@@ -734,7 +727,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn unlock_upgradable_slow(&self, force_fair: bool) {
         // Just release the lock if there are no parked threads.
         let mut state = self.state.load(Ordering::Relaxed);
@@ -801,7 +793,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn try_upgrade_slow(&self) -> bool {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -821,13 +812,11 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn upgrade_slow(&self, timeout: Option<Instant>) -> bool {
         self.wait_for_readers(timeout, ONE_READER | UPGRADABLE_BIT)
     }
 
     #[cold]
-    #[inline(never)]
     fn downgrade_slow(&self) {
         // We only reach this point if PARKED_BIT is set.
         let callback = |_, result: UnparkResult| {
@@ -841,7 +830,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn downgrade_to_upgradable_slow(&self) {
         // We only reach this point if PARKED_BIT is set.
         let callback = |_, result: UnparkResult| {
@@ -855,14 +843,12 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn bump_shared_slow(&self) {
         self.unlock_shared();
         self.lock_shared();
     }
 
     #[cold]
-    #[inline(never)]
     fn bump_exclusive_slow(&self) {
         self.deadlock_release();
         self.unlock_exclusive_slow(true);
@@ -870,7 +856,6 @@ impl RawRwLock {
     }
 
     #[cold]
-    #[inline(never)]
     fn bump_upgradable_slow(&self) {
         self.deadlock_release();
         self.unlock_upgradable_slow(true);

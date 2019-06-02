@@ -20,7 +20,7 @@ backtrace = { version = "0.3.2", optional = true }
 rustc_version = "0.2"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2.27"
+libc = "0.2.55"
 
 [target.'cfg(target_os = "redox")'.dependencies]
 redox_syscall = "0.1"
