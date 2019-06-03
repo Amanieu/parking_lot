@@ -1,3 +1,19 @@
+0.8.0 (2019-05-04)
+==================
+
+- Fix race conditions in deadlock detection.
+- Support for more platforms by adding ThreadParker implementations for
+  Wasm, Redox, SGX and CloudABI.
+- Drop support for older Rust. parking_lot now requires 1.31 and is a
+  Rust 2018 edition crate (#122).
+- Disable the owning_ref feature by default.
+- Fix was_last_thread value in the timeout callback of park() (#129).
+- Support single byte Mutex/Once on stable Rust when compiler is at least
+  version 1.34.
+- Make Condvar::new and Once::new const fns on stable Rust and remove ONCE_INIT
+  (#134).
+- Add optional Serde support (#135).
+
 0.7.1 (2019-01-01)
 ==================
 
