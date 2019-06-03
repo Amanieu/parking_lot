@@ -152,8 +152,11 @@ impl<R: RawMutex, T> Mutex<R, T> {
 }
 
 impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
+    /// # Safety
+    ///
+    /// The lock must be held when calling this method.
     #[inline]
-    fn guard(&self) -> MutexGuard<'_, R, T> {
+    unsafe fn guard(&self) -> MutexGuard<'_, R, T> {
         MutexGuard { mutex: self, marker: PhantomData }
     }
 
@@ -169,7 +172,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     #[inline]
     pub fn lock(&self) -> MutexGuard<'_, R, T> {
         self.raw.lock();
-        self.guard()
+        unsafe { self.guard() }
     }
 
     /// Attempts to acquire this lock.
@@ -181,7 +184,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// This function does not block.
     #[inline]
     pub fn try_lock(&self) -> Option<MutexGuard<'_, R, T>> {
-        if self.raw.try_lock() { Some(self.guard()) } else { None }
+        if self.raw.try_lock() { Some(unsafe { self.guard() }) } else { None }
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -250,7 +253,7 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     /// be unlocked when the guard is dropped.
     #[inline]
     pub fn try_lock_for(&self, timeout: R::Duration) -> Option<MutexGuard<'_, R, T>> {
-        if self.raw.try_lock_for(timeout) { Some(self.guard()) } else { None }
+        if self.raw.try_lock_for(timeout) { Some(unsafe { self.guard() }) } else { None }
     }
 
     /// Attempts to acquire this lock until a timeout is reached.
@@ -260,7 +263,7 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     /// be unlocked when the guard is dropped.
     #[inline]
     pub fn try_lock_until(&self, timeout: R::Instant) -> Option<MutexGuard<'_, R, T>> {
-        if self.raw.try_lock_until(timeout) { Some(self.guard()) } else { None }
+        if self.raw.try_lock_until(timeout) { Some(unsafe { self.guard() }) } else { None }
     }
 }
 
