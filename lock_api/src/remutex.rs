@@ -5,14 +5,19 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::mutex::{RawMutex, RawMutexFair, RawMutexTimed};
-use crate::GuardNoSend;
-use core::cell::{Cell, UnsafeCell};
-use core::fmt;
-use core::marker::PhantomData;
-use core::mem;
-use core::ops::Deref;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use crate::{
+    mutex::{RawMutex, RawMutexFair, RawMutexTimed},
+    GuardNoSend,
+};
+use core::{
+    cell::{Cell, UnsafeCell},
+    fmt,
+    marker::PhantomData,
+    mem,
+    num::NonZeroUsize,
+    ops::Deref,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -36,7 +41,7 @@ pub unsafe trait GetThreadId {
 
     /// Returns a non-zero thread ID which identifies the current thread of
     /// execution.
-    fn nonzero_thread_id(&self) -> usize;
+    fn nonzero_thread_id(&self) -> NonZeroUsize;
 }
 
 struct RawReentrantMutex<R: RawMutex, G: GetThreadId> {
@@ -49,7 +54,7 @@ struct RawReentrantMutex<R: RawMutex, G: GetThreadId> {
 impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
     #[inline]
     fn lock_internal<F: FnOnce() -> bool>(&self, try_lock: F) -> bool {
-        let id = self.get_thread_id.nonzero_thread_id();
+        let id = self.get_thread_id.nonzero_thread_id().get();
         if self.owner.load(Ordering::Relaxed) == id {
             self.lock_count.set(
                 self.lock_count.get().checked_add(1).expect("ReentrantMutex lock count overflow"),
