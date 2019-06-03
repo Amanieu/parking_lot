@@ -1,48 +1,70 @@
 language: rust
 sudo: false
 
-rust:
-- 1.31.0
-- stable
-- beta
-- nightly
-
-before_script:
-- |
-  pip install 'travis-cargo<0.2' --user &&
-  export PATH=$HOME/.local/bin:$PATH
-- if [ "${TRAVIS_RUST_VERSION}" = "nightly" ]; then
-    rustup target add x86_64-fortanix-unknown-sgx;
-    rustup target add x86_64-unknown-redox;
-    rustup target add x86_64-unknown-cloudabi;
-  fi
-
-script:
-- cd core;
-- travis-cargo build;
-- cd ../lock_api;
-- travis-cargo build;
-- cd ..;
-- travis-cargo build
-- travis-cargo test
-- travis-cargo build -- --features serde
-- travis-cargo test -- --features serde
-- travis-cargo --only stable test -- --features=deadlock_detection
-- travis-cargo --only beta test -- --features=deadlock_detection
-- travis-cargo --only nightly test -- --all --no-run --target x86_64-fortanix-unknown-sgx
-- travis-cargo --only nightly build -- --all --target x86_64-unknown-redox
-- travis-cargo --only nightly build -- --all --target x86_64-unknown-cloudabi
-- travis-cargo --only nightly doc -- --all-features --no-deps -p parking_lot -p parking_lot_core -p lock_api
-- cd benchmark
-- travis-cargo build
-- cargo run --release --bin mutex -- 2 1 0 1 2
-- cargo run --release --bin rwlock -- 1 1 1 0 1 2
-- cd ..
-
 env:
   global:
-  - TRAVIS_CARGO_NIGHTLY_FEATURE=nightly
-  - RUST_TEST_THREADS=1
+    - RUST_TEST_THREADS=1
+
+matrix:
+  include:
+    - rust: 1.31.0
+      os: linux
+      script: &script
+        - cargo build
+        - cargo test --all
+        - cargo build --features serde
+        - cargo test --features serde
+        - cargo test --features=deadlock_detection
+
+    - rust: stable
+      os: linux
+      script: *script
+
+    - rust: beta
+      os: linux
+      script: *script
+
+    - rust: nightly
+      os: linux
+      script:
+        - cargo build --features nightly
+        - cargo test --all --features nightly
+        - cargo build --features serde,nightly
+        - cargo test --all --features serde,nightly
+        # Test other platforms
+        - rustup target add x86_64-fortanix-unknown-sgx;
+        - rustup target add x86_64-unknown-redox;
+        - rustup target add x86_64-unknown-cloudabi;
+        - cargo test --all --no-run --target x86_64-fortanix-unknown-sgx --features nightly
+        - cargo build --all --target x86_64-unknown-redox --features nightly
+        - cargo build --all --target x86_64-unknown-cloudabi --features nightly
+        # Test building the docs
+        - cargo doc --all-features --no-deps -p parking_lot -p parking_lot_core -p lock_api
+        # Run the benchmarks
+        - cd benchmark
+        - cargo run --release --bin mutex -- 2 1 0 1 2
+        - cargo run --release --bin rwlock -- 1 1 1 0 1 2
+        - cd ..
+
+    - rust: 1.31.0
+      os: osx
+      script: *script
+
+    - rust: stable
+      os: osx
+      script: *script
+
+    - rust: beta
+      os: osx
+      script: *script
+
+    - rust: nightly
+      os: osx
+      script:
+        - cargo build --features nightly
+        - cargo test --all --features nightly
+        - cargo build --features serde,nightly
+        - cargo test --all --features serde,nightly
 
 notifications:
   email: false
