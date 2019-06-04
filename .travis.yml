@@ -15,6 +15,9 @@ matrix:
         - cargo build --features serde
         - cargo test --features serde
         - cargo test --features=deadlock_detection
+        # Test other platforms
+        - rustup target add wasm32-unknown-unknown
+        - cargo build --all --target wasm32-unknown-unknown
 
     - rust: stable
       os: linux
@@ -32,9 +35,9 @@ matrix:
         - cargo build --features serde,nightly
         - cargo test --all --features serde,nightly
         # Test other platforms
-        - rustup target add x86_64-fortanix-unknown-sgx;
-        - rustup target add x86_64-unknown-redox;
-        - rustup target add x86_64-unknown-cloudabi;
+        - rustup target add x86_64-fortanix-unknown-sgx
+        - rustup target add x86_64-unknown-redox
+        - rustup target add x86_64-unknown-cloudabi
         - cargo test --all --no-run --target x86_64-fortanix-unknown-sgx --features nightly
         - cargo build --all --target x86_64-unknown-redox --features nightly
         - cargo build --all --target x86_64-unknown-cloudabi --features nightly
