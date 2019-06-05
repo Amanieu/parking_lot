@@ -72,6 +72,9 @@ cfg_if! {
         target_arch = "wasm32",
         target_feature = "atomics"
     ))] {
+        #[path = "wasm_atomic.rs"]
+        mod imp;
+    } else if #[cfg(target_arch = "wasm32")] {
         #[path = "wasm.rs"]
         mod imp;
     } else if #[cfg(all(feature = "nightly", target_os = "cloudabi"))] {

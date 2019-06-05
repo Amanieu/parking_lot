@@ -5,92 +5,49 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use core::{
-    arch::wasm32,
-    sync::atomic::{AtomicI32, Ordering},
-};
-use std::{convert::TryFrom, thread, time::Instant};
+//! The wasm platform can't park when atomic support is not available.
+//! So this ThreadParker just panics on any attempt to park.
 
-// Helper type for putting a thread to sleep until some other thread wakes it up
-pub struct ThreadParker {
-    parked: AtomicI32,
-}
+use std::{thread, time::Instant};
 
-const UNPARKED: i32 = 0;
-const PARKED: i32 = 1;
+pub struct ThreadParker(());
 
 impl super::ThreadParkerT for ThreadParker {
     type UnparkHandle = UnparkHandle;
 
     const IS_CHEAP_TO_CONSTRUCT: bool = true;
 
-    #[inline]
     fn new() -> ThreadParker {
-        ThreadParker {
-            parked: AtomicI32::new(UNPARKED),
-        }
+        ThreadParker(())
     }
 
-    #[inline]
     unsafe fn prepare_park(&self) {
-        self.parked.store(PARKED, Ordering::Relaxed);
+        panic!("Parking not supported on this platform");
     }
 
-    #[inline]
     unsafe fn timed_out(&self) -> bool {
-        self.parked.load(Ordering::Relaxed) == PARKED
+        panic!("Parking not supported on this platform");
     }
 
-    #[inline]
     unsafe fn park(&self) {
-        while self.parked.load(Ordering::Acquire) == PARKED {
-            let r = unsafe { wasm32::i32_atomic_wait(self.ptr(), PARKED, -1) };
-            // we should have either woken up (0) or got a not-equal due to a
-            // race (1). We should never time out (2)
-            debug_assert!(r == 0 || r == 1);
-        }
+        panic!("Parking not supported on this platform");
     }
 
-    #[inline]
-    unsafe fn park_until(&self, timeout: Instant) -> bool {
-        while self.parked.load(Ordering::Acquire) == PARKED {
-            if let Some(left) = timeout.checked_duration_since(Instant::now()) {
-                let nanos_left = i64::try_from(left.as_nanos()).unwrap_or(i64::max_value());
-                let r = unsafe { wasm32::i32_atomic_wait(self.ptr(), PARKED, nanos_left) };
-                debug_assert!(r == 0 || r == 1 || r == 2);
-            } else {
-                return false;
-            }
-        }
-        true
+    unsafe fn park_until(&self, _timeout: Instant) -> bool {
+        panic!("Parking not supported on this platform");
     }
 
-    #[inline]
     unsafe fn unpark_lock(&self) -> UnparkHandle {
-        // We don't need to lock anything, just clear the state
-        self.parked.store(UNPARKED, Ordering::Release);
-        UnparkHandle(self.ptr())
+        panic!("Parking not supported on this platform");
     }
 }
 
-impl ThreadParker {
-    #[inline]
-    fn ptr(&self) -> *mut i32 {
-        &self.parked as *const AtomicI32 as *mut i32
-    }
-}
-
-pub struct UnparkHandle(*mut i32);
+pub struct UnparkHandle(());
 
 impl super::UnparkHandleT for UnparkHandle {
-    #[inline]
-    unsafe fn unpark(self) {
-        let num_notified = unsafe { wasm32::atomic_notify(self.0 as *mut i32, 1) };
-        debug_assert!(num_notified == 0 || num_notified == 1);
-    }
+    unsafe fn unpark(self) {}
 }
 
-#[inline]
 pub fn thread_yield() {
     thread::yield_now();
 }
