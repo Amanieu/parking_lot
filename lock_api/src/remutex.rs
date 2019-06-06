@@ -64,6 +64,7 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
                 return false;
             }
             self.owner.store(id, Ordering::Relaxed);
+            debug_assert_eq!(self.lock_count.get(), 0);
             self.lock_count.set(1);
         }
         true
@@ -88,9 +89,8 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
             self.mutex.unlock();
-        } else {
-            self.lock_count.set(lock_count);
         }
+        self.lock_count.set(lock_count);
     }
 }
 
@@ -101,9 +101,8 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
             self.mutex.unlock_fair();
-        } else {
-            self.lock_count.set(lock_count);
         }
+        self.lock_count.set(lock_count);
     }
 
     #[inline]
