@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
+use crate::thread_parker::{ThreadParker};
 use crate::util::UncheckedOptionExt;
 use crate::word_lock::WordLock;
 use core::{
