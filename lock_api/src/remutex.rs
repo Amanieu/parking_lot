@@ -5,14 +5,19 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::mutex::{RawMutex, RawMutexFair, RawMutexTimed};
-use crate::GuardNoSend;
-use core::cell::{Cell, UnsafeCell};
-use core::fmt;
-use core::marker::PhantomData;
-use core::mem;
-use core::ops::Deref;
-use core::sync::atomic::{AtomicUsize, Ordering};
+use crate::{
+    mutex::{RawMutex, RawMutexFair, RawMutexTimed},
+    GuardNoSend,
+};
+use core::{
+    cell::{Cell, UnsafeCell},
+    fmt,
+    marker::PhantomData,
+    mem,
+    num::NonZeroUsize,
+    ops::Deref,
+    sync::atomic::{AtomicUsize, Ordering},
+};
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -36,7 +41,7 @@ pub unsafe trait GetThreadId {
 
     /// Returns a non-zero thread ID which identifies the current thread of
     /// execution.
-    fn nonzero_thread_id(&self) -> usize;
+    fn nonzero_thread_id(&self) -> NonZeroUsize;
 }
 
 struct RawReentrantMutex<R: RawMutex, G: GetThreadId> {
@@ -49,7 +54,7 @@ struct RawReentrantMutex<R: RawMutex, G: GetThreadId> {
 impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
     #[inline]
     fn lock_internal<F: FnOnce() -> bool>(&self, try_lock: F) -> bool {
-        let id = self.get_thread_id.nonzero_thread_id();
+        let id = self.get_thread_id.nonzero_thread_id().get();
         if self.owner.load(Ordering::Relaxed) == id {
             self.lock_count.set(
                 self.lock_count.get().checked_add(1).expect("ReentrantMutex lock count overflow"),
@@ -59,6 +64,7 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
                 return false;
             }
             self.owner.store(id, Ordering::Relaxed);
+            debug_assert_eq!(self.lock_count.get(), 0);
             self.lock_count.set(1);
         }
         true
@@ -83,9 +89,8 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
             self.mutex.unlock();
-        } else {
-            self.lock_count.set(lock_count);
         }
+        self.lock_count.set(lock_count);
     }
 }
 
@@ -96,9 +101,8 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
             self.mutex.unlock_fair();
-        } else {
-            self.lock_count.set(lock_count);
         }
+        self.lock_count.set(lock_count);
     }
 
     #[inline]
@@ -220,8 +224,11 @@ impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
 }
 
 impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
+    /// # Safety
+    ///
+    /// The lock must be held when calling this method.
     #[inline]
-    fn guard(&self) -> ReentrantMutexGuard<'_, R, G, T> {
+    unsafe fn guard(&self) -> ReentrantMutexGuard<'_, R, G, T> {
         ReentrantMutexGuard { remutex: &self, marker: PhantomData }
     }
 
@@ -238,7 +245,8 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     #[inline]
     pub fn lock(&self) -> ReentrantMutexGuard<'_, R, G, T> {
         self.raw.lock();
-        self.guard()
+        // SAFETY: The lock is held, as required.
+        unsafe { self.guard() }
     }
 
     /// Attempts to acquire this lock.
@@ -250,7 +258,12 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// This function does not block.
     #[inline]
     pub fn try_lock(&self) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
-        if self.raw.try_lock() { Some(self.guard()) } else { None }
+        if self.raw.try_lock() {
+            // SAFETY: The lock is held, as required.
+            Some(unsafe { self.guard() })
+        } else {
+            None
+        }
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -319,7 +332,12 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// be unlocked when the guard is dropped.
     #[inline]
     pub fn try_lock_for(&self, timeout: R::Duration) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
-        if self.raw.try_lock_for(timeout) { Some(self.guard()) } else { None }
+        if self.raw.try_lock_for(timeout) {
+            // SAFETY: The lock is held, as required.
+            Some(unsafe { self.guard() })
+        } else {
+            None
+        }
     }
 
     /// Attempts to acquire this lock until a timeout is reached.
@@ -329,7 +347,12 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// be unlocked when the guard is dropped.
     #[inline]
     pub fn try_lock_until(&self, timeout: R::Instant) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
-        if self.raw.try_lock_until(timeout) { Some(self.guard()) } else { None }
+        if self.raw.try_lock_until(timeout) {
+            // SAFETY: The lock is held, as required.
+            Some(unsafe { self.guard() })
+        } else {
+            None
+        }
     }
 }
 
