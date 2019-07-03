@@ -1,3 +1,11 @@
+0.8.1 (2019-07-03)
+==================
+
+- Re-export the lock_api crate from parking_lot. (#150)
+- Removed dependency on rand crate. (#144)
+- Android now uses the futex-based ThreadParker. (#140)
+- Fixed CloudABI ThreadParker. (#140)
+
 0.8.0 (2019-05-04)
 ==================
 
