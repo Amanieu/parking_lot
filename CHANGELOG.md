@@ -1,4 +1,4 @@
-## parking_lot 0.9.0 (TBD)
+## parking_lot 0.9.0, parking_lot_core 0.6.0 (TBD)
 
 ## parking_lot 0.8.1 (2019-07-03, _yanked_)
 
