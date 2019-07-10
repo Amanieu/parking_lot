@@ -1,13 +1,11 @@
-0.8.1 (2019-07-03)
-==================
+## parking_lot 0.8.1 (2019-07-03, _yanked_)
 
-- Re-export the lock_api crate from parking_lot. (#150)
+- Re-export the lock_api crate. (#150)
 - Removed dependency on rand crate. (#144)
 - Android now uses the futex-based ThreadParker. (#140)
 - Fixed CloudABI ThreadParker. (#140)
 
-0.8.0 (2019-05-04)
-==================
+## parking_lot 0.8.0 (2019-05-04)
 
 - Fix race conditions in deadlock detection.
 - Support for more platforms by adding ThreadParker implementations for
@@ -22,29 +20,24 @@
   (#134).
 - Add optional Serde support (#135).
 
-0.7.1 (2019-01-01)
-==================
+## parking_lot 0.7.1 (2019-01-01)
 
 - Fixed potential deadlock when upgrading a RwLock.
 - Fixed overflow panic on very long timeouts (#111).
 
-0.7.0 (2018-11-20)
-==================
+## parking_lot 0.7.0 (2018-11-20)
 
 - Return if or how many threads were notified from `Condvar::notify_*`
 
-0.6.3 (2018-07-18)
-==================
+## parking_lot 0.6.3 (2018-07-18)
 
 - Export `RawMutex`, `RawRwLock` and `RawThreadId`.
 
-0.6.2 (2018-06-18)
-==================
+## parking_lot 0.6.2 (2018-06-18)
 
 - Enable `lock_api/nightly` feature from `parking_lot/nightly` (#79)
 
-0.6.1 (2018-06-08)
-==================
+## parking_lot 0.6.1 (2018-06-08)
 
 Added missing typedefs for mapped lock guards:
 
@@ -53,8 +46,7 @@ Added missing typedefs for mapped lock guards:
 - `MappedRwLockReadGuard`
 - `MappedRwLockWriteGuard`
 
-0.6.0 (2018-06-08)
-==================
+## parking_lot 0.6.0 (2018-06-08)
 
 This release moves most of the code for type-safe `Mutex` and `RwLock` types
 into a separate crate called `lock_api`. This new crate is compatible with
