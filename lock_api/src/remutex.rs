@@ -86,11 +86,11 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
     #[inline]
     fn unlock(&self) {
         let lock_count = self.lock_count.get() - 1;
+        self.lock_count.set(lock_count);
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
             self.mutex.unlock();
         }
-        self.lock_count.set(lock_count);
     }
 }
 
@@ -98,11 +98,11 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
     #[inline]
     fn unlock_fair(&self) {
         let lock_count = self.lock_count.get() - 1;
+        self.lock_count.set(lock_count);
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
             self.mutex.unlock_fair();
         }
-        self.lock_count.set(lock_count);
     }
 
     #[inline]
