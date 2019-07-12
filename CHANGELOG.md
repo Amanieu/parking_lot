@@ -1,4 +1,4 @@
-## parking_lot 0.9.0, parking_lot_core 0.6.0 (TBD)
+## parking_lot 0.9.0, parking_lot_core 0.6.0, lock_api 0.3.1 (TBD)
 
 - Re-export lock_api (0.3.0) from parking_lot (#150)
 - Removed (non-dev) dependency on rand crate for fairness mechanism, by
