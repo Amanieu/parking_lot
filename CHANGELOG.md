@@ -5,6 +5,7 @@
   including a simple xorshift PRNG in core (#144)
 - Android now uses the futex-based ThreadParker. (#140)
 - Fixed CloudABI ThreadParker. (#140)
+- Fix race condition in ReentrantMutex (da16c2c7)
 
 ## lock_api 0.3.0 (2019-07-03)
 
