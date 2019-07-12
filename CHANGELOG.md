@@ -5,13 +5,14 @@
   including a simple xorshift PRNG in core (#144)
 - Android now uses the futex-based ThreadParker. (#140)
 - Fixed CloudABI ThreadParker. (#140)
-- Fix race condition in ReentrantMutex (da16c2c7)
+- Fix race condition in lock_api::ReentrantMutex (da16c2c7)
 
-## lock_api 0.3.0 (2019-07-03)
+## lock_api 0.3.0 (2019-07-03, _yanked_)
 
 - Use NonZeroUsize in GetThreadId::nonzero_thread_id (#148)
 - Debug assert lock_count in ReentrantMutex (#148)
 - Tag as `unsafe` and document some internal methods (#148)
+- This release was _yanked_ due to a regression in ReentrantMutex (da16c2c7)
 
 ## parking_lot 0.8.1 (2019-07-03, _yanked_)
 
