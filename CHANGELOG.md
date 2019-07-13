@@ -1,5 +1,8 @@
 ## parking_lot 0.9.0, parking_lot_core 0.6.0, lock_api 0.3.1 (TBD)
 
+- The minimum supported rust version (MSRV) is now 1.32. This was primarily
+  increased for testing with the latest _rand_ crate. Rust 1.31 may continue to
+  work normal use of these releases.
 - Re-export lock_api (0.3.1) from parking_lot (#150)
 - Removed (non-dev) dependency on rand crate for fairness mechanism, by
   including a simple xorshift PRNG in core (#144)
