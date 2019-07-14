@@ -1,4 +1,4 @@
-## parking_lot 0.9.0, parking_lot_core 0.6.0, lock_api 0.3.1 (TBD)
+## parking_lot 0.9.0, parking_lot_core 0.6.0, lock_api 0.3.1 (2019-07-14)
 
 - The minimum supported rust version (MSRV) is now 1.32. This was primarily
   increased for testing with the latest _rand_ crate. Rust 1.31 may continue to
