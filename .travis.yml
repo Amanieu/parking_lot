@@ -7,6 +7,16 @@ env:
 
 matrix:
   include:
+    # can't run tests on 1.31.0 due to rand dev-dependency
+    - rust: 1.31.0
+      os: linux
+      script:
+        - cargo build --lib
+        - cargo build --lib --features serde
+        # Build on other platforms
+        - rustup target add wasm32-unknown-unknown
+        - cargo build --lib --target wasm32-unknown-unknown
+
     - rust: 1.32.0
       os: linux
       script: &script
