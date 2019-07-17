@@ -28,7 +28,6 @@ pub mod deadlock;
 #[cfg(not(feature = "deadlock_detection"))]
 mod deadlock;
 
-pub use ::lock_api as lock_api;
 pub use self::condvar::{Condvar, WaitTimeoutResult};
 pub use self::mutex::{MappedMutexGuard, Mutex, MutexGuard};
 pub use self::once::{Once, OnceState};
@@ -41,3 +40,4 @@ pub use self::rwlock::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
     RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
+pub use ::lock_api;

@@ -78,7 +78,9 @@ pub struct WordLock {
 }
 
 impl WordLock {
-    pub const INIT: WordLock = WordLock { state: AtomicUsize::new(0) };
+    pub const INIT: WordLock = WordLock {
+        state: AtomicUsize::new(0),
+    };
 
     #[inline]
     pub fn lock(&self) {
