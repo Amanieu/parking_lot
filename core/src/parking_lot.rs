@@ -47,7 +47,11 @@ impl HashTable {
             entries.push(Bucket::new(now, i as u32 + 1));
         }
 
-        Box::new(HashTable { entries: entries.into_boxed_slice(), hash_bits, _prev: prev })
+        Box::new(HashTable {
+            entries: entries.into_boxed_slice(),
+            hash_bits,
+            _prev: prev,
+        })
     }
 }
 
@@ -186,7 +190,11 @@ fn get_hashtable() -> *mut HashTable {
     let table = HASHTABLE.load(Ordering::Acquire);
 
     // If there is no table, create one
-    if table.is_null() { create_hashtable() } else { table }
+    if table.is_null() {
+        create_hashtable()
+    } else {
+        table
+    }
 }
 
 // Get a pointer to the latest hash table, creating one if it doesn't exist yet.
@@ -224,7 +232,12 @@ unsafe fn grow_hashtable(num_threads: usize) {
         // If this fails then it means some other thread created the hash
         // table first.
         if HASHTABLE
-            .compare_exchange(ptr::null_mut(), new_table, Ordering::Release, Ordering::Relaxed)
+            .compare_exchange(
+                ptr::null_mut(),
+                new_table,
+                Ordering::Release,
+                Ordering::Relaxed,
+            )
             .is_ok()
         {
             return;
@@ -273,7 +286,9 @@ unsafe fn grow_hashtable(num_threads: usize) {
             if new_table.entries[hash].queue_tail.get().is_null() {
                 new_table.entries[hash].queue_head.set(current);
             } else {
-                (*new_table.entries[hash].queue_tail.get()).next_in_queue.set(current);
+                (*new_table.entries[hash].queue_tail.get())
+                    .next_in_queue
+                    .set(current);
             }
             new_table.entries[hash].queue_tail.set(current);
             (*current).next_in_queue.set(ptr::null());
@@ -885,7 +900,9 @@ pub unsafe fn unpark_requeue(
     if !requeue_threads.is_null() {
         (*requeue_threads_tail).next_in_queue.set(ptr::null());
         if !bucket_to.queue_head.get().is_null() {
-            (*bucket_to.queue_tail.get()).next_in_queue.set(requeue_threads);
+            (*bucket_to.queue_tail.get())
+                .next_in_queue
+                .set(requeue_threads);
         } else {
             bucket_to.queue_head.set(requeue_threads);
         }
@@ -1286,9 +1303,19 @@ mod deadlock_impl {
 
     // normalize a cycle to start with the "smallest" node
     fn normalize_cycle<T: Ord + Copy + Clone>(input: &[T]) -> Vec<T> {
-        let min_pos =
-            input.iter().enumerate().min_by_key(|&(_, &t)| t).map(|(p, _)| p).unwrap_or(0);
-        input.iter().cycle().skip(min_pos).take(input.len()).cloned().collect()
+        let min_pos = input
+            .iter()
+            .enumerate()
+            .min_by_key(|&(_, &t)| t)
+            .map(|(p, _)| p)
+            .unwrap_or(0);
+        input
+            .iter()
+            .cycle()
+            .skip(min_pos)
+            .take(input.len())
+            .cloned()
+            .collect()
     }
 
     // returns all thread cycles in the wait graph
@@ -1300,7 +1327,9 @@ mod deadlock_impl {
         let mut cycles = HashSet::new();
         let mut path = Vec::with_capacity(g.node_bound());
         // start from threads to get the correct threads cycle
-        let threads = g.nodes().filter(|n| if let &Thread(_) = n { true } else { false });
+        let threads = g
+            .nodes()
+            .filter(|n| if let &Thread(_) = n { true } else { false });
 
         depth_first_search(g, threads, |e| match e {
             DfsEvent::Discover(Thread(n), _) => path.push(n),

@@ -115,7 +115,7 @@ impl Drop for LockGuard {
         {
             // Lock is managed by kernelspace. Call into the kernel
             // to unblock waiting threads.
-            let ret = unsafe { abi::lock_unlock(self.lock  as *mut abi::lock, abi::scope::PRIVATE) };
+            let ret = unsafe { abi::lock_unlock(self.lock as *mut abi::lock, abi::scope::PRIVATE) };
             debug_assert_eq!(ret, abi::errno::SUCCESS);
         }
     }

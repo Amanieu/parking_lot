@@ -194,7 +194,9 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(true, &mut |state| unsafe { f.take().unchecked_unwrap()(state) });
+        self.call_once_slow(true, &mut |state| unsafe {
+            f.take().unchecked_unwrap()(state)
+        });
     }
 
     // This is a non-generic function to reduce the monomorphization cost of
@@ -303,7 +305,11 @@ impl Once {
         // At this point we have the lock, so run the closure. Make sure we
         // properly clean up if the closure panicks.
         let guard = PanicGuard(self);
-        let once_state = if state & POISON_BIT != 0 { OnceState::Poisoned } else { OnceState::New };
+        let once_state = if state & POISON_BIT != 0 {
+            OnceState::Poisoned
+        } else {
+            OnceState::New
+        };
         f(once_state);
         mem::forget(guard);
 
@@ -327,7 +333,9 @@ impl Default for Once {
 
 impl fmt::Debug for Once {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Once").field("state", &self.state()).finish()
+        f.debug_struct("Once")
+            .field("state", &self.state())
+            .finish()
     }
 }
 
