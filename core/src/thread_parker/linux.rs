@@ -21,6 +21,17 @@ type tv_nsec_t = i64;
 #[allow(non_camel_case_types)]
 type tv_nsec_t = libc::c_long;
 
+fn errno() -> libc::c_int {
+    #[cfg(target_os = "linux")]
+    unsafe {
+        *libc::__errno_location()
+    }
+    #[cfg(target_os = "android")]
+    unsafe {
+        *libc::__errno()
+    }
+}
+
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {
     futex: AtomicI32,
@@ -107,13 +118,11 @@ impl ThreadParker {
         };
         debug_assert!(r == 0 || r == -1);
         if r == -1 {
-            unsafe {
-                debug_assert!(
-                    *libc::__errno_location() == libc::EINTR
-                        || *libc::__errno_location() == libc::EAGAIN
-                        || (ts.is_some() && *libc::__errno_location() == libc::ETIMEDOUT)
-                );
-            }
+            debug_assert!(
+                errno() == libc::EINTR
+                    || errno() == libc::EAGAIN
+                    || (ts.is_some() && errno() == libc::ETIMEDOUT)
+            );
         }
     }
 }
@@ -135,7 +144,7 @@ impl super::UnparkHandleT for UnparkHandle {
         );
         debug_assert!(r == 0 || r == 1 || r == -1);
         if r == -1 {
-            debug_assert_eq!(*libc::__errno_location(), libc::EFAULT);
+            debug_assert_eq!(errno(), libc::EFAULT);
         }
     }
 }
