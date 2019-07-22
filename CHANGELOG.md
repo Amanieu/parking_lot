@@ -1,3 +1,11 @@
+## parking_lot_core 0.6.2 (2019-07-22)
+
+- Fixed compile error on Windows with old cfg_if version. (#164)
+
+## parking_lot_core 0.6.1 (2019-07-17)
+
+- Fixed Android build. (#163)
+
 ## parking_lot 0.9.0, parking_lot_core 0.6.0, lock_api 0.3.1 (2019-07-14)
 
 - Re-export lock_api (0.3.1) from parking_lot (#150)
