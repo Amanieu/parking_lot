@@ -5,6 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::time::{checked_duration_since, now, Instant};
 use core::{
     arch::wasm32,
     sync::atomic::{AtomicI32, Ordering},
@@ -54,7 +55,7 @@ impl super::ThreadParkerT for ThreadParker {
     #[inline]
     unsafe fn park_until(&self, timeout: Instant) -> bool {
         while self.parked.load(Ordering::Acquire) == PARKED {
-            if let Some(left) = timeout.checked_duration_since(Instant::now()) {
+            if let Some(left) = checked_duration_since(timeout, now()) {
                 let nanos_left = i64::try_from(left.as_nanos()).unwrap_or(i64::max_value());
                 let r = unsafe { wasm32::i32_atomic_wait(self.ptr(), PARKED, nanos_left) };
                 debug_assert!(r == 0 || r == 1 || r == 2);

@@ -12,8 +12,8 @@ use core::sync::atomic::AtomicU8;
 use core::sync::atomic::AtomicUsize as AtomicU8;
 use core::{sync::atomic::Ordering, time::Duration};
 use lock_api::{GuardNoSend, RawMutex as RawMutexTrait, RawMutexFair, RawMutexTimed};
+use parking_lot_core::time::Instant;
 use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
-use std::time::Instant;
 
 #[cfg(has_sized_atomics)]
 type U8 = u8;

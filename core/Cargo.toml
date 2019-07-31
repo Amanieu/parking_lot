@@ -34,4 +34,5 @@ winapi = { version = "0.3", features = ["winnt", "ntstatus", "minwindef",
 
 [features]
 nightly = []
+no_instant_now = []
 deadlock_detection = ["petgraph", "thread-id", "backtrace"]

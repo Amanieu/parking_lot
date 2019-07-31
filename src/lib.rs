@@ -40,4 +40,4 @@ pub use self::rwlock::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
     RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
-pub use ::lock_api;
+pub use lock_api;

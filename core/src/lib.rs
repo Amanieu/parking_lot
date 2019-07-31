@@ -59,6 +59,7 @@
 mod parking_lot;
 mod spinwait;
 mod thread_parker;
+pub mod time;
 mod util;
 mod word_lock;
 

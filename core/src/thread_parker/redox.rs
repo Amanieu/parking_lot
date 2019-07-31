@@ -5,6 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::time::{self, Instant};
 use core::{
     ptr,
     sync::atomic::{AtomicI32, Ordering},
@@ -57,7 +58,7 @@ impl super::ThreadParkerT for ThreadParker {
     #[inline]
     unsafe fn park_until(&self, timeout: Instant) -> bool {
         while self.futex.load(Ordering::Acquire) != UNPARKED {
-            let now = Instant::now();
+            let now = time::now();
             if timeout <= now {
                 return false;
             }

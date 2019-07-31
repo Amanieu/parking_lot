@@ -18,9 +18,10 @@ use lock_api::{
     RawRwLockUpgradeDowngrade, RawRwLockUpgradeFair, RawRwLockUpgradeTimed,
 };
 use parking_lot_core::{
-    self, deadlock, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken,
+    self, deadlock, time::Instant, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult,
+    UnparkToken,
 };
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 // This reader-writer lock implementation is based on Boost's upgrade_mutex:
 // https://github.com/boostorg/thread/blob/fc08c1fe2840baeeee143440fba31ef9e9a813c8/include/boost/thread/v2/shared_mutex.hpp#L432
@@ -469,7 +470,7 @@ unsafe impl RawRwLockUpgradeTimed for RawRwLock {
     }
 
     #[inline]
-    fn try_upgrade_until(&self, timeout: Instant) -> bool {
+    fn try_upgrade_until(&self, timeout: Self::Instant) -> bool {
         let state = self.state.fetch_sub(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
             Ordering::Relaxed,
@@ -601,7 +602,7 @@ impl RawRwLock {
     }
 
     #[cold]
-    fn lock_exclusive_slow(&self, timeout: Option<Instant>) -> bool {
+    fn lock_exclusive_slow(&self, timeout: Option<<Self as RawRwLockTimed>::Instant>) -> bool {
         // Step 1: grab exclusive ownership of WRITER_BIT
         let timed_out = !self.lock_common(
             timeout,
@@ -660,7 +661,11 @@ impl RawRwLock {
     }
 
     #[cold]
-    fn lock_shared_slow(&self, recursive: bool, timeout: Option<Instant>) -> bool {
+    fn lock_shared_slow(
+        &self,
+        recursive: bool,
+        timeout: Option<<Self as RawRwLockTimed>::Instant>,
+    ) -> bool {
         self.lock_common(
             timeout,
             TOKEN_SHARED,
@@ -729,7 +734,7 @@ impl RawRwLock {
     }
 
     #[cold]
-    fn lock_upgradable_slow(&self, timeout: Option<Instant>) -> bool {
+    fn lock_upgradable_slow(&self, timeout: Option<<Self as RawRwLockTimed>::Instant>) -> bool {
         self.lock_common(
             timeout,
             TOKEN_UPGRADABLE,
@@ -852,7 +857,7 @@ impl RawRwLock {
     }
 
     #[cold]
-    fn upgrade_slow(&self, timeout: Option<Instant>) -> bool {
+    fn upgrade_slow(&self, timeout: Option<<Self as RawRwLockTimed>::Instant>) -> bool {
         self.wait_for_readers(timeout, ONE_READER | UPGRADABLE_BIT)
     }
 
@@ -942,7 +947,11 @@ impl RawRwLock {
     // Common code for waiting for readers to exit the lock after acquiring
     // WRITER_BIT.
     #[inline]
-    fn wait_for_readers(&self, timeout: Option<Instant>, prev_value: usize) -> bool {
+    fn wait_for_readers(
+        &self,
+        timeout: Option<<Self as RawRwLockTimed>::Instant>,
+        prev_value: usize,
+    ) -> bool {
         // At this point WRITER_BIT is already set, we just need to wait for the
         // remaining readers to exit the lock.
         let mut spinwait = SpinWait::new();
@@ -1024,7 +1033,7 @@ impl RawRwLock {
     #[inline]
     fn lock_common<F, V>(
         &self,
-        timeout: Option<Instant>,
+        timeout: Option<<Self as RawRwLockTimed>::Instant>,
         token: ParkToken,
         mut try_lock: F,
         validate: V,

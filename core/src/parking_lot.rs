@@ -6,6 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
+use crate::time::{self, Instant};
 use crate::util::UncheckedOptionExt;
 use crate::word_lock::WordLock;
 use core::{
@@ -14,7 +15,7 @@ use core::{
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
 use smallvec::SmallVec;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
 static HASHTABLE: AtomicPtr<HashTable> = AtomicPtr::new(ptr::null_mut());
@@ -40,7 +41,7 @@ impl HashTable {
         let new_size = (num_threads * LOAD_FACTOR).next_power_of_two();
         let hash_bits = 0usize.leading_zeros() - new_size.leading_zeros() - 1;
 
-        let now = Instant::now();
+        let now = time::now();
         let mut entries = Vec::with_capacity(new_size);
         for i in 0..new_size {
             // We must ensure the seed is not zero
@@ -97,7 +98,7 @@ impl FairTimeout {
     // Determine whether we should force a fair unlock, and update the timeout
     #[inline]
     fn should_timeout(&mut self) -> bool {
-        let now = Instant::now();
+        let now = time::now();
         if now > self.timeout {
             // Time between 0 and 1ms.
             let nanos = self.gen_u32() % 1_000_000;

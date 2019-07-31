@@ -5,12 +5,13 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::time::{self, Instant};
 use core::{
     ptr,
     sync::atomic::{AtomicI32, Ordering},
 };
 use libc;
-use std::{thread, time::Instant};
+use std::thread;
 
 // x32 Linux uses a non-standard type for tv_nsec in timespec.
 // See https://sourceware.org/bugzilla/show_bug.cgi?id=16437
@@ -69,7 +70,7 @@ impl super::ThreadParkerT for ThreadParker {
     #[inline]
     unsafe fn park_until(&self, timeout: Instant) -> bool {
         while self.futex.load(Ordering::Acquire) != 0 {
-            let now = Instant::now();
+            let now = time::now();
             if timeout <= now {
                 return false;
             }

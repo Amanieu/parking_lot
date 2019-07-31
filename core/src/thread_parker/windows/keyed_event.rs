@@ -125,7 +125,7 @@ impl KeyedEvent {
 
     #[inline]
     pub unsafe fn park_until(&'static self, key: &AtomicUsize, timeout: Instant) -> bool {
-        let now = Instant::now();
+        let now = time::now();
         if timeout <= now {
             // If another thread unparked us, we need to call
             // NtWaitForKeyedEvent otherwise that thread will stay stuck at

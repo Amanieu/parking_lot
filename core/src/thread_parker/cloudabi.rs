@@ -5,13 +5,14 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::time::{checked_duration_since, now, Instant};
 use cloudabi as abi;
 use core::{
     cell::Cell,
     mem,
     sync::atomic::{AtomicU32, Ordering},
 };
-use std::{convert::TryFrom, thread, time::Instant};
+use std::{convert::TryFrom, thread};
 
 extern "C" {
     #[thread_local]
@@ -251,7 +252,7 @@ impl super::ThreadParkerT for ThreadParker {
     unsafe fn park_until(&self, timeout: Instant) -> bool {
         let guard = self.lock.lock();
         while self.should_park.get() {
-            if let Some(duration_left) = timeout.checked_duration_since(Instant::now()) {
+            if let Some(duration_left) = checked_duration_since(timeout, now()) {
                 if let Ok(nanos_left) = abi::timestamp::try_from(duration_left.as_nanos()) {
                     self.condvar.wait_timeout(&guard, nanos_left);
                 } else {

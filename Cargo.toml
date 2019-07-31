@@ -30,6 +30,7 @@ owning_ref = ["lock_api/owning_ref"]
 nightly = ["parking_lot_core/nightly", "lock_api/nightly"]
 deadlock_detection = ["parking_lot_core/deadlock_detection"]
 serde = ["lock_api/serde"]
+no_instant_now = ["parking_lot_core/no_instant_now"]
 
 [workspace]
 exclude = ["benchmark"]

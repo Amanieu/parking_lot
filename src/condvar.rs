@@ -13,8 +13,9 @@ use core::{
     sync::atomic::{AtomicPtr, Ordering},
 };
 use lock_api::RawMutex as RawMutexTrait;
+use parking_lot_core::time::Instant;
 use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.
@@ -409,10 +410,11 @@ impl fmt::Debug for Condvar {
 #[cfg(test)]
 mod tests {
     use crate::{Condvar, Mutex, MutexGuard};
+    use parking_lot_core::time;
     use std::sync::mpsc::channel;
     use std::sync::Arc;
     use std::thread;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     #[test]
     fn smoke() {
@@ -572,7 +574,7 @@ mod tests {
         let c2 = c.clone();
 
         let mut g = m.lock();
-        let no_timeout = c.wait_until(&mut g, Instant::now() + Duration::from_millis(1));
+        let no_timeout = c.wait_until(&mut g, time::now() + Duration::from_millis(1));
         assert!(no_timeout.timed_out());
         let _t = thread::spawn(move || {
             let _g = m2.lock();
@@ -580,7 +582,7 @@ mod tests {
         });
         let timeout_res = c.wait_until(
             &mut g,
-            Instant::now() + Duration::from_millis(u32::max_value() as u64),
+            time::now() + Duration::from_millis(u32::max_value() as u64),
         );
         assert!(!timeout_res.timed_out());
         drop(g);

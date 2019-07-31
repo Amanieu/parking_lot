@@ -84,7 +84,7 @@ impl WaitAddress {
     #[inline]
     pub fn park_until(&'static self, key: &AtomicUsize, timeout: Instant) -> bool {
         while key.load(Ordering::Acquire) != 0 {
-            let now = Instant::now();
+            let now = time::now();
             if timeout <= now {
                 return false;
             }

@@ -5,6 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::time::Instant;
 use core::sync::atomic::{AtomicBool, Ordering};
 use std::{
     io,
@@ -16,7 +17,6 @@ use std::{
         },
     },
     thread,
-    time::Instant,
 };
 
 // Helper type for putting a thread to sleep until some other thread wakes it up

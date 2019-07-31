@@ -9,7 +9,9 @@
 //! parking facilities available.
 
 use core::sync::atomic::{spin_loop_hint, AtomicBool, Ordering};
-use std::{thread, time::Instant};
+use std::thread;
+
+use crate::time::{now, Instant};
 
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct ThreadParker {
@@ -48,7 +50,7 @@ impl super::ThreadParkerT for ThreadParker {
     #[inline]
     unsafe fn park_until(&self, timeout: Instant) -> bool {
         while self.parked.load(Ordering::Acquire) != false {
-            if Instant::now() >= timeout {
+            if now() >= timeout {
                 return false;
             }
             spin_loop_hint();
