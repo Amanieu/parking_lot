@@ -78,9 +78,13 @@ impl WaitTimeoutResult {
 /// // wait for the thread to start up
 /// let &(ref lock, ref cvar) = &*pair;
 /// let mut started = lock.lock();
-/// while !*started {
+/// if !*started {
 ///     cvar.wait(&mut started);
 /// }
+/// // Note that we used and if instead of a while loop above. This is only
+/// // possible because parking_lot's Condvar will never spuriously wake up.
+/// // This means that wait() will only return after notify_one or notify_all is
+/// // called.
 /// ```
 pub struct Condvar {
     state: AtomicPtr<RawMutex>,
