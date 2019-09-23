@@ -122,9 +122,8 @@ impl<R: RawMutex, T> Mutex<R, T> {
 
     /// Consumes this mutex, returning the underlying data.
     #[inline]
-    #[allow(unused_unsafe)]
     pub fn into_inner(self) -> T {
-        unsafe { self.data.into_inner() }
+        self.data.into_inner()
     }
 }
 
