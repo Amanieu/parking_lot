@@ -12,11 +12,7 @@ use core::{
     cell::Cell,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use lock_api::{
-    GuardNoSend, RawRwLock as RawRwLockTrait, RawRwLockDowngrade, RawRwLockFair,
-    RawRwLockRecursive, RawRwLockRecursiveTimed, RawRwLockTimed, RawRwLockUpgrade,
-    RawRwLockUpgradeDowngrade, RawRwLockUpgradeFair, RawRwLockUpgradeTimed,
-};
+use lock_api::{GuardNoSend, RawRwLock as RawRwLock_, RawRwLockUpgrade};
 use parking_lot_core::{
     self, deadlock, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken,
 };
@@ -60,7 +56,7 @@ pub struct RawRwLock {
     state: AtomicUsize,
 }
 
-unsafe impl RawRwLockTrait for RawRwLock {
+unsafe impl lock_api::RawRwLock for RawRwLock {
     const INIT: RawRwLock = RawRwLock {
         state: AtomicUsize::new(0),
     };
@@ -143,7 +139,7 @@ unsafe impl RawRwLockTrait for RawRwLock {
     }
 }
 
-unsafe impl RawRwLockFair for RawRwLock {
+unsafe impl lock_api::RawRwLockFair for RawRwLock {
     #[inline]
     fn unlock_shared_fair(&self) {
         // Shared unlocking is always fair in this implementation.
@@ -180,7 +176,7 @@ unsafe impl RawRwLockFair for RawRwLock {
     }
 }
 
-unsafe impl RawRwLockDowngrade for RawRwLock {
+unsafe impl lock_api::RawRwLockDowngrade for RawRwLock {
     #[inline]
     fn downgrade(&self) {
         let state = self
@@ -194,7 +190,7 @@ unsafe impl RawRwLockDowngrade for RawRwLock {
     }
 }
 
-unsafe impl RawRwLockTimed for RawRwLock {
+unsafe impl lock_api::RawRwLockTimed for RawRwLock {
     type Duration = Duration;
     type Instant = Instant;
 
@@ -259,7 +255,7 @@ unsafe impl RawRwLockTimed for RawRwLock {
     }
 }
 
-unsafe impl RawRwLockRecursive for RawRwLock {
+unsafe impl lock_api::RawRwLockRecursive for RawRwLock {
     #[inline]
     fn lock_shared_recursive(&self) {
         if !self.try_lock_shared_fast(true) {
@@ -283,7 +279,7 @@ unsafe impl RawRwLockRecursive for RawRwLock {
     }
 }
 
-unsafe impl RawRwLockRecursiveTimed for RawRwLock {
+unsafe impl lock_api::RawRwLockRecursiveTimed for RawRwLock {
     #[inline]
     fn try_lock_shared_recursive_for(&self, timeout: Self::Duration) -> bool {
         let result = if self.try_lock_shared_fast(true) {
@@ -311,7 +307,7 @@ unsafe impl RawRwLockRecursiveTimed for RawRwLock {
     }
 }
 
-unsafe impl RawRwLockUpgrade for RawRwLock {
+unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
     #[inline]
     fn lock_upgradable(&self) {
         if !self.try_lock_upgradable_fast() {
@@ -386,7 +382,7 @@ unsafe impl RawRwLockUpgrade for RawRwLock {
     }
 }
 
-unsafe impl RawRwLockUpgradeFair for RawRwLock {
+unsafe impl lock_api::RawRwLockUpgradeFair for RawRwLock {
     #[inline]
     fn unlock_upgradable_fair(&self) {
         self.deadlock_release();
@@ -416,7 +412,7 @@ unsafe impl RawRwLockUpgradeFair for RawRwLock {
     }
 }
 
-unsafe impl RawRwLockUpgradeDowngrade for RawRwLock {
+unsafe impl lock_api::RawRwLockUpgradeDowngrade for RawRwLock {
     #[inline]
     fn downgrade_upgradable(&self) {
         let state = self.state.fetch_sub(UPGRADABLE_BIT, Ordering::Relaxed);
@@ -441,7 +437,7 @@ unsafe impl RawRwLockUpgradeDowngrade for RawRwLock {
     }
 }
 
-unsafe impl RawRwLockUpgradeTimed for RawRwLock {
+unsafe impl lock_api::RawRwLockUpgradeTimed for RawRwLock {
     #[inline]
     fn try_lock_upgradable_until(&self, timeout: Instant) -> bool {
         let result = if self.try_lock_upgradable_fast() {

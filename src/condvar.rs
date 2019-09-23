@@ -12,7 +12,7 @@ use core::{
     fmt, ptr,
     sync::atomic::{AtomicPtr, Ordering},
 };
-use lock_api::RawMutex as RawMutexTrait;
+use lock_api::RawMutex as RawMutex_;
 use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
 use std::time::{Duration, Instant};
 
