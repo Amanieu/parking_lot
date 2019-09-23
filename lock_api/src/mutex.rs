@@ -105,8 +105,8 @@ impl<R: RawMutex, T> Mutex<R, T> {
     #[inline]
     pub const fn new(val: T) -> Mutex<R, T> {
         Mutex {
-            data: UnsafeCell::new(val),
             raw: R::INIT,
+            data: UnsafeCell::new(val),
         }
     }
 
@@ -115,8 +115,8 @@ impl<R: RawMutex, T> Mutex<R, T> {
     #[inline]
     pub fn new(val: T) -> Mutex<R, T> {
         Mutex {
-            data: UnsafeCell::new(val),
             raw: R::INIT,
+            data: UnsafeCell::new(val),
         }
     }
 
