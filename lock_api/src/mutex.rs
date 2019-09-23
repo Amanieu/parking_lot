@@ -96,35 +96,6 @@ pub struct Mutex<R: RawMutex, T: ?Sized> {
     data: UnsafeCell<T>,
 }
 
-// Copied and modified from serde
-#[cfg(feature = "serde")]
-impl<R, T> Serialize for Mutex<R, T>
-where
-    R: RawMutex,
-    T: Serialize + ?Sized,
-{
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.lock().serialize(serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de, R, T> Deserialize<'de> for Mutex<R, T>
-where
-    R: RawMutex,
-    T: Deserialize<'de> + ?Sized,
-{
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Deserialize::deserialize(deserializer).map(Mutex::new)
-    }
-}
-
 unsafe impl<R: RawMutex + Send, T: ?Sized + Send> Send for Mutex<R, T> {}
 unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<R, T> {}
 
@@ -323,6 +294,35 @@ impl<R: RawMutex, T: ?Sized + fmt::Debug> fmt::Debug for Mutex<R, T> {
                     .finish()
             }
         }
+    }
+}
+
+// Copied and modified from serde
+#[cfg(feature = "serde")]
+impl<R, T> Serialize for Mutex<R, T>
+where
+    R: RawMutex,
+    T: Serialize + ?Sized,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.lock().serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de, R, T> Deserialize<'de> for Mutex<R, T>
+where
+    R: RawMutex,
+    T: Deserialize<'de> + ?Sized,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Deserialize::deserialize(deserializer).map(Mutex::new)
     }
 }
 
