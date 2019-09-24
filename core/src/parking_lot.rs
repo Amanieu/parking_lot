@@ -1041,7 +1041,10 @@ pub mod deadlock {
 
     /// Acquire a resource identified by key in the deadlock detector
     /// Noop if deadlock_detection feature isn't enabled.
-    /// Note: Call after the resource is acquired
+    ///
+    /// # Safety
+    ///
+    /// Call after the resource is acquired
     #[inline]
     pub unsafe fn acquire_resource(_key: usize) {
         #[cfg(feature = "deadlock_detection")]
@@ -1050,9 +1053,14 @@ pub mod deadlock {
 
     /// Release a resource identified by key in the deadlock detector.
     /// Noop if deadlock_detection feature isn't enabled.
-    /// Note: Call before the resource is released
+    ///
     /// # Panics
+    ///
     /// Panics if the resource was already released or wasn't acquired in this thread.
+    ///
+    /// # Safety
+    ///
+    /// Call before the resource is released
     #[inline]
     pub unsafe fn release_resource(_key: usize) {
         #[cfg(feature = "deadlock_detection")]
