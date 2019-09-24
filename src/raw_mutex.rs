@@ -11,7 +11,7 @@ use core::sync::atomic::AtomicU8;
 #[cfg(not(has_sized_atomics))]
 use core::sync::atomic::AtomicUsize as AtomicU8;
 use core::{sync::atomic::Ordering, time::Duration};
-use lock_api::{GuardNoSend, RawMutex as RawMutexTrait, RawMutexFair, RawMutexTimed};
+use lock_api::{GuardNoSend, RawMutex as RawMutex_};
 use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
 use std::time::Instant;
 
@@ -36,7 +36,7 @@ pub struct RawMutex {
     state: AtomicU8,
 }
 
-unsafe impl RawMutexTrait for RawMutex {
+unsafe impl lock_api::RawMutex for RawMutex {
     const INIT: RawMutex = RawMutex {
         state: AtomicU8::new(0),
     };
@@ -91,7 +91,7 @@ unsafe impl RawMutexTrait for RawMutex {
     }
 }
 
-unsafe impl RawMutexFair for RawMutex {
+unsafe impl lock_api::RawMutexFair for RawMutex {
     #[inline]
     fn unlock_fair(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
@@ -113,7 +113,7 @@ unsafe impl RawMutexFair for RawMutex {
     }
 }
 
-unsafe impl RawMutexTimed for RawMutex {
+unsafe impl lock_api::RawMutexTimed for RawMutex {
     type Duration = Duration;
     type Instant = Instant;
 
