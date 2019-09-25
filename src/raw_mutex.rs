@@ -28,11 +28,30 @@ pub(crate) const TOKEN_NORMAL: UnparkToken = UnparkToken(0);
 // thread directly without unlocking it.
 pub(crate) const TOKEN_HANDOFF: UnparkToken = UnparkToken(1);
 
-const LOCKED_BIT: U8 = 1;
-const PARKED_BIT: U8 = 2;
+/// This bit is set in the `state` of a `RawMutex` when that mutex is locked by some thread.
+const LOCKED_BIT: U8 = 0b01;
+/// This bit is set in the `state` of a `RawMutex` when at least one thread is parked, waiting
+/// for the mutex to be unlocked.
+const PARKED_BIT: U8 = 0b10;
 
 /// Raw mutex type backed by the parking lot.
 pub struct RawMutex {
+    /// This atomic integer holds the current state of the mutex instance. Only the two lowest bits
+    /// are used. See `LOCKED_BIT` and `PARKED_BIT` for the bitmask for these bits.
+    ///
+    /// # State table:
+    ///
+    /// PARKED_BIT | LOCKED_BIT | Description
+    ///     0      |     0      | The mutex is not locked, nor is anyone waiting for it.
+    /// -----------+------------+------------------------------------------------------------------
+    ///     0      |     1      | The mutex is locked by exactly one thread. No other thread is
+    ///            |            | waiting for it.
+    /// -----------+------------+------------------------------------------------------------------
+    ///     1      |     0      | The mutex is not locked. There are parked threads waiting for it.
+    ///            |            | At least one of the parked threads are just about to be unparked.
+    /// -----------+------------+------------------------------------------------------------------
+    ///     1      |     1      | The mutex is locked by exactly one thread. At least one thread is
+    ///            |            | parked, waiting for the lock to become available.
     state: AtomicU8,
 }
 
