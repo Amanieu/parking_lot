@@ -47,7 +47,6 @@ pub trait UnparkHandleT {
     ///
     /// This method is unsafe for the same reason as the unsafe methods in
     /// `ThreadParkerT`.
-    #[inline]
     unsafe fn unpark(self);
 }
 
