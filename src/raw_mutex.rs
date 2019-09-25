@@ -30,8 +30,8 @@ pub(crate) const TOKEN_HANDOFF: UnparkToken = UnparkToken(1);
 
 /// This bit is set in the `state` of a `RawMutex` when that mutex is locked by some thread.
 const LOCKED_BIT: U8 = 0b01;
-/// This bit is set in the `state` of a `RawMutex` when at least one thread is parked, waiting
-/// for the mutex to be unlocked.
+/// This bit is set in the `state` of a `RawMutex` just before parking a thread. A thread is being
+/// parked if it wants to lock the mutex, but it is currently being held by some other thread.
 const PARKED_BIT: U8 = 0b10;
 
 /// Raw mutex type backed by the parking lot.
@@ -47,11 +47,17 @@ pub struct RawMutex {
     ///     0      |     1      | The mutex is locked by exactly one thread. No other thread is
     ///            |            | waiting for it.
     /// -----------+------------+------------------------------------------------------------------
-    ///     1      |     0      | The mutex is not locked. There are parked threads waiting for it.
-    ///            |            | At least one of the parked threads are just about to be unparked.
+    ///     1      |     0      | The mutex is not locked. One or more thread is parked or about to
+    ///            |            | park. At least one of the parked threads are just about to be
+    ///            |            | unparked, or a thread heading for parking might abort the park.
     /// -----------+------------+------------------------------------------------------------------
-    ///     1      |     1      | The mutex is locked by exactly one thread. At least one thread is
-    ///            |            | parked, waiting for the lock to become available.
+    ///     1      |     1      | The mutex is locked by exactly one thread. One or more thread is
+    ///            |            | parked or about to park, waiting for the lock to become available.
+    ///            |            | In this state, PARKED_BIT is only ever cleared when a bucket lock
+    ///            |            | is held (i.e. in a parking_lot_core callback). This ensures that
+    ///            |            | we never end up in a situation where there are parked threads but
+    ///            |            | PARKED_BIT is not set (which would result in those threads
+    ///            |            | potentially never getting woken up).
     state: AtomicU8,
 }
 
