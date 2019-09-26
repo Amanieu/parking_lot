@@ -30,6 +30,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// exists.
 pub unsafe trait RawRwLock {
     /// Initial value for an unlocked `RwLock`.
+    // A “non-constant” const item is a legacy way to supply an initialized value to downstream
+    // static items. Can hopefully be replaced with `const fn new() -> Self` at some point.
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: Self;
 
     /// Marker type which determines whether a lock guard should be `Send`. Use

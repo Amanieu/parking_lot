@@ -72,7 +72,7 @@ impl Bucket {
     #[inline]
     pub fn new(timeout: Instant, seed: u32) -> Self {
         Self {
-            mutex: WordLock::INIT,
+            mutex: WordLock::new(),
             queue_head: Cell::new(ptr::null()),
             queue_tail: Cell::new(ptr::null()),
             fair_timeout: UnsafeCell::new(FairTimeout::new(timeout, seed)),
@@ -1228,7 +1228,7 @@ mod deadlock_impl {
     // Returns all detected thread wait cycles.
     // Note that once a cycle is reported it's never reported again.
     unsafe fn check_wait_graph_slow() -> Vec<Vec<DeadlockedThread>> {
-        static DEADLOCK_DETECTION_LOCK: WordLock = WordLock::INIT;
+        static DEADLOCK_DETECTION_LOCK: WordLock = WordLock::new();
         DEADLOCK_DETECTION_LOCK.lock();
 
         let mut table = get_hashtable();
