@@ -37,6 +37,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// re-used since that thread is no longer active.
 pub unsafe trait GetThreadId {
     /// Initial value.
+    // A “non-constant” const item is a legacy way to supply an initialized value to downstream
+    // static items. Can hopefully be replaced with `const fn new() -> Self` at some point.
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: Self;
 
     /// Returns a non-zero thread ID which identifies the current thread of

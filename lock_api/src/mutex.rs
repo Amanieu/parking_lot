@@ -28,6 +28,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// exclusive: a lock can't be acquired while the mutex is already locked.
 pub unsafe trait RawMutex {
     /// Initial value for an unlocked mutex.
+    // A “non-constant” const item is a legacy way to supply an initialized value to downstream
+    // static items. Can hopefully be replaced with `const fn new() -> Self` at some point.
+    #[allow(clippy::declare_interior_mutable_const)]
     const INIT: Self;
 
     /// Marker type which determines whether a lock guard should be `Send`. Use
