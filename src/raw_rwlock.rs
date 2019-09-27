@@ -1046,17 +1046,13 @@ impl RawRwLock {
 
     // Common code for acquiring a lock
     #[inline]
-    fn lock_common<F, V>(
+    fn lock_common(
         &self,
         timeout: Option<Instant>,
         token: ParkToken,
-        mut try_lock: F,
-        validate: V,
-    ) -> bool
-    where
-        F: FnMut(&mut usize) -> bool,
-        V: Fn(usize) -> bool,
-    {
+        mut try_lock: impl FnMut(&mut usize) -> bool,
+        validate: impl Fn(usize) -> bool,
+    ) -> bool {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
