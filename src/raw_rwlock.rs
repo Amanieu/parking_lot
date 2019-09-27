@@ -616,12 +616,14 @@ impl RawRwLock {
                 }
             }
         };
-        let validate = |state| state & (WRITER_BIT | UPGRADABLE_BIT) != 0;
 
         // Step 1: grab exclusive ownership of WRITER_BIT
-        // SAFETY:
-        // * `validate` does not panic or call into any function in `parking_lot`.
-        let timed_out = unsafe { !self.lock_common(timeout, TOKEN_EXCLUSIVE, try_lock, validate) };
+        let timed_out = !self.lock_common(
+            timeout,
+            TOKEN_EXCLUSIVE,
+            try_lock,
+            WRITER_BIT | UPGRADABLE_BIT,
+        );
         if timed_out {
             return false;
         }
@@ -702,10 +704,7 @@ impl RawRwLock {
                 *state = self.state.load(Ordering::Relaxed);
             }
         };
-        let validate = |state| state & WRITER_BIT != 0;
-        // SAFETY:
-        // * `validate` does not panic or call into any function in `parking_lot`.
-        unsafe { self.lock_common(timeout, TOKEN_SHARED, try_lock, validate) }
+        self.lock_common(timeout, TOKEN_SHARED, try_lock, WRITER_BIT)
     }
 
     #[cold]
@@ -760,10 +759,12 @@ impl RawRwLock {
                 *state = self.state.load(Ordering::Relaxed);
             }
         };
-        let validate = |state| state & (WRITER_BIT | UPGRADABLE_BIT) != 0;
-        // SAFETY:
-        // * `validate` does not panic or call into any function in `parking_lot`.
-        unsafe { self.lock_common(timeout, TOKEN_UPGRADABLE, try_lock, validate) }
+        self.lock_common(
+            timeout,
+            TOKEN_UPGRADABLE,
+            try_lock,
+            WRITER_BIT | UPGRADABLE_BIT,
+        )
     }
 
     #[cold]
@@ -1046,18 +1047,13 @@ impl RawRwLock {
     }
 
     /// Common code for acquiring a lock
-    ///
-    /// # Safety
-    ///
-    /// `validate` must uphold the requirements of the `validate` parameter to
-    /// `parking_lot_core::park`. Meaning no panics or calls into any function in `parking_lot`.
     #[inline]
-    unsafe fn lock_common(
+    fn lock_common(
         &self,
         timeout: Option<Instant>,
         token: ParkToken,
         mut try_lock: impl FnMut(&mut usize) -> bool,
-        validate: impl Fn(usize) -> bool,
+        validate_flags: usize,
     ) -> bool {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
@@ -1090,7 +1086,7 @@ impl RawRwLock {
             let addr = self as *const _ as usize;
             let validate = || {
                 let state = self.state.load(Ordering::Relaxed);
-                state & PARKED_BIT != 0 && validate(state)
+                state & PARKED_BIT != 0 && (state & validate_flags != 0)
             };
             let before_sleep = || {};
             let timed_out = |_, was_last_thread| {
@@ -1102,10 +1098,12 @@ impl RawRwLock {
 
             // SAFETY:
             // * `addr` is an address we control.
-            // * `validate` safety responsibility is on caller
+            // * `validate`/`timed_out` does not panic or call into any function of `parking_lot`.
             // * `before_sleep` does not call `park`, nor does it panic.
-            // * `timed_out` does not panic or call into any function of `parking_lot`.
-            match parking_lot_core::park(addr, validate, before_sleep, timed_out, token, timeout) {
+            let park_result = unsafe {
+                parking_lot_core::park(addr, validate, before_sleep, timed_out, token, timeout)
+            };
+            match park_result {
                 // The thread that unparked us passed the lock on to us
                 // directly without unlocking it.
                 ParkResult::Unparked(TOKEN_HANDOFF) => return true,
