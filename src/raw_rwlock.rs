@@ -984,52 +984,60 @@ impl RawRwLock {
             }
 
             // Park our thread until we are woken up by an unlock
-            unsafe {
-                // Using the 2nd key at addr + 1
-                let addr = self as *const _ as usize + 1;
-                let validate = || {
-                    let state = self.state.load(Ordering::Relaxed);
-                    state & READERS_MASK != 0 && state & WRITER_PARKED_BIT != 0
-                };
-                let before_sleep = || {};
-                let timed_out = |_, _| {};
-                match parking_lot_core::park(
+            // Using the 2nd key at addr + 1
+            let addr = self as *const _ as usize + 1;
+            let validate = || {
+                let state = self.state.load(Ordering::Relaxed);
+                state & READERS_MASK != 0 && state & WRITER_PARKED_BIT != 0
+            };
+            let before_sleep = || {};
+            let timed_out = |_, _| {};
+            // SAFETY:
+            //   * `addr` is an address we control.
+            //   * `validate`/`timed_out` does not panic or call into any function of `parking_lot`.
+            //   * `before_sleep` does not call `park`, nor does it panic.
+            let park_result = unsafe {
+                parking_lot_core::park(
                     addr,
                     validate,
                     before_sleep,
                     timed_out,
                     TOKEN_EXCLUSIVE,
                     timeout,
-                ) {
-                    // We still need to re-check the state if we are unparked
-                    // since a previous writer timing-out could have allowed
-                    // another reader to sneak in before we parked.
-                    ParkResult::Unparked(_) | ParkResult::Invalid => {
-                        state = self.state.load(Ordering::Relaxed);
-                        continue;
-                    }
+                )
+            };
+            match park_result {
+                // We still need to re-check the state if we are unparked
+                // since a previous writer timing-out could have allowed
+                // another reader to sneak in before we parked.
+                ParkResult::Unparked(_) | ParkResult::Invalid => {
+                    state = self.state.load(Ordering::Relaxed);
+                    continue;
+                }
 
-                    // Timeout expired
-                    ParkResult::TimedOut => {
-                        // We need to release WRITER_BIT and revert back to
-                        // our previous value. We also wake up any threads that
-                        // might be waiting on WRITER_BIT.
-                        let state = self.state.fetch_add(
-                            prev_value.wrapping_sub(WRITER_BIT | WRITER_PARKED_BIT),
-                            Ordering::Relaxed,
-                        );
-                        if state & PARKED_BIT != 0 {
-                            let callback = |_, result: UnparkResult| {
-                                // Clear the parked bit if there no more parked threads
-                                if !result.have_more_threads {
-                                    self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
-                                }
-                                TOKEN_NORMAL
-                            };
+                // Timeout expired
+                ParkResult::TimedOut => {
+                    // We need to release WRITER_BIT and revert back to
+                    // our previous value. We also wake up any threads that
+                    // might be waiting on WRITER_BIT.
+                    let state = self.state.fetch_add(
+                        prev_value.wrapping_sub(WRITER_BIT | WRITER_PARKED_BIT),
+                        Ordering::Relaxed,
+                    );
+                    if state & PARKED_BIT != 0 {
+                        let callback = |_, result: UnparkResult| {
+                            // Clear the parked bit if there no more parked threads
+                            if !result.have_more_threads {
+                                self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
+                            }
+                            TOKEN_NORMAL
+                        };
+                        // SAFETY: `callback` does not panic or call any function of `parking_lot`.
+                        unsafe {
                             self.wake_parked_threads(ONE_READER | UPGRADABLE_BIT, callback);
                         }
-                        return false;
                     }
+                    return false;
                 }
             }
         }
