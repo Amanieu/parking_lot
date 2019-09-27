@@ -598,30 +598,30 @@ impl RawRwLock {
 
     #[cold]
     fn lock_exclusive_slow(&self, timeout: Option<Instant>) -> bool {
-        // Step 1: grab exclusive ownership of WRITER_BIT
-        let timed_out = !self.lock_common(
-            timeout,
-            TOKEN_EXCLUSIVE,
-            |state| {
-                loop {
-                    if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
-                        return false;
-                    }
-
-                    // Grab WRITER_BIT if it isn't set, even if there are parked threads.
-                    match self.state.compare_exchange_weak(
-                        *state,
-                        *state | WRITER_BIT,
-                        Ordering::Acquire,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => return true,
-                        Err(x) => *state = x,
-                    }
+        let try_lock = |state: &mut usize| {
+            loop {
+                if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
+                    return false;
                 }
-            },
-            |state| state & (WRITER_BIT | UPGRADABLE_BIT) != 0,
-        );
+
+                // Grab WRITER_BIT if it isn't set, even if there are parked threads.
+                match self.state.compare_exchange_weak(
+                    *state,
+                    *state | WRITER_BIT,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => return true,
+                    Err(x) => *state = x,
+                }
+            }
+        };
+        let validate = |state| state & (WRITER_BIT | UPGRADABLE_BIT) != 0;
+
+        // Step 1: grab exclusive ownership of WRITER_BIT
+        // SAFETY:
+        // * `validate` does not panic or call into any function in `parking_lot`.
+        let timed_out = unsafe { !self.lock_common(timeout, TOKEN_EXCLUSIVE, try_lock, validate) };
         if timed_out {
             return false;
         }
@@ -660,53 +660,52 @@ impl RawRwLock {
 
     #[cold]
     fn lock_shared_slow(&self, recursive: bool, timeout: Option<Instant>) -> bool {
-        self.lock_common(
-            timeout,
-            TOKEN_SHARED,
-            |state| {
-                let mut spinwait_shared = SpinWait::new();
-                loop {
-                    // Use hardware lock elision to avoid cache conflicts when multiple
-                    // readers try to acquire the lock. We only do this if the lock is
-                    // completely empty since elision handles conflicts poorly.
-                    if have_elision() && *state == 0 {
-                        match self.state.elision_compare_exchange_acquire(0, ONE_READER) {
-                            Ok(_) => return true,
-                            Err(x) => *state = x,
-                        }
+        let try_lock = |state: &mut usize| {
+            let mut spinwait_shared = SpinWait::new();
+            loop {
+                // Use hardware lock elision to avoid cache conflicts when multiple
+                // readers try to acquire the lock. We only do this if the lock is
+                // completely empty since elision handles conflicts poorly.
+                if have_elision() && *state == 0 {
+                    match self.state.elision_compare_exchange_acquire(0, ONE_READER) {
+                        Ok(_) => return true,
+                        Err(x) => *state = x,
                     }
-
-                    // This is the same condition as try_lock_shared_fast
-                    if *state & WRITER_BIT != 0 {
-                        if !recursive || *state & READERS_MASK == 0 {
-                            return false;
-                        }
-                    }
-
-                    if self
-                        .state
-                        .compare_exchange_weak(
-                            *state,
-                            state
-                                .checked_add(ONE_READER)
-                                .expect("RwLock reader count overflow"),
-                            Ordering::Acquire,
-                            Ordering::Relaxed,
-                        )
-                        .is_ok()
-                    {
-                        return true;
-                    }
-
-                    // If there is high contention on the reader count then we want
-                    // to leave some time between attempts to acquire the lock to
-                    // let other threads make progress.
-                    spinwait_shared.spin_no_yield();
-                    *state = self.state.load(Ordering::Relaxed);
                 }
-            },
-            |state| state & WRITER_BIT != 0,
-        )
+
+                // This is the same condition as try_lock_shared_fast
+                if *state & WRITER_BIT != 0 {
+                    if !recursive || *state & READERS_MASK == 0 {
+                        return false;
+                    }
+                }
+
+                if self
+                    .state
+                    .compare_exchange_weak(
+                        *state,
+                        state
+                            .checked_add(ONE_READER)
+                            .expect("RwLock reader count overflow"),
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    return true;
+                }
+
+                // If there is high contention on the reader count then we want
+                // to leave some time between attempts to acquire the lock to
+                // let other threads make progress.
+                spinwait_shared.spin_no_yield();
+                *state = self.state.load(Ordering::Relaxed);
+            }
+        };
+        let validate = |state| state & WRITER_BIT != 0;
+        // SAFETY:
+        // * `validate` does not panic or call into any function in `parking_lot`.
+        unsafe { self.lock_common(timeout, TOKEN_SHARED, try_lock, validate) }
     }
 
     #[cold]
@@ -729,40 +728,39 @@ impl RawRwLock {
 
     #[cold]
     fn lock_upgradable_slow(&self, timeout: Option<Instant>) -> bool {
-        self.lock_common(
-            timeout,
-            TOKEN_UPGRADABLE,
-            |state| {
-                let mut spinwait_shared = SpinWait::new();
-                loop {
-                    if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
-                        return false;
-                    }
-
-                    if self
-                        .state
-                        .compare_exchange_weak(
-                            *state,
-                            state
-                                .checked_add(ONE_READER | UPGRADABLE_BIT)
-                                .expect("RwLock reader count overflow"),
-                            Ordering::Acquire,
-                            Ordering::Relaxed,
-                        )
-                        .is_ok()
-                    {
-                        return true;
-                    }
-
-                    // If there is high contention on the reader count then we want
-                    // to leave some time between attempts to acquire the lock to
-                    // let other threads make progress.
-                    spinwait_shared.spin_no_yield();
-                    *state = self.state.load(Ordering::Relaxed);
+        let try_lock = |state: &mut usize| {
+            let mut spinwait_shared = SpinWait::new();
+            loop {
+                if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
+                    return false;
                 }
-            },
-            |state| state & (WRITER_BIT | UPGRADABLE_BIT) != 0,
-        )
+
+                if self
+                    .state
+                    .compare_exchange_weak(
+                        *state,
+                        state
+                            .checked_add(ONE_READER | UPGRADABLE_BIT)
+                            .expect("RwLock reader count overflow"),
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    return true;
+                }
+
+                // If there is high contention on the reader count then we want
+                // to leave some time between attempts to acquire the lock to
+                // let other threads make progress.
+                spinwait_shared.spin_no_yield();
+                *state = self.state.load(Ordering::Relaxed);
+            }
+        };
+        let validate = |state| state & (WRITER_BIT | UPGRADABLE_BIT) != 0;
+        // SAFETY:
+        // * `validate` does not panic or call into any function in `parking_lot`.
+        unsafe { self.lock_common(timeout, TOKEN_UPGRADABLE, try_lock, validate) }
     }
 
     #[cold]
@@ -1044,9 +1042,14 @@ impl RawRwLock {
         true
     }
 
-    // Common code for acquiring a lock
+    /// Common code for acquiring a lock
+    ///
+    /// # Safety
+    ///
+    /// `validate` must uphold the requirements of the `validate` parameter to
+    /// `parking_lot_core::park`. Meaning no panics or calls into any function in `parking_lot`.
     #[inline]
-    fn lock_common(
+    unsafe fn lock_common(
         &self,
         timeout: Option<Instant>,
         token: ParkToken,
@@ -1095,13 +1098,11 @@ impl RawRwLock {
             };
 
             // SAFETY:
-            //   * `addr` is an address we control.
-            //   * `validate`/`timed_out` does not panic or call into any function of `parking_lot`.
-            //   * `before_sleep` does not call `park`, nor does it panic.
-            let park_result = unsafe {
-                parking_lot_core::park(addr, validate, before_sleep, timed_out, token, timeout)
-            };
-            match park_result {
+            // * `addr` is an address we control.
+            // * `validate` safety responsibility is on caller
+            // * `before_sleep` does not call `park`, nor does it panic.
+            // * `timed_out` does not panic or call into any function of `parking_lot`.
+            match parking_lot_core::park(addr, validate, before_sleep, timed_out, token, timeout) {
                 // The thread that unparked us passed the lock on to us
                 // directly without unlocking it.
                 ParkResult::Unparked(TOKEN_HANDOFF) => return true,
