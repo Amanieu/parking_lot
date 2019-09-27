@@ -652,7 +652,10 @@ impl RawRwLock {
                 TOKEN_NORMAL
             }
         };
-        self.wake_parked_threads(0, callback);
+        // SAFETY: `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            self.wake_parked_threads(0, callback);
+        }
     }
 
     #[cold]
@@ -825,7 +828,10 @@ impl RawRwLock {
                 }
             }
         };
-        self.wake_parked_threads(0, callback);
+        // SAFETY: `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            self.wake_parked_threads(0, callback);
+        }
     }
 
     #[cold]
@@ -862,7 +868,10 @@ impl RawRwLock {
             }
             TOKEN_NORMAL
         };
-        self.wake_parked_threads(ONE_READER, callback);
+        // SAFETY: `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            self.wake_parked_threads(ONE_READER, callback);
+        }
     }
 
     #[cold]
@@ -875,7 +884,10 @@ impl RawRwLock {
             }
             TOKEN_NORMAL
         };
-        self.wake_parked_threads(ONE_READER | UPGRADABLE_BIT, callback);
+        // SAFETY: `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            self.wake_parked_threads(ONE_READER | UPGRADABLE_BIT, callback);
+        }
     }
 
     #[cold]
@@ -898,41 +910,49 @@ impl RawRwLock {
         self.lock_upgradable();
     }
 
-    // Common code for waking up parked threads after releasing WRITER_BIT or
-    // UPGRADABLE_BIT.
+    /// Common code for waking up parked threads after releasing WRITER_BIT or
+    /// UPGRADABLE_BIT.
+    ///
+    /// # Safety
+    ///
+    /// `callback` must uphold the requirements of the `callback` parameter to
+    /// `parking_lot_core::unpark_filter`. Meaning no panics or calls into any function in
+    /// `parking_lot`.
     #[inline]
-    fn wake_parked_threads<C>(&self, new_state: usize, callback: C)
-    where
-        C: FnOnce(usize, UnparkResult) -> UnparkToken,
-    {
+    unsafe fn wake_parked_threads(
+        &self,
+        new_state: usize,
+        callback: impl FnOnce(usize, UnparkResult) -> UnparkToken,
+    ) {
         // We must wake up at least one upgrader or writer if there is one,
         // otherwise they may end up parked indefinitely since unlock_shared
         // does not call wake_parked_threads.
         let new_state = Cell::new(new_state);
-        unsafe {
-            let addr = self as *const _ as usize;
-            let filter = |ParkToken(token)| {
-                let s = new_state.get();
+        let addr = self as *const _ as usize;
+        let filter = |ParkToken(token)| {
+            let s = new_state.get();
 
-                // If we are waking up a writer, don't wake anything else.
-                if s & WRITER_BIT != 0 {
-                    return FilterOp::Stop;
-                }
+            // If we are waking up a writer, don't wake anything else.
+            if s & WRITER_BIT != 0 {
+                return FilterOp::Stop;
+            }
 
-                // Otherwise wake *all* readers and one upgrader/writer.
-                if token & (UPGRADABLE_BIT | WRITER_BIT) != 0 && s & UPGRADABLE_BIT != 0 {
-                    // Skip writers and upgradable readers if we already have
-                    // a writer/upgradable reader.
-                    FilterOp::Skip
-                } else {
-                    new_state.set(s + token);
-                    FilterOp::Unpark
-                }
-            };
-            parking_lot_core::unpark_filter(addr, filter, |result| {
-                callback(new_state.get(), result)
-            });
-        }
+            // Otherwise wake *all* readers and one upgrader/writer.
+            if token & (UPGRADABLE_BIT | WRITER_BIT) != 0 && s & UPGRADABLE_BIT != 0 {
+                // Skip writers and upgradable readers if we already have
+                // a writer/upgradable reader.
+                FilterOp::Skip
+            } else {
+                new_state.set(s + token);
+                FilterOp::Unpark
+            }
+        };
+        let callback = |result| callback(new_state.get(), result);
+        // SAFETY:
+        // * `addr` is an address we control.
+        // * `filter` does not panic or call into any function of `parking_lot`.
+        // * `callback` safety responsibility is on caller
+        parking_lot_core::unpark_filter(addr, filter, callback);
     }
 
     // Common code for waiting for readers to exit the lock after acquiring
