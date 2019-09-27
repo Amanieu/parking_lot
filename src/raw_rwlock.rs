@@ -1085,40 +1085,39 @@ impl RawRwLock {
             }
 
             // Park our thread until we are woken up by an unlock
-            unsafe {
-                let addr = self as *const _ as usize;
-                let validate = || {
-                    let state = self.state.load(Ordering::Relaxed);
-                    state & PARKED_BIT != 0 && validate(state)
-                };
-                let before_sleep = || {};
-                let timed_out = |_, was_last_thread| {
-                    // Clear the parked bit if we were the last parked thread
-                    if was_last_thread {
-                        self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
-                    }
-                };
-                match parking_lot_core::park(
-                    addr,
-                    validate,
-                    before_sleep,
-                    timed_out,
-                    token,
-                    timeout,
-                ) {
-                    // The thread that unparked us passed the lock on to us
-                    // directly without unlocking it.
-                    ParkResult::Unparked(TOKEN_HANDOFF) => return true,
-
-                    // We were unparked normally, try acquiring the lock again
-                    ParkResult::Unparked(_) => (),
-
-                    // The validation function failed, try locking again
-                    ParkResult::Invalid => (),
-
-                    // Timeout expired
-                    ParkResult::TimedOut => return false,
+            let addr = self as *const _ as usize;
+            let validate = || {
+                let state = self.state.load(Ordering::Relaxed);
+                state & PARKED_BIT != 0 && validate(state)
+            };
+            let before_sleep = || {};
+            let timed_out = |_, was_last_thread| {
+                // Clear the parked bit if we were the last parked thread
+                if was_last_thread {
+                    self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
                 }
+            };
+
+            // SAFETY:
+            //   * `addr` is an address we control.
+            //   * `validate`/`timed_out` does not panic or call into any function of `parking_lot`.
+            //   * `before_sleep` does not call `park`, nor does it panic.
+            let park_result = unsafe {
+                parking_lot_core::park(addr, validate, before_sleep, timed_out, token, timeout)
+            };
+            match park_result {
+                // The thread that unparked us passed the lock on to us
+                // directly without unlocking it.
+                ParkResult::Unparked(TOKEN_HANDOFF) => return true,
+
+                // We were unparked normally, try acquiring the lock again
+                ParkResult::Unparked(_) => (),
+
+                // The validation function failed, try locking again
+                ParkResult::Invalid => (),
+
+                // Timeout expired
+                ParkResult::TimedOut => return false,
             }
 
             // Loop back and try locking again
