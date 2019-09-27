@@ -713,16 +713,15 @@ impl RawRwLock {
         // just need to wake up a potentially sleeping pending writer.
         // Using the 2nd key at addr + 1
         let addr = self as *const _ as usize + 1;
-        let callback = |result: UnparkResult| {
+        let callback = |_result: UnparkResult| {
             // Clear the WRITER_PARKED_BIT here since there can only be one
             // parked writer thread.
-            debug_assert!(!result.have_more_threads);
             self.state.fetch_and(!WRITER_PARKED_BIT, Ordering::Relaxed);
             TOKEN_NORMAL
         };
         // SAFETY:
         //   * `addr` is an address we control.
-        //   * `callback` does not panic (in non debug) or call into any function of `parking_lot`.
+        //   * `callback` does not panic or call into any function of `parking_lot`.
         unsafe {
             parking_lot_core::unpark_one(addr, callback);
         }
