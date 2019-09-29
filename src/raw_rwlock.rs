@@ -598,29 +598,31 @@ impl RawRwLock {
 
     #[cold]
     fn lock_exclusive_slow(&self, timeout: Option<Instant>) -> bool {
+        let try_lock = |state: &mut usize| {
+            loop {
+                if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
+                    return false;
+                }
+
+                // Grab WRITER_BIT if it isn't set, even if there are parked threads.
+                match self.state.compare_exchange_weak(
+                    *state,
+                    *state | WRITER_BIT,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => return true,
+                    Err(x) => *state = x,
+                }
+            }
+        };
+
         // Step 1: grab exclusive ownership of WRITER_BIT
         let timed_out = !self.lock_common(
             timeout,
             TOKEN_EXCLUSIVE,
-            |state| {
-                loop {
-                    if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
-                        return false;
-                    }
-
-                    // Grab WRITER_BIT if it isn't set, even if there are parked threads.
-                    match self.state.compare_exchange_weak(
-                        *state,
-                        *state | WRITER_BIT,
-                        Ordering::Acquire,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => return true,
-                        Err(x) => *state = x,
-                    }
-                }
-            },
-            |state| state & (WRITER_BIT | UPGRADABLE_BIT) != 0,
+            try_lock,
+            WRITER_BIT | UPGRADABLE_BIT,
         );
         if timed_out {
             return false;
@@ -652,113 +654,115 @@ impl RawRwLock {
                 TOKEN_NORMAL
             }
         };
-        self.wake_parked_threads(0, callback);
+        // SAFETY: `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            self.wake_parked_threads(0, callback);
+        }
     }
 
     #[cold]
     fn lock_shared_slow(&self, recursive: bool, timeout: Option<Instant>) -> bool {
-        self.lock_common(
-            timeout,
-            TOKEN_SHARED,
-            |state| {
-                let mut spinwait_shared = SpinWait::new();
-                loop {
-                    // Use hardware lock elision to avoid cache conflicts when multiple
-                    // readers try to acquire the lock. We only do this if the lock is
-                    // completely empty since elision handles conflicts poorly.
-                    if have_elision() && *state == 0 {
-                        match self.state.elision_compare_exchange_acquire(0, ONE_READER) {
-                            Ok(_) => return true,
-                            Err(x) => *state = x,
-                        }
+        let try_lock = |state: &mut usize| {
+            let mut spinwait_shared = SpinWait::new();
+            loop {
+                // Use hardware lock elision to avoid cache conflicts when multiple
+                // readers try to acquire the lock. We only do this if the lock is
+                // completely empty since elision handles conflicts poorly.
+                if have_elision() && *state == 0 {
+                    match self.state.elision_compare_exchange_acquire(0, ONE_READER) {
+                        Ok(_) => return true,
+                        Err(x) => *state = x,
                     }
-
-                    // This is the same condition as try_lock_shared_fast
-                    if *state & WRITER_BIT != 0 {
-                        if !recursive || *state & READERS_MASK == 0 {
-                            return false;
-                        }
-                    }
-
-                    if self
-                        .state
-                        .compare_exchange_weak(
-                            *state,
-                            state
-                                .checked_add(ONE_READER)
-                                .expect("RwLock reader count overflow"),
-                            Ordering::Acquire,
-                            Ordering::Relaxed,
-                        )
-                        .is_ok()
-                    {
-                        return true;
-                    }
-
-                    // If there is high contention on the reader count then we want
-                    // to leave some time between attempts to acquire the lock to
-                    // let other threads make progress.
-                    spinwait_shared.spin_no_yield();
-                    *state = self.state.load(Ordering::Relaxed);
                 }
-            },
-            |state| state & WRITER_BIT != 0,
-        )
+
+                // This is the same condition as try_lock_shared_fast
+                if *state & WRITER_BIT != 0 {
+                    if !recursive || *state & READERS_MASK == 0 {
+                        return false;
+                    }
+                }
+
+                if self
+                    .state
+                    .compare_exchange_weak(
+                        *state,
+                        state
+                            .checked_add(ONE_READER)
+                            .expect("RwLock reader count overflow"),
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    return true;
+                }
+
+                // If there is high contention on the reader count then we want
+                // to leave some time between attempts to acquire the lock to
+                // let other threads make progress.
+                spinwait_shared.spin_no_yield();
+                *state = self.state.load(Ordering::Relaxed);
+            }
+        };
+        self.lock_common(timeout, TOKEN_SHARED, try_lock, WRITER_BIT)
     }
 
     #[cold]
     fn unlock_shared_slow(&self) {
         // At this point WRITER_PARKED_BIT is set and READER_MASK is empty. We
         // just need to wake up a potentially sleeping pending writer.
+        // Using the 2nd key at addr + 1
+        let addr = self as *const _ as usize + 1;
+        let callback = |_result: UnparkResult| {
+            // Clear the WRITER_PARKED_BIT here since there can only be one
+            // parked writer thread.
+            self.state.fetch_and(!WRITER_PARKED_BIT, Ordering::Relaxed);
+            TOKEN_NORMAL
+        };
+        // SAFETY:
+        //   * `addr` is an address we control.
+        //   * `callback` does not panic or call into any function of `parking_lot`.
         unsafe {
-            // Using the 2nd key at addr + 1
-            let addr = self as *const _ as usize + 1;
-            let callback = |result: UnparkResult| {
-                // Clear the WRITER_PARKED_BIT here since there can only be one
-                // parked writer thread.
-                debug_assert!(!result.have_more_threads);
-                self.state.fetch_and(!WRITER_PARKED_BIT, Ordering::Relaxed);
-                TOKEN_NORMAL
-            };
             parking_lot_core::unpark_one(addr, callback);
         }
     }
 
     #[cold]
     fn lock_upgradable_slow(&self, timeout: Option<Instant>) -> bool {
+        let try_lock = |state: &mut usize| {
+            let mut spinwait_shared = SpinWait::new();
+            loop {
+                if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
+                    return false;
+                }
+
+                if self
+                    .state
+                    .compare_exchange_weak(
+                        *state,
+                        state
+                            .checked_add(ONE_READER | UPGRADABLE_BIT)
+                            .expect("RwLock reader count overflow"),
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    return true;
+                }
+
+                // If there is high contention on the reader count then we want
+                // to leave some time between attempts to acquire the lock to
+                // let other threads make progress.
+                spinwait_shared.spin_no_yield();
+                *state = self.state.load(Ordering::Relaxed);
+            }
+        };
         self.lock_common(
             timeout,
             TOKEN_UPGRADABLE,
-            |state| {
-                let mut spinwait_shared = SpinWait::new();
-                loop {
-                    if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
-                        return false;
-                    }
-
-                    if self
-                        .state
-                        .compare_exchange_weak(
-                            *state,
-                            state
-                                .checked_add(ONE_READER | UPGRADABLE_BIT)
-                                .expect("RwLock reader count overflow"),
-                            Ordering::Acquire,
-                            Ordering::Relaxed,
-                        )
-                        .is_ok()
-                    {
-                        return true;
-                    }
-
-                    // If there is high contention on the reader count then we want
-                    // to leave some time between attempts to acquire the lock to
-                    // let other threads make progress.
-                    spinwait_shared.spin_no_yield();
-                    *state = self.state.load(Ordering::Relaxed);
-                }
-            },
-            |state| state & (WRITER_BIT | UPGRADABLE_BIT) != 0,
+            try_lock,
+            WRITER_BIT | UPGRADABLE_BIT,
         )
     }
 
@@ -825,7 +829,10 @@ impl RawRwLock {
                 }
             }
         };
-        self.wake_parked_threads(0, callback);
+        // SAFETY: `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            self.wake_parked_threads(0, callback);
+        }
     }
 
     #[cold]
@@ -862,7 +869,10 @@ impl RawRwLock {
             }
             TOKEN_NORMAL
         };
-        self.wake_parked_threads(ONE_READER, callback);
+        // SAFETY: `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            self.wake_parked_threads(ONE_READER, callback);
+        }
     }
 
     #[cold]
@@ -875,7 +885,10 @@ impl RawRwLock {
             }
             TOKEN_NORMAL
         };
-        self.wake_parked_threads(ONE_READER | UPGRADABLE_BIT, callback);
+        // SAFETY: `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            self.wake_parked_threads(ONE_READER | UPGRADABLE_BIT, callback);
+        }
     }
 
     #[cold]
@@ -898,41 +911,49 @@ impl RawRwLock {
         self.lock_upgradable();
     }
 
-    // Common code for waking up parked threads after releasing WRITER_BIT or
-    // UPGRADABLE_BIT.
+    /// Common code for waking up parked threads after releasing WRITER_BIT or
+    /// UPGRADABLE_BIT.
+    ///
+    /// # Safety
+    ///
+    /// `callback` must uphold the requirements of the `callback` parameter to
+    /// `parking_lot_core::unpark_filter`. Meaning no panics or calls into any function in
+    /// `parking_lot`.
     #[inline]
-    fn wake_parked_threads<C>(&self, new_state: usize, callback: C)
-    where
-        C: FnOnce(usize, UnparkResult) -> UnparkToken,
-    {
+    unsafe fn wake_parked_threads(
+        &self,
+        new_state: usize,
+        callback: impl FnOnce(usize, UnparkResult) -> UnparkToken,
+    ) {
         // We must wake up at least one upgrader or writer if there is one,
         // otherwise they may end up parked indefinitely since unlock_shared
         // does not call wake_parked_threads.
         let new_state = Cell::new(new_state);
-        unsafe {
-            let addr = self as *const _ as usize;
-            let filter = |ParkToken(token)| {
-                let s = new_state.get();
+        let addr = self as *const _ as usize;
+        let filter = |ParkToken(token)| {
+            let s = new_state.get();
 
-                // If we are waking up a writer, don't wake anything else.
-                if s & WRITER_BIT != 0 {
-                    return FilterOp::Stop;
-                }
+            // If we are waking up a writer, don't wake anything else.
+            if s & WRITER_BIT != 0 {
+                return FilterOp::Stop;
+            }
 
-                // Otherwise wake *all* readers and one upgrader/writer.
-                if token & (UPGRADABLE_BIT | WRITER_BIT) != 0 && s & UPGRADABLE_BIT != 0 {
-                    // Skip writers and upgradable readers if we already have
-                    // a writer/upgradable reader.
-                    FilterOp::Skip
-                } else {
-                    new_state.set(s + token);
-                    FilterOp::Unpark
-                }
-            };
-            parking_lot_core::unpark_filter(addr, filter, |result| {
-                callback(new_state.get(), result)
-            });
-        }
+            // Otherwise wake *all* readers and one upgrader/writer.
+            if token & (UPGRADABLE_BIT | WRITER_BIT) != 0 && s & UPGRADABLE_BIT != 0 {
+                // Skip writers and upgradable readers if we already have
+                // a writer/upgradable reader.
+                FilterOp::Skip
+            } else {
+                new_state.set(s + token);
+                FilterOp::Unpark
+            }
+        };
+        let callback = |result| callback(new_state.get(), result);
+        // SAFETY:
+        // * `addr` is an address we control.
+        // * `filter` does not panic or call into any function of `parking_lot`.
+        // * `callback` safety responsibility is on caller
+        parking_lot_core::unpark_filter(addr, filter, callback);
     }
 
     // Common code for waiting for readers to exit the lock after acquiring
@@ -964,71 +985,75 @@ impl RawRwLock {
             }
 
             // Park our thread until we are woken up by an unlock
-            unsafe {
-                // Using the 2nd key at addr + 1
-                let addr = self as *const _ as usize + 1;
-                let validate = || {
-                    let state = self.state.load(Ordering::Relaxed);
-                    state & READERS_MASK != 0 && state & WRITER_PARKED_BIT != 0
-                };
-                let before_sleep = || {};
-                let timed_out = |_, _| {};
-                match parking_lot_core::park(
+            // Using the 2nd key at addr + 1
+            let addr = self as *const _ as usize + 1;
+            let validate = || {
+                let state = self.state.load(Ordering::Relaxed);
+                state & READERS_MASK != 0 && state & WRITER_PARKED_BIT != 0
+            };
+            let before_sleep = || {};
+            let timed_out = |_, _| {};
+            // SAFETY:
+            //   * `addr` is an address we control.
+            //   * `validate`/`timed_out` does not panic or call into any function of `parking_lot`.
+            //   * `before_sleep` does not call `park`, nor does it panic.
+            let park_result = unsafe {
+                parking_lot_core::park(
                     addr,
                     validate,
                     before_sleep,
                     timed_out,
                     TOKEN_EXCLUSIVE,
                     timeout,
-                ) {
-                    // We still need to re-check the state if we are unparked
-                    // since a previous writer timing-out could have allowed
-                    // another reader to sneak in before we parked.
-                    ParkResult::Unparked(_) | ParkResult::Invalid => {
-                        state = self.state.load(Ordering::Relaxed);
-                        continue;
-                    }
+                )
+            };
+            match park_result {
+                // We still need to re-check the state if we are unparked
+                // since a previous writer timing-out could have allowed
+                // another reader to sneak in before we parked.
+                ParkResult::Unparked(_) | ParkResult::Invalid => {
+                    state = self.state.load(Ordering::Relaxed);
+                    continue;
+                }
 
-                    // Timeout expired
-                    ParkResult::TimedOut => {
-                        // We need to release WRITER_BIT and revert back to
-                        // our previous value. We also wake up any threads that
-                        // might be waiting on WRITER_BIT.
-                        let state = self.state.fetch_add(
-                            prev_value.wrapping_sub(WRITER_BIT | WRITER_PARKED_BIT),
-                            Ordering::Relaxed,
-                        );
-                        if state & PARKED_BIT != 0 {
-                            let callback = |_, result: UnparkResult| {
-                                // Clear the parked bit if there no more parked threads
-                                if !result.have_more_threads {
-                                    self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
-                                }
-                                TOKEN_NORMAL
-                            };
+                // Timeout expired
+                ParkResult::TimedOut => {
+                    // We need to release WRITER_BIT and revert back to
+                    // our previous value. We also wake up any threads that
+                    // might be waiting on WRITER_BIT.
+                    let state = self.state.fetch_add(
+                        prev_value.wrapping_sub(WRITER_BIT | WRITER_PARKED_BIT),
+                        Ordering::Relaxed,
+                    );
+                    if state & PARKED_BIT != 0 {
+                        let callback = |_, result: UnparkResult| {
+                            // Clear the parked bit if there no more parked threads
+                            if !result.have_more_threads {
+                                self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
+                            }
+                            TOKEN_NORMAL
+                        };
+                        // SAFETY: `callback` does not panic or call any function of `parking_lot`.
+                        unsafe {
                             self.wake_parked_threads(ONE_READER | UPGRADABLE_BIT, callback);
                         }
-                        return false;
                     }
+                    return false;
                 }
             }
         }
         true
     }
 
-    // Common code for acquiring a lock
+    /// Common code for acquiring a lock
     #[inline]
-    fn lock_common<F, V>(
+    fn lock_common(
         &self,
         timeout: Option<Instant>,
         token: ParkToken,
-        mut try_lock: F,
-        validate: V,
-    ) -> bool
-    where
-        F: FnMut(&mut usize) -> bool,
-        V: Fn(usize) -> bool,
-    {
+        mut try_lock: impl FnMut(&mut usize) -> bool,
+        validate_flags: usize,
+    ) -> bool {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -1057,40 +1082,39 @@ impl RawRwLock {
             }
 
             // Park our thread until we are woken up by an unlock
-            unsafe {
-                let addr = self as *const _ as usize;
-                let validate = || {
-                    let state = self.state.load(Ordering::Relaxed);
-                    state & PARKED_BIT != 0 && validate(state)
-                };
-                let before_sleep = || {};
-                let timed_out = |_, was_last_thread| {
-                    // Clear the parked bit if we were the last parked thread
-                    if was_last_thread {
-                        self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
-                    }
-                };
-                match parking_lot_core::park(
-                    addr,
-                    validate,
-                    before_sleep,
-                    timed_out,
-                    token,
-                    timeout,
-                ) {
-                    // The thread that unparked us passed the lock on to us
-                    // directly without unlocking it.
-                    ParkResult::Unparked(TOKEN_HANDOFF) => return true,
-
-                    // We were unparked normally, try acquiring the lock again
-                    ParkResult::Unparked(_) => (),
-
-                    // The validation function failed, try locking again
-                    ParkResult::Invalid => (),
-
-                    // Timeout expired
-                    ParkResult::TimedOut => return false,
+            let addr = self as *const _ as usize;
+            let validate = || {
+                let state = self.state.load(Ordering::Relaxed);
+                state & PARKED_BIT != 0 && (state & validate_flags != 0)
+            };
+            let before_sleep = || {};
+            let timed_out = |_, was_last_thread| {
+                // Clear the parked bit if we were the last parked thread
+                if was_last_thread {
+                    self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
                 }
+            };
+
+            // SAFETY:
+            // * `addr` is an address we control.
+            // * `validate`/`timed_out` does not panic or call into any function of `parking_lot`.
+            // * `before_sleep` does not call `park`, nor does it panic.
+            let park_result = unsafe {
+                parking_lot_core::park(addr, validate, before_sleep, timed_out, token, timeout)
+            };
+            match park_result {
+                // The thread that unparked us passed the lock on to us
+                // directly without unlocking it.
+                ParkResult::Unparked(TOKEN_HANDOFF) => return true,
+
+                // We were unparked normally, try acquiring the lock again
+                ParkResult::Unparked(_) => (),
+
+                // The validation function failed, try locking again
+                ParkResult::Invalid => (),
+
+                // Timeout expired
+                ParkResult::TimedOut => return false,
             }
 
             // Loop back and try locking again
