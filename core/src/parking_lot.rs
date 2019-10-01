@@ -413,7 +413,11 @@ fn lock_bucket_pair(key1: usize, key2: usize) -> (&'static Bucket, &'static Buck
     }
 }
 
-// Unlock a pair of buckets
+/// Unlock a pair of buckets
+///
+/// # Safety
+///
+/// Both buckets must be locked
 #[inline]
 unsafe fn unlock_bucket_pair(bucket1: &Bucket, bucket2: &Bucket) {
     bucket1.mutex.unlock();
@@ -846,6 +850,7 @@ pub unsafe fn unpark_requeue(
     let mut result = UnparkResult::default();
     let op = validate();
     if op == RequeueOp::Abort {
+        // SAFETY: Both buckets are locked, as required.
         unlock_bucket_pair(bucket_from, bucket_to);
         return result;
     }
@@ -926,9 +931,11 @@ pub unsafe fn unpark_requeue(
     if let Some(wakeup_thread) = wakeup_thread {
         (*wakeup_thread).unpark_token.set(token);
         let handle = (*wakeup_thread).parker.unpark_lock();
+        // SAFETY: Both buckets are locked, as required.
         unlock_bucket_pair(bucket_from, bucket_to);
         handle.unpark();
     } else {
+        // SAFETY: Both buckets are locked, as required.
         unlock_bucket_pair(bucket_from, bucket_to);
     }
 
