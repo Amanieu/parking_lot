@@ -191,27 +191,31 @@ impl Drop for ThreadData {
     }
 }
 
-// Get a pointer to the latest hash table, creating one if it doesn't exist yet.
+/// Returns a reference to the latest hash table, creating one if it doesn't exist yet.
+/// The reference is valid forever. However, the `HashTable` it references might become stale
+/// at any point. Meaning it still exists, but it is not the instance in active use.
 #[inline]
-fn get_hashtable() -> *mut HashTable {
+fn get_hashtable() -> &'static HashTable {
     let table = HASHTABLE.load(Ordering::Acquire);
 
     // If there is no table, create one
     if table.is_null() {
         create_hashtable()
     } else {
-        table
+        // SAFETY: when not null, `HASHTABLE` always points to a `HashTable` that is never freed.
+        unsafe { &*table }
     }
 }
 
-// Get a pointer to the latest hash table, creating one if it doesn't exist yet.
+/// Returns a reference to the latest hash table, creating one if it doesn't exist yet.
+/// The reference is valid forever. However, the `HashTable` it references might become stale
+/// at any point. Meaning it still exists, but it is not the instance in active use.
 #[cold]
-fn create_hashtable() -> *mut HashTable {
+fn create_hashtable() -> &'static HashTable {
     let new_table = Box::into_raw(HashTable::new(LOAD_FACTOR, ptr::null()));
 
-    // If this fails then it means some other thread created the hash
-    // table first.
-    match HASHTABLE.compare_exchange(
+    // If this fails then it means some other thread created the hash table first.
+    let table = match HASHTABLE.compare_exchange(
         ptr::null_mut(),
         new_table,
         Ordering::Release,
@@ -220,12 +224,16 @@ fn create_hashtable() -> *mut HashTable {
         Ok(_) => new_table,
         Err(old_table) => {
             // Free the table we created
+            // SAFETY: `new_table` is created from `Box::into_raw` above and only freed here.
             unsafe {
                 Box::from_raw(new_table);
             }
             old_table
         }
-    }
+    };
+    // SAFETY: The `HashTable` behind `table` is never freed. It is either the table pointer we
+    // created here, or it is one loaded from `HASHTABLE`.
+    unsafe { &*table }
 }
 
 // Grow the hash table so that it is big enough for the given number of threads.
@@ -247,7 +255,7 @@ unsafe fn grow_hashtable(num_threads: usize) {
         // Now check if our table is still the latest one. Another thread could
         // have grown the hash table between us reading HASHTABLE and locking
         // the buckets.
-        if HASHTABLE.load(Ordering::Relaxed) == old_table {
+        if HASHTABLE.load(Ordering::Relaxed) == old_table as *const _ as *mut _ {
             break;
         }
 
@@ -257,7 +265,9 @@ unsafe fn grow_hashtable(num_threads: usize) {
             b.mutex.unlock();
         }
 
-        old_table = HASHTABLE.load(Ordering::Acquire);
+        // SAFETY: when not null, `HASHTABLE` always points to a `HashTable` that is never freed.
+        // Here we know `get_hashtable` above must have initialized `HASHTABLE`
+        old_table = &*HASHTABLE.load(Ordering::Acquire);
     }
 
     // Create the new table
@@ -321,7 +331,7 @@ unsafe fn lock_bucket<'a>(key: usize) -> &'a Bucket {
 
         // If no other thread has rehashed the table before we grabbed the lock
         // then we are good to go! The lock we grabbed prevents any rehashes.
-        if HASHTABLE.load(Ordering::Relaxed) == hashtable {
+        if HASHTABLE.load(Ordering::Relaxed) == hashtable as *const _ as *mut _ {
             return bucket;
         }
 
@@ -348,7 +358,7 @@ unsafe fn lock_bucket_checked<'a>(key: &AtomicUsize) -> (usize, &'a Bucket) {
         // Check that both the hash table and key are correct while the bucket
         // is locked. Note that the key can't change once we locked the proper
         // bucket for it, so we just keep trying until we have the correct key.
-        if HASHTABLE.load(Ordering::Relaxed) == hashtable
+        if HASHTABLE.load(Ordering::Relaxed) == hashtable as *const _ as *mut _
             && key.load(Ordering::Relaxed) == current_key
         {
             return (current_key, bucket);
@@ -380,7 +390,7 @@ unsafe fn lock_bucket_pair<'a>(key1: usize, key2: usize) -> (&'a Bucket, &'a Buc
 
         // If no other thread has rehashed the table before we grabbed the lock
         // then we are good to go! The lock we grabbed prevents any rehashes.
-        if HASHTABLE.load(Ordering::Relaxed) == hashtable {
+        if HASHTABLE.load(Ordering::Relaxed) == hashtable as *const _ as *mut _ {
             // Now lock the second bucket and return the two buckets
             if hash1 == hash2 {
                 return (bucket1, bucket1);
