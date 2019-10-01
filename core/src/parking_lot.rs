@@ -253,6 +253,7 @@ unsafe fn grow_hashtable(num_threads: usize) {
 
         // Unlock buckets and try again
         for b in &(*old_table).entries[..] {
+            // SAFETY: We hold the lock here, as required
             b.mutex.unlock();
         }
 
@@ -288,6 +289,7 @@ unsafe fn grow_hashtable(num_threads: usize) {
 
     // Unlock all buckets in the old table
     for b in &(*old_table).entries[..] {
+        // SAFETY: We hold the lock here, as required
         b.mutex.unlock();
     }
 }
@@ -544,6 +546,7 @@ pub unsafe fn park(
 
         // If the validation function fails, just return
         if !validate() {
+            // SAFETY: We hold the lock here, as required
             bucket.mutex.unlock();
             return ParkResult::Invalid;
         }
@@ -560,6 +563,7 @@ pub unsafe fn park(
             bucket.queue_head.set(thread_data);
         }
         bucket.queue_tail.set(thread_data);
+        // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
 
         // Invoke the pre-sleep callback
@@ -590,6 +594,7 @@ pub unsafe fn park(
         // Now we need to check again if we were unparked or timed out. Unlike the
         // last check this is precise because we hold the bucket lock.
         if !thread_data.parker.timed_out() {
+            // SAFETY: We hold the lock here, as required
             bucket.mutex.unlock();
             return ParkResult::Unparked(thread_data.unpark_token.get());
         }
@@ -637,6 +642,7 @@ pub unsafe fn park(
         debug_assert!(!current.is_null());
 
         // Unlock the bucket, we are done
+        // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
         ParkResult::TimedOut
     })
@@ -708,6 +714,7 @@ pub unsafe fn unpark_one(
             // the queue locked while we perform a system call. Finally we wake
             // up the parked thread.
             let handle = (*current).parker.unpark_lock();
+            // SAFETY: We hold the lock here, as required
             bucket.mutex.unlock();
             handle.unpark();
 
@@ -721,6 +728,7 @@ pub unsafe fn unpark_one(
 
     // No threads with a matching key were found in the bucket
     callback(result);
+    // SAFETY: We hold the lock here, as required
     bucket.mutex.unlock();
     result
 }
@@ -771,6 +779,7 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
     }
 
     // Unlock the bucket
+    // SAFETY: We hold the lock here, as required
     bucket.mutex.unlock();
 
     // Now that we are outside the lock, wake up all the threads that we removed
@@ -1003,6 +1012,7 @@ pub unsafe fn unpark_filter(
         t.1 = Some((*t.0).parker.unpark_lock());
     }
 
+    // SAFETY: We hold the lock here, as required
     bucket.mutex.unlock();
 
     // Now that we are outside the lock, wake up all the threads that we removed
@@ -1195,6 +1205,7 @@ mod deadlock_impl {
                 }
                 current = (*current).next_in_queue.get();
             }
+            // SAFETY: We hold the lock here, as required
             b.mutex.unlock();
         }
 
@@ -1232,6 +1243,7 @@ mod deadlock_impl {
 
             // Unlock buckets and try again
             for b in &(*table).entries[..] {
+                // SAFETY: We hold the lock here, as required
                 b.mutex.unlock();
             }
 
@@ -1264,6 +1276,7 @@ mod deadlock_impl {
         }
 
         for b in &(*table).entries[..] {
+            // SAFETY: We hold the lock here, as required
             b.mutex.unlock();
         }
 
@@ -1279,6 +1292,7 @@ mod deadlock_impl {
                 (*td).deadlock_data.deadlocked.set(true);
                 *(*td).deadlock_data.backtrace_sender.get() = Some(sender.clone());
                 let handle = (*td).parker.unpark_lock();
+                // SAFETY: We hold the lock here, as required
                 bucket.mutex.unlock();
                 // unpark the deadlocked thread!
                 // on unpark it'll notice the deadlocked flag and report back
