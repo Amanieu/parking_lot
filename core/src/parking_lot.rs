@@ -318,13 +318,13 @@ fn hash(key: usize, bits: u32) -> usize {
 
 // Lock the bucket for the given key
 #[inline]
-unsafe fn lock_bucket<'a>(key: usize) -> &'a Bucket {
+fn lock_bucket(key: usize) -> &'static Bucket {
     let mut bucket;
     loop {
         let hashtable = get_hashtable();
 
-        let hash = hash(key, (*hashtable).hash_bits);
-        bucket = &(*hashtable).entries[hash];
+        let hash = hash(key, hashtable.hash_bits);
+        bucket = &hashtable.entries[hash];
 
         // Lock the bucket
         bucket.mutex.lock();
@@ -336,21 +336,22 @@ unsafe fn lock_bucket<'a>(key: usize) -> &'a Bucket {
         }
 
         // Unlock the bucket and try again
-        bucket.mutex.unlock();
+        // SAFETY: We hold the lock here, as required
+        unsafe { bucket.mutex.unlock() };
     }
 }
 
 // Lock the bucket for the given key, but check that the key hasn't been changed
 // in the meantime due to a requeue.
 #[inline]
-unsafe fn lock_bucket_checked<'a>(key: &AtomicUsize) -> (usize, &'a Bucket) {
+fn lock_bucket_checked(key: &AtomicUsize) -> (usize, &'static Bucket) {
     let mut bucket;
     loop {
         let hashtable = get_hashtable();
         let current_key = key.load(Ordering::Relaxed);
 
-        let hash = hash(current_key, (*hashtable).hash_bits);
-        bucket = &(*hashtable).entries[hash];
+        let hash = hash(current_key, hashtable.hash_bits);
+        bucket = &hashtable.entries[hash];
 
         // Lock the bucket
         bucket.mutex.lock();
@@ -365,24 +366,25 @@ unsafe fn lock_bucket_checked<'a>(key: &AtomicUsize) -> (usize, &'a Bucket) {
         }
 
         // Unlock the bucket and try again
-        bucket.mutex.unlock();
+        // SAFETY: We hold the lock here, as required
+        unsafe { bucket.mutex.unlock() };
     }
 }
 
 // Lock the two buckets for the given pair of keys
 #[inline]
-unsafe fn lock_bucket_pair<'a>(key1: usize, key2: usize) -> (&'a Bucket, &'a Bucket) {
+fn lock_bucket_pair(key1: usize, key2: usize) -> (&'static Bucket, &'static Bucket) {
     let mut bucket1;
     loop {
         let hashtable = get_hashtable();
 
         // Get the lowest bucket first
-        let hash1 = hash(key1, (*hashtable).hash_bits);
-        let hash2 = hash(key2, (*hashtable).hash_bits);
+        let hash1 = hash(key1, hashtable.hash_bits);
+        let hash2 = hash(key2, hashtable.hash_bits);
         if hash1 <= hash2 {
-            bucket1 = &(*hashtable).entries[hash1];
+            bucket1 = &hashtable.entries[hash1];
         } else {
-            bucket1 = &(*hashtable).entries[hash2];
+            bucket1 = &hashtable.entries[hash2];
         }
 
         // Lock the first bucket
@@ -395,18 +397,19 @@ unsafe fn lock_bucket_pair<'a>(key1: usize, key2: usize) -> (&'a Bucket, &'a Buc
             if hash1 == hash2 {
                 return (bucket1, bucket1);
             } else if hash1 < hash2 {
-                let bucket2 = &(*hashtable).entries[hash2];
+                let bucket2 = &hashtable.entries[hash2];
                 bucket2.mutex.lock();
                 return (bucket1, bucket2);
             } else {
-                let bucket2 = &(*hashtable).entries[hash1];
+                let bucket2 = &hashtable.entries[hash1];
                 bucket2.mutex.lock();
                 return (bucket2, bucket1);
             }
         }
 
         // Unlock the bucket and try again
-        bucket1.mutex.unlock();
+        // SAFETY: We hold the lock here, as required
+        unsafe { bucket1.mutex.unlock() };
     }
 }
 
