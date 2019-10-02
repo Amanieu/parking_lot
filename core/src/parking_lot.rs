@@ -17,6 +17,13 @@ use smallvec::SmallVec;
 use std::time::{Duration, Instant};
 
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
+
+/// Holds the pointer to the currently active `HashTable`.
+///
+/// # Safety
+///
+/// Except for the initial value of null, it must always point to a valid `HashTable` instance.
+/// Any `HashTable` this global static has ever pointed to must never be freed.
 static HASHTABLE: AtomicPtr<HashTable> = AtomicPtr::new(ptr::null_mut());
 
 // Even with 3x more buckets than threads, the memory overhead per thread is
