@@ -225,32 +225,8 @@ fn create_hashtable() -> *mut HashTable {
 // This isn't performance-critical since it is only done when a ThreadData is
 // created, which only happens once per thread.
 unsafe fn grow_hashtable(num_threads: usize) {
-    // If there is no table, create one
-    if HASHTABLE.load(Ordering::Relaxed).is_null() {
-        let new_table = Box::into_raw(HashTable::new(num_threads, ptr::null()));
-
-        // If this fails then it means some other thread created the hash
-        // table first.
-        if HASHTABLE
-            .compare_exchange(
-                ptr::null_mut(),
-                new_table,
-                Ordering::Release,
-                Ordering::Relaxed,
-            )
-            .is_ok()
-        {
-            return;
-        }
-
-        // Free the table we created
-        Box::from_raw(new_table);
-    }
-
-    let mut old_table;
+    let mut old_table = get_hashtable();
     loop {
-        old_table = HASHTABLE.load(Ordering::Acquire);
-
         // Check if we need to resize the existing table
         if (*old_table).entries.len() >= LOAD_FACTOR * num_threads {
             return;
@@ -272,6 +248,8 @@ unsafe fn grow_hashtable(num_threads: usize) {
         for b in &(*old_table).entries[..] {
             b.mutex.unlock();
         }
+
+        old_table = HASHTABLE.load(Ordering::Acquire);
     }
 
     // Create the new table
