@@ -1256,19 +1256,19 @@ mod deadlock_impl {
         let mut table = get_hashtable();
         loop {
             // Lock all buckets in the old table
-            for b in &(*table).entries[..] {
+            for b in &table.entries[..] {
                 b.mutex.lock();
             }
 
             // Now check if our table is still the latest one. Another thread could
             // have grown the hash table between us getting and locking the hash table.
             let new_table = get_hashtable();
-            if new_table == table {
+            if new_table as *const _ == table as *const _ {
                 break;
             }
 
             // Unlock buckets and try again
-            for b in &(*table).entries[..] {
+            for b in &table.entries[..] {
                 // SAFETY: We hold the lock here, as required
                 b.mutex.unlock();
             }
@@ -1280,7 +1280,7 @@ mod deadlock_impl {
         let mut graph =
             DiGraphMap::<WaitGraphNode, ()>::with_capacity(thread_count * 2, thread_count * 2);
 
-        for b in &(*table).entries[..] {
+        for b in &table.entries[..] {
             let mut current = b.queue_head.get();
             while !current.is_null() {
                 if !(*current).parked_with_timeout.get()
@@ -1301,7 +1301,7 @@ mod deadlock_impl {
             }
         }
 
-        for b in &(*table).entries[..] {
+        for b in &table.entries[..] {
             // SAFETY: We hold the lock here, as required
             b.mutex.unlock();
         }
