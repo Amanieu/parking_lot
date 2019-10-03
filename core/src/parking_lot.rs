@@ -316,7 +316,8 @@ fn hash(key: usize, bits: u32) -> usize {
     key.wrapping_mul(0x9E3779B97F4A7C15) >> (64 - bits)
 }
 
-// Lock the bucket for the given key
+/// Locks the bucket for the given key and returns a reference to it.
+/// The returned bucket must be unlocked again in order to not cause deadlocks.
 #[inline]
 fn lock_bucket(key: usize) -> &'static Bucket {
     let mut bucket;
@@ -341,8 +342,9 @@ fn lock_bucket(key: usize) -> &'static Bucket {
     }
 }
 
-// Lock the bucket for the given key, but check that the key hasn't been changed
-// in the meantime due to a requeue.
+/// Locks the bucket for the given key and returns a reference to it. But checks that the key
+/// hasn't been changed in the meantime due to a requeue.
+/// The returned bucket must be unlocked again in order to not cause deadlocks.
 #[inline]
 fn lock_bucket_checked(key: &AtomicUsize) -> (usize, &'static Bucket) {
     let mut bucket;
@@ -371,7 +373,11 @@ fn lock_bucket_checked(key: &AtomicUsize) -> (usize, &'static Bucket) {
     }
 }
 
-// Lock the two buckets for the given pair of keys
+/// Locks the two buckets for the given pair of keys and returns references to them.
+/// The returned buckets must be unlocked again in order to not cause deadlocks.
+///
+/// If both keys hash to the same value, both returned references will be to the same bucket. Be
+/// careful to only unlock it once in this case, always use `unlock_bucket_pair`.
 #[inline]
 fn lock_bucket_pair(key1: usize, key2: usize) -> (&'static Bucket, &'static Bucket) {
     let mut bucket1;
