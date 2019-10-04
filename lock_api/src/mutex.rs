@@ -370,14 +370,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         }
     }
 
-    /// Attempts to make  a new `MappedMutexGuard` for a component of the
-    /// locked data. The original guard is return if the closure returns `None`.
+    /// Attempts to make a new `MappedMutexGuard` for a component of the
+    /// locked data. The original guard is returned if the closure returns `None`.
     ///
     /// This operation cannot fail as the `MutexGuard` passed
     /// in already locked the mutex.
     ///
     /// This is an associated function that needs to be
-    /// used as `MutexGuard::map(...)`. A method would interfere with methods of
+    /// used as `MutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
@@ -433,7 +433,7 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
 
     /// Temporarily unlocks the mutex to execute the given function.
     ///
-    /// The mutex is unlocked a fair unlock protocol.
+    /// The mutex is unlocked using a fair unlock protocol.
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
@@ -542,14 +542,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
         }
     }
 
-    /// Attempts to make  a new `MappedMutexGuard` for a component of the
-    /// locked data. The original guard is return if the closure returns `None`.
+    /// Attempts to make a new `MappedMutexGuard` for a component of the
+    /// locked data. The original guard is returned if the closure returns `None`.
     ///
     /// This operation cannot fail as the `MappedMutexGuard` passed
     /// in already locked the mutex.
     ///
     /// This is an associated function that needs to be
-    /// used as `MappedMutexGuard::map(...)`. A method would interfere with methods of
+    /// used as `MappedMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
