@@ -19,22 +19,22 @@ pub union MaybeUninit<T: Copy> {
 
 #[cfg(not(has_maybe_uninit))]
 impl<T: Copy> MaybeUninit<T> {
-    #[inline(always)]
+    #[inline]
     pub fn uninit() -> MaybeUninit<T> {
         MaybeUninit { uninit: () }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn as_ptr(&self) -> *const T {
         unsafe { &*self.value as *const T }
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn as_mut_ptr(&mut self) -> *mut T {
         unsafe { &mut *self.value as *mut T }
     }
 
-    #[inline(always)]
+    #[inline]
     pub unsafe fn assume_init(self) -> T {
         ManuallyDrop::into_inner(self.value)
     }
