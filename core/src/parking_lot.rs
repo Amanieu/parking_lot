@@ -320,12 +320,11 @@ fn hash(key: usize, bits: u32) -> usize {
 /// The returned bucket must be unlocked again in order to not cause deadlocks.
 #[inline]
 fn lock_bucket(key: usize) -> &'static Bucket {
-    let mut bucket;
     loop {
         let hashtable = get_hashtable();
 
         let hash = hash(key, hashtable.hash_bits);
-        bucket = &hashtable.entries[hash];
+        let bucket = &hashtable.entries[hash];
 
         // Lock the bucket
         bucket.mutex.lock();
@@ -347,13 +346,12 @@ fn lock_bucket(key: usize) -> &'static Bucket {
 /// The returned bucket must be unlocked again in order to not cause deadlocks.
 #[inline]
 fn lock_bucket_checked(key: &AtomicUsize) -> (usize, &'static Bucket) {
-    let mut bucket;
     loop {
         let hashtable = get_hashtable();
         let current_key = key.load(Ordering::Relaxed);
 
         let hash = hash(current_key, hashtable.hash_bits);
-        bucket = &hashtable.entries[hash];
+        let bucket = &hashtable.entries[hash];
 
         // Lock the bucket
         bucket.mutex.lock();
@@ -380,18 +378,18 @@ fn lock_bucket_checked(key: &AtomicUsize) -> (usize, &'static Bucket) {
 /// careful to only unlock it once in this case, always use `unlock_bucket_pair`.
 #[inline]
 fn lock_bucket_pair(key1: usize, key2: usize) -> (&'static Bucket, &'static Bucket) {
-    let mut bucket1;
     loop {
         let hashtable = get_hashtable();
 
-        // Get the lowest bucket first
         let hash1 = hash(key1, hashtable.hash_bits);
         let hash2 = hash(key2, hashtable.hash_bits);
-        if hash1 <= hash2 {
-            bucket1 = &hashtable.entries[hash1];
+
+        // Get the bucket at the lowest hash/index first
+        let bucket1 = if hash1 <= hash2 {
+            &hashtable.entries[hash1]
         } else {
-            bucket1 = &hashtable.entries[hash2];
-        }
+            &hashtable.entries[hash2]
+        };
 
         // Lock the first bucket
         bucket1.mutex.lock();
