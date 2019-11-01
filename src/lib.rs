@@ -13,12 +13,25 @@
 #![warn(rust_2018_idioms)]
 #![cfg_attr(feature = "nightly", feature(asm))]
 
+cfg_if::cfg_if! {
+    if #[cfg(target_arch = "wasm32")] {
+        mod wasm;
+        mod raw_mutex {
+            pub use crate::wasm::raw_mutex::*;
+        }
+        mod raw_rwlock {
+            pub use crate::wasm::raw_rwlock::*;
+        }
+    } else {
+        mod raw_mutex;
+        mod raw_rwlock;
+        mod elision;
+    }
+}
+
 mod condvar;
-mod elision;
 mod mutex;
 mod once;
-mod raw_mutex;
-mod raw_rwlock;
 mod remutex;
 mod rwlock;
 mod util;
