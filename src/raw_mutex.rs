@@ -6,19 +6,13 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::{deadlock, util};
-#[cfg(has_sized_atomics)]
-use core::sync::atomic::AtomicU8;
-#[cfg(not(has_sized_atomics))]
-use core::sync::atomic::AtomicUsize as AtomicU8;
-use core::{sync::atomic::Ordering, time::Duration};
+use core::{
+    sync::atomic::{AtomicU8, Ordering},
+    time::Duration,
+};
 use lock_api::{GuardNoSend, RawMutex as RawMutex_};
 use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
 use std::time::Instant;
-
-#[cfg(has_sized_atomics)]
-type U8 = u8;
-#[cfg(not(has_sized_atomics))]
-type U8 = usize;
 
 // UnparkToken used to indicate that that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.
@@ -29,10 +23,10 @@ pub(crate) const TOKEN_NORMAL: UnparkToken = UnparkToken(0);
 pub(crate) const TOKEN_HANDOFF: UnparkToken = UnparkToken(1);
 
 /// This bit is set in the `state` of a `RawMutex` when that mutex is locked by some thread.
-const LOCKED_BIT: U8 = 0b01;
+const LOCKED_BIT: u8 = 0b01;
 /// This bit is set in the `state` of a `RawMutex` just before parking a thread. A thread is being
 /// parked if it wants to lock the mutex, but it is currently being held by some other thread.
-const PARKED_BIT: U8 = 0b10;
+const PARKED_BIT: u8 = 0b10;
 
 /// Raw mutex type backed by the parking lot.
 pub struct RawMutex {
