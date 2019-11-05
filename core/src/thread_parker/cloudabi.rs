@@ -5,11 +5,10 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::maybe_uninit::MaybeUninit;
 use cloudabi as abi;
 use core::{
     cell::Cell,
-    mem,
+    mem::{self, MaybeUninit},
     sync::atomic::{AtomicU32, Ordering},
 };
 use std::{convert::TryFrom, thread, time::Instant};

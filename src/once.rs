@@ -6,25 +6,16 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::util::UncheckedOptionExt;
-#[cfg(has_sized_atomics)]
-use core::sync::atomic::AtomicU8;
-#[cfg(not(has_sized_atomics))]
-use core::sync::atomic::AtomicUsize as AtomicU8;
 use core::{
     fmt, mem,
-    sync::atomic::{fence, Ordering},
+    sync::atomic::{fence, AtomicU8, Ordering},
 };
 use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 
-#[cfg(has_sized_atomics)]
-type U8 = u8;
-#[cfg(not(has_sized_atomics))]
-type U8 = usize;
-
-const DONE_BIT: U8 = 1;
-const POISON_BIT: U8 = 2;
-const LOCKED_BIT: U8 = 4;
-const PARKED_BIT: U8 = 8;
+const DONE_BIT: u8 = 1;
+const POISON_BIT: u8 = 2;
+const LOCKED_BIT: u8 = 4;
+const PARKED_BIT: u8 = 8;
 
 /// Current state of a `Once`.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]

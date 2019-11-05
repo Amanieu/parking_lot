@@ -56,7 +56,6 @@
     feature(thread_local, checked_duration_since)
 )]
 
-mod maybe_uninit;
 mod parking_lot;
 mod spinwait;
 mod thread_parker;

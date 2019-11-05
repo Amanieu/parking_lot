@@ -5,10 +5,12 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::maybe_uninit::MaybeUninit;
-use core::cell::{Cell, UnsafeCell};
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 use core::ptr;
+use core::{
+    cell::{Cell, UnsafeCell},
+    mem::MaybeUninit,
+};
 use libc;
 use std::{
     thread,
