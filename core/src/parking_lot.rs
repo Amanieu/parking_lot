@@ -1439,18 +1439,42 @@ mod tests {
     }
 
     test! {
-        unpark_all_one_fast(repeats: 10000, latches: 1, delay: 0, threads: 1, single_unparks: 0);
-        unpark_all_hundred_fast(repeats: 100, latches: 1, delay: 0, threads: 100, single_unparks: 0);
-        unpark_one_one_fast(repeats: 1000, latches: 1, delay: 0, threads: 1, single_unparks: 1);
-        unpark_one_hundred_fast(repeats: 20, latches: 1, delay: 0, threads: 100, single_unparks: 100);
-        unpark_one_fifty_then_fifty_all_fast(repeats: 50, latches: 1, delay: 0, threads: 100, single_unparks: 50);
-        unpark_all_one(repeats: 100, latches: 1, delay: 10000, threads: 1, single_unparks: 0);
-        unpark_all_hundred(repeats: 100, latches: 1, delay: 10000, threads: 100, single_unparks: 0);
-        unpark_one_one(repeats: 10, latches: 1, delay: 10000, threads: 1, single_unparks: 1);
-        unpark_one_fifty(repeats: 1, latches: 1, delay: 10000, threads: 50, single_unparks: 50);
-        unpark_one_fifty_then_fifty_all(repeats: 2, latches: 1, delay: 10000, threads: 100, single_unparks: 50);
-        hundred_unpark_all_one_fast(repeats: 100, latches: 100, delay: 0, threads: 1, single_unparks: 0);
-        hundred_unpark_all_one(repeats: 1, latches: 100, delay: 10000, threads: 1, single_unparks: 0);
+        unpark_all_one_fast(
+            repeats: 10000, latches: 1, delay: 0, threads: 1, single_unparks: 0
+        );
+        unpark_all_hundred_fast(
+            repeats: 100, latches: 1, delay: 0, threads: 100, single_unparks: 0
+        );
+        unpark_one_one_fast(
+            repeats: 1000, latches: 1, delay: 0, threads: 1, single_unparks: 1
+        );
+        unpark_one_hundred_fast(
+            repeats: 20, latches: 1, delay: 0, threads: 100, single_unparks: 100
+        );
+        unpark_one_fifty_then_fifty_all_fast(
+            repeats: 50, latches: 1, delay: 0, threads: 100, single_unparks: 50
+        );
+        unpark_all_one(
+            repeats: 100, latches: 1, delay: 10000, threads: 1, single_unparks: 0
+        );
+        unpark_all_hundred(
+            repeats: 100, latches: 1, delay: 10000, threads: 100, single_unparks: 0
+        );
+        unpark_one_one(
+            repeats: 10, latches: 1, delay: 10000, threads: 1, single_unparks: 1
+        );
+        unpark_one_fifty(
+            repeats: 1, latches: 1, delay: 10000, threads: 50, single_unparks: 50
+        );
+        unpark_one_fifty_then_fifty_all(
+            repeats: 2, latches: 1, delay: 10000, threads: 100, single_unparks: 50
+        );
+        hundred_unpark_all_one_fast(
+            repeats: 100, latches: 100, delay: 0, threads: 1, single_unparks: 0
+        );
+        hundred_unpark_all_one(
+            repeats: 1, latches: 100, delay: 10000, threads: 1, single_unparks: 0
+        );
     }
 
     fn run_parking_test(
