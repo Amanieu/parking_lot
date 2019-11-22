@@ -691,10 +691,18 @@ mod tests {
             assert_eq!(rx.recv_timeout(Duration::from_millis(500)), Ok(()));
         }
     }
+}
+
+/// This module contains an integration test that is verbatim stolen from WebKit's Condvar
+/// integration test. It's a thread-safe Queue that should
+#[cfg(test)]
+mod webkit_queue_test {
+    use crate::{Condvar, Mutex, MutexGuard};
+    use std::{collections::VecDeque, sync::Arc, thread, time::Duration};
 
     #[derive(Clone, Copy)]
     enum Timeout {
-        Bounded(std::time::Duration),
+        Bounded(Duration),
         Forever,
     }
 
@@ -747,7 +755,6 @@ mod tests {
         }
     }
 
-    use std::collections::VecDeque;
     fn run_test(
         num_producers: usize,
         num_consumers: usize,
@@ -755,7 +762,7 @@ mod tests {
         messages_per_producer: usize,
         notify_style: NotifyStyle,
         timeout: Timeout,
-        delay: std::time::Duration,
+        delay: Duration,
     ) {
         let input_queue = Arc::new(Mutex::new(Queue::new()));
         let empty_condition = Arc::new(Condvar::new());
@@ -887,8 +894,8 @@ mod tests {
             1,
             100000,
             NotifyStyle::All,
-            Timeout::Bounded(std::time::Duration::from_secs(1)),
-            std::time::Duration::from_secs(0),
+            Timeout::Bounded(Duration::from_secs(1)),
+            Duration::from_secs(0),
         );
     }
 
@@ -901,7 +908,7 @@ mod tests {
             100000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -914,7 +921,7 @@ mod tests {
             100000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -927,7 +934,7 @@ mod tests {
             100000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -940,7 +947,7 @@ mod tests {
             100000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_millis(1),
+            Duration::from_millis(1),
         );
     }
 
@@ -953,7 +960,7 @@ mod tests {
             1000000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -966,7 +973,7 @@ mod tests {
             10000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -979,7 +986,7 @@ mod tests {
             10000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -992,7 +999,7 @@ mod tests {
             10000,
             NotifyStyle::One,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -1005,7 +1012,7 @@ mod tests {
             10000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -1018,7 +1025,7 @@ mod tests {
             100000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -1031,7 +1038,7 @@ mod tests {
             100000,
             NotifyStyle::One,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -1044,7 +1051,7 @@ mod tests {
             50000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -1057,7 +1064,7 @@ mod tests {
             50000,
             NotifyStyle::All,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 
@@ -1070,7 +1077,7 @@ mod tests {
             50000,
             NotifyStyle::One,
             Timeout::Forever,
-            std::time::Duration::from_secs(0),
+            Duration::from_secs(0),
         );
     }
 }
