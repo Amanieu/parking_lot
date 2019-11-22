@@ -693,8 +693,8 @@ mod tests {
     }
 }
 
-/// This module contains an integration test that is verbatim stolen from WebKit's Condvar
-/// integration test. It's a thread-safe Queue that should
+/// This module contains an integration test that is heavily inspired from WebKit's own integration
+/// tests for it's own Condvar.
 #[cfg(test)]
 mod webkit_queue_test {
     use crate::{Condvar, Mutex, MutexGuard};
@@ -755,7 +755,7 @@ mod webkit_queue_test {
         }
     }
 
-    fn run_test(
+    fn run_queue_test(
         num_producers: usize,
         num_consumers: usize,
         max_queue_size: usize,
@@ -886,198 +886,167 @@ mod webkit_queue_test {
         })
     }
 
-    #[test]
-    fn test_new_test_without_timeout() {
-        run_test(
-            1,
-            1,
-            1,
-            100000,
-            NotifyStyle::All,
-            Timeout::Bounded(Duration::from_secs(1)),
-            Duration::from_secs(0),
-        );
+    macro_rules! run_queue_tests {
+        ( $( $name:ident(
+            num_producers: $num_producers:expr,
+            num_consumers: $num_consumers:expr,
+            max_queue_size: $max_queue_size:expr,
+            messages_per_producer: $messages_per_producer:expr,
+            notification_style: $notification_style:expr,
+            timeout: $timeout:expr,
+            delay_seconds: $delay_seconds:expr);
+        )* ) => {
+            $(#[test]
+            fn $name() {
+                let delay = Duration::from_secs($delay_seconds);
+                run_queue_test(
+                    $num_producers,
+                    $num_consumers,
+                    $max_queue_size,
+                    $messages_per_producer,
+                    $notification_style,
+                    $timeout,
+                    delay,
+                    );
+            })*
+        };
     }
 
-    #[test]
-    fn test_new_test_with_timeout() {
-        run_test(
-            1,
-            1,
-            1,
-            100000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+    run_queue_tests! {
+        sanity_check_queue(
+            num_producers: 1,
+            num_consumers: 1,
+            max_queue_size: 1,
+            messages_per_producer: 100000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Bounded(Duration::from_secs(1)),
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_new_test_without_timeout_5() {
-        run_test(
-            1,
-            5,
-            1,
-            100000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        sanity_check_queue_timeout(
+            num_producers: 1,
+            num_consumers: 1,
+            max_queue_size: 1,
+            messages_per_producer: 100000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_one_producer_one_consumer_one_slot() {
-        run_test(
-            1,
-            1,
-            1,
-            100000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        new_test_without_timeout_5(
+            num_producers: 1,
+            num_consumers: 5,
+            max_queue_size: 1,
+            messages_per_producer: 100000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_one_producer_one_consumer_one_slot_timeout() {
-        run_test(
-            1,
-            1,
-            1,
-            100000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_millis(1),
+        one_producer_one_consumer_one_slot(
+            num_producers: 1,
+            num_consumers: 1,
+            max_queue_size: 1,
+            messages_per_producer: 100000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_one_producer_one_consumer_hundred_slots() {
-        run_test(
-            1,
-            1,
-            100,
-            1000000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        one_producer_one_consumer_one_slot_timeout(
+            num_producers: 1,
+            num_consumers: 1,
+            max_queue_size: 1,
+            messages_per_producer: 100000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 1
         );
-    }
-
-    #[test]
-    fn test_ten_producers_one_consumer_one_slot() {
-        run_test(
-            10,
-            1,
-            1,
-            10000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        one_producer_one_consumer_hundred_slots(
+            num_producers: 1,
+            num_consumers: 1,
+            max_queue_size: 100,
+            messages_per_producer: 1000000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_ten_producers_one_consumer_hundred_slots_notify_all() {
-        run_test(
-            10,
-            1,
-            100,
-            10000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        ten_producers_one_consumer_one_slot(
+            num_producers: 10,
+            num_consumers: 1,
+            max_queue_size: 1,
+            messages_per_producer: 10000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_ten_producers_one_consumer_hundred_slots_notify_one() {
-        run_test(
-            10,
-            1,
-            100,
-            10000,
-            NotifyStyle::One,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        ten_producers_one_consumer_hundred_slots_notify_all(
+            num_producers: 10,
+            num_consumers: 1,
+            max_queue_size: 100,
+            messages_per_producer: 10000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_one_producer_ten_consumers_one_slot() {
-        run_test(
-            1,
-            10,
-            1,
-            10000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        ten_producers_one_consumer_hundred_slots_notify_one(
+            num_producers: 10,
+            num_consumers: 1,
+            max_queue_size: 100,
+            messages_per_producer: 10000,
+            notification_style: NotifyStyle::One,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_one_producer_ten_consumers_hundred_slots_notify_all() {
-        run_test(
-            1,
-            10,
-            100,
-            100000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        one_producer_ten_consumers_one_slot(
+            num_producers: 1,
+            num_consumers: 10,
+            max_queue_size: 1,
+            messages_per_producer: 10000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_one_producer_ten_consumers_hundred_slots_notify_one() {
-        run_test(
-            1,
-            10,
-            100,
-            100000,
-            NotifyStyle::One,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        one_producer_ten_consumers_hundred_slots_notify_all(
+            num_producers: 1,
+            num_consumers: 10,
+            max_queue_size: 100,
+            messages_per_producer: 100000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_ten_producers_ten_consumers_one_slot() {
-        run_test(
-            10,
-            10,
-            1,
-            50000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        one_producer_ten_consumers_hundred_slots_notify_one(
+            num_producers: 1,
+            num_consumers: 10,
+            max_queue_size: 100,
+            messages_per_producer: 100000,
+            notification_style: NotifyStyle::One,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_ten_producers_ten_consumers_hundred_slots_notify_all() {
-        run_test(
-            10,
-            10,
-            100,
-            50000,
-            NotifyStyle::All,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        ten_producers_ten_consumers_one_slot(
+            num_producers: 10,
+            num_consumers: 10,
+            max_queue_size: 1,
+            messages_per_producer: 50000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
-    }
-
-    #[test]
-    fn test_ten_producers_ten_consumers_hundred_slots_notify_one() {
-        run_test(
-            10,
-            10,
-            100,
-            50000,
-            NotifyStyle::One,
-            Timeout::Forever,
-            Duration::from_secs(0),
+        ten_producers_ten_consumers_hundred_slots_notify_all(
+            num_producers: 10,
+            num_consumers: 10,
+            max_queue_size: 100,
+            messages_per_producer: 50000,
+            notification_style: NotifyStyle::All,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
+        );
+        ten_producers_ten_consumers_hundred_slots_notify_one(
+            num_producers: 10,
+            num_consumers: 10,
+            max_queue_size: 100,
+            messages_per_producer: 50000,
+            notification_style: NotifyStyle::One,
+            timeout: Timeout::Forever,
+            delay_seconds: 0
         );
     }
 }
