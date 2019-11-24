@@ -69,18 +69,18 @@ mod tests {
 
     #[test]
     fn smoke() {
-        let m = ReentrantMutex::new(());
+        let m = ReentrantMutex::new(2);
         {
             let a = m.lock();
             {
                 let b = m.lock();
                 {
                     let c = m.lock();
-                    assert_eq!(*c, ());
+                    assert_eq!(*c, 2);
                 }
-                assert_eq!(*b, ());
+                assert_eq!(*b, 2);
             }
-            assert_eq!(*a, ());
+            assert_eq!(*a, 2);
         }
     }
 

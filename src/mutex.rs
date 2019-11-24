@@ -245,7 +245,7 @@ mod tests {
     fn test_mutex_arc_access_in_unwind() {
         let arc = Arc::new(Mutex::new(1));
         let arc2 = arc.clone();
-        let _ = thread::spawn(move || -> () {
+        let _ = thread::spawn(move || {
             struct Unwinder {
                 i: Arc<Mutex<i32>>,
             }

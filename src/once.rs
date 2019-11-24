@@ -39,8 +39,8 @@ impl OnceState {
     /// Once an initialization routine for a `Once` has panicked it will forever
     /// indicate to future forced initialization routines that it is poisoned.
     #[inline]
-    pub fn poisoned(&self) -> bool {
-        match *self {
+    pub fn poisoned(self) -> bool {
+        match self {
             OnceState::Poisoned => true,
             _ => false,
         }
@@ -49,8 +49,8 @@ impl OnceState {
     /// Returns whether the associated `Once` has successfully executed a
     /// closure.
     #[inline]
-    pub fn done(&self) -> bool {
-        match *self {
+    pub fn done(self) -> bool {
+        match self {
             OnceState::Done => true,
             _ => false,
         }
