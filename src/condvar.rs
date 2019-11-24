@@ -618,7 +618,7 @@ mod tests {
         rx.recv().unwrap();
         let _g = m.lock();
         let _guard = PanicGuard(&*c);
-        let _ = c.wait(&mut m3.lock());
+        c.wait(&mut m3.lock());
     }
 
     #[test]
