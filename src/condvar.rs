@@ -917,7 +917,7 @@ mod webkit_queue_test {
             num_producers: 1,
             num_consumers: 1,
             max_queue_size: 1,
-            messages_per_producer: 100000,
+            messages_per_producer: 100_000,
             notification_style: NotifyStyle::All,
             timeout: Timeout::Bounded(Duration::from_secs(1)),
             delay_seconds: 0
@@ -926,7 +926,7 @@ mod webkit_queue_test {
             num_producers: 1,
             num_consumers: 1,
             max_queue_size: 1,
-            messages_per_producer: 100000,
+            messages_per_producer: 100_000,
             notification_style: NotifyStyle::All,
             timeout: Timeout::Forever,
             delay_seconds: 0
@@ -935,7 +935,7 @@ mod webkit_queue_test {
             num_producers: 1,
             num_consumers: 5,
             max_queue_size: 1,
-            messages_per_producer: 100000,
+            messages_per_producer: 100_000,
             notification_style: NotifyStyle::All,
             timeout: Timeout::Forever,
             delay_seconds: 0
@@ -944,7 +944,7 @@ mod webkit_queue_test {
             num_producers: 1,
             num_consumers: 1,
             max_queue_size: 1,
-            messages_per_producer: 100000,
+            messages_per_producer: 100_000,
             notification_style: NotifyStyle::All,
             timeout: Timeout::Forever,
             delay_seconds: 0
@@ -953,7 +953,7 @@ mod webkit_queue_test {
             num_producers: 1,
             num_consumers: 1,
             max_queue_size: 1,
-            messages_per_producer: 100000,
+            messages_per_producer: 100_000,
             notification_style: NotifyStyle::All,
             timeout: Timeout::Forever,
             delay_seconds: 1
@@ -962,7 +962,7 @@ mod webkit_queue_test {
             num_producers: 1,
             num_consumers: 1,
             max_queue_size: 100,
-            messages_per_producer: 1000000,
+            messages_per_producer: 1_000_000,
             notification_style: NotifyStyle::All,
             timeout: Timeout::Forever,
             delay_seconds: 0
@@ -1007,7 +1007,7 @@ mod webkit_queue_test {
             num_producers: 1,
             num_consumers: 10,
             max_queue_size: 100,
-            messages_per_producer: 100000,
+            messages_per_producer: 100_000,
             notification_style: NotifyStyle::All,
             timeout: Timeout::Forever,
             delay_seconds: 0
@@ -1016,7 +1016,7 @@ mod webkit_queue_test {
             num_producers: 1,
             num_consumers: 10,
             max_queue_size: 100,
-            messages_per_producer: 100000,
+            messages_per_producer: 100_000,
             notification_style: NotifyStyle::One,
             timeout: Timeout::Forever,
             delay_seconds: 0
