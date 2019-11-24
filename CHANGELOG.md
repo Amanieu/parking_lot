@@ -1,3 +1,10 @@
+## parking_lot 0.10.0, parking_lot_core 0.7.0, lock_api 0.3.2 (2019-11-25)
+
+- Upgrade smallvec dependency to 1.0 in parking_lot_core.
+- Replace all usage of `mem::unitialized` with `mem::MaybeUninit`.
+- The minimum required Rust version is bumped to 1.36. Because of the above two changes.
+- Make methods on `WaitTimeoutResult` and `OnceState` take `self` by value instead of reference.
+
 ## parking_lot_core 0.6.2 (2019-07-22)
 
 - Fixed compile error on Windows with old cfg_if version. (#164)
