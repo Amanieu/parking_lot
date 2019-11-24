@@ -322,7 +322,7 @@ mod tests {
     fn test_rw_arc_access_in_unwind() {
         let arc = Arc::new(RwLock::new(1));
         let arc2 = arc.clone();
-        let _ = thread::spawn(move || -> () {
+        let _ = thread::spawn(move || {
             struct Unwinder {
                 i: Arc<RwLock<isize>>,
             }
