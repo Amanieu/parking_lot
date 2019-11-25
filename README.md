@@ -104,12 +104,6 @@ Add this to your `Cargo.toml`:
 parking_lot = "0.10"
 ```
 
-and this to your crate root:
-
-```rust
-extern crate parking_lot;
-```
-
 To enable nightly-only features, add this to your `Cargo.toml` instead:
 
 ```toml
