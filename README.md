@@ -34,7 +34,7 @@ in the Rust standard library:
    parallelism.
 2. Since they consist of just a single atomic variable, have constant
    initializers and don't need destructors, these primitives can be used as
-    `static` global variables. The standard library primitives require
+   `static` global variables. The standard library primitives require
    dynamic initialization and thus need to be lazily initialized with
    `lazy_static!`.
 3. Uncontended lock acquisition and release is done through fast inline
@@ -87,9 +87,8 @@ lock.
 
 There are a few restrictions when using this library on stable Rust:
 
-- `Mutex` and `Once` will use 1 word of space instead of 1 byte.
-- You will have to use `lazy_static!` to statically initialize `Mutex`,
-  `Condvar` and `RwLock` types instead of `const fn`.
+- You will have to use `lazy_static!` or equivalent to statically initialize `Mutex`
+  and `RwLock` types. They use generics and can't be `const fn`s on stable yet.
 - `RwLock` will not be able to take advantage of hardware lock elision for
   readers, which improves performance when there are multiple readers.
 
