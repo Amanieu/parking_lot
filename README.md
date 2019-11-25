@@ -101,7 +101,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-parking_lot = "0.9"
+parking_lot = "0.10"
 ```
 
 and this to your crate root:
@@ -114,7 +114,7 @@ To enable nightly-only features, add this to your `Cargo.toml` instead:
 
 ```toml
 [dependencies]
-parking_lot = {version = "0.9", features = ["nightly"]}
+parking_lot = { version = "0.10", features = ["nightly"] }
 ```
 
 The experimental deadlock detector can be enabled with the
