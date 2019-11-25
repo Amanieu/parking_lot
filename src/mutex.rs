@@ -53,10 +53,9 @@ use lock_api;
 /// # Examples
 ///
 /// ```
-/// use std::sync::Arc;
 /// use parking_lot::Mutex;
+/// use std::sync::{Arc, mpsc::channel};
 /// use std::thread;
-/// use std::sync::mpsc::channel;
 ///
 /// const N: usize = 10;
 ///
