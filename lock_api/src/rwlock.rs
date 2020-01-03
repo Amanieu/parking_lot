@@ -1535,6 +1535,10 @@ impl<'a, R: RawRwLockDowngrade + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, 
     /// Note that if there are any writers currently waiting to take the lock
     /// then other readers may not be able to acquire the lock even if it was
     /// downgraded.
+    #[deprecated(
+        since = "0.3.3",
+        note = "This function is unsound and will be removed in the future, see issue #198"
+    )]
     pub fn downgrade(s: Self) -> MappedRwLockReadGuard<'a, R, T> {
         s.raw.downgrade();
         let raw = s.raw;
