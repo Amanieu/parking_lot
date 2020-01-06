@@ -1198,10 +1198,9 @@ mod deadlock_impl {
     pub unsafe fn release_resource(key: usize) {
         with_thread_data(|thread_data| {
             let resources = &mut (*thread_data.deadlock_data.resources.get());
-            match resources.iter().rposition(|x| *x == key) {
-                Some(p) => resources.swap_remove(p),
-                None => panic!("key {} not found in thread resources", key),
-            };
+            if let Some(p) = resources.iter().rposition(|x| *x == key) {
+                resources.swap_remove(p);
+            }
         });
     }
 
