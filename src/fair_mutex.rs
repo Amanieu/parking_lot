@@ -239,9 +239,9 @@ mod tests {
     fn test_mutex_debug() {
         let mutex = FairMutex::new(vec![0u8, 10]);
 
-        assert_eq!(format!("{:?}", mutex), "FairMutex { data: [0, 10] }");
+        assert_eq!(format!("{:?}", mutex), "Mutex { data: [0, 10] }");
         let _lock = mutex.lock();
-        assert_eq!(format!("{:?}", mutex), "FairMutex { data: <locked> }");
+        assert_eq!(format!("{:?}", mutex), "Mutex { data: <locked> }");
     }
 
     #[cfg(feature = "serde")]
