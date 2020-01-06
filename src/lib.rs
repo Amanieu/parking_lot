@@ -15,9 +15,11 @@
 
 mod condvar;
 mod elision;
+mod fair_mutex;
 mod mutex;
 mod once;
 mod raw_mutex;
+mod raw_fair_mutex;
 mod raw_rwlock;
 mod remutex;
 mod rwlock;
@@ -30,8 +32,10 @@ mod deadlock;
 
 pub use self::condvar::{Condvar, WaitTimeoutResult};
 pub use self::mutex::{MappedMutexGuard, Mutex, MutexGuard};
+pub use self::fair_mutex::{MappedFairMutexGuard, FairMutex, FairMutexGuard};
 pub use self::once::{Once, OnceState};
 pub use self::raw_mutex::RawMutex;
+pub use self::raw_fair_mutex::RawFairMutex;
 pub use self::raw_rwlock::RawRwLock;
 pub use self::remutex::{
     MappedReentrantMutexGuard, RawThreadId, ReentrantMutex, ReentrantMutexGuard,
