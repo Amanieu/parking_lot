@@ -86,7 +86,7 @@ pub type MappedFairMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawFairMut
 
 #[cfg(test)]
 mod tests {
-    use crate::{Condvar, FairMutex};
+    use crate::FairMutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::channel;
     use std::sync::Arc;
@@ -95,13 +95,8 @@ mod tests {
     #[cfg(feature = "serde")]
     use bincode::{deserialize, serialize};
 
-    struct Packet<T>(Arc<(FairMutex<T>, Condvar)>);
-
     #[derive(Eq, PartialEq, Debug)]
     struct NonCopy(i32);
-
-    unsafe impl<T: Send> Send for Packet<T> {}
-    unsafe impl<T> Sync for Packet<T> {}
 
     #[test]
     fn smoke() {
@@ -181,29 +176,6 @@ mod tests {
         let mut m = FairMutex::new(NonCopy(10));
         *m.get_mut() = NonCopy(20);
         assert_eq!(m.into_inner(), NonCopy(20));
-    }
-
-    #[test]
-    fn test_mutex_arc_condvar() {
-        let packet = Packet(Arc::new((FairMutex::new(false), Condvar::new())));
-        let packet2 = Packet(packet.0.clone());
-        let (tx, rx) = channel();
-        let _t = thread::spawn(move || {
-            // wait until parent gets in
-            rx.recv().unwrap();
-            let &(ref lock, ref cvar) = &*packet2.0;
-            let mut lock = lock.lock();
-            *lock = true;
-            cvar.notify_one();
-        });
-
-        let &(ref lock, ref cvar) = &*packet.0;
-        let mut lock = lock.lock();
-        tx.send(()).unwrap();
-        assert!(!*lock);
-        while !*lock {
-            cvar.wait(&mut lock);
-        }
     }
 
     #[test]
