@@ -17,14 +17,21 @@ use lock_api;
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
 /// ever accessed when the mutex is locked.
 ///
-/// The regular mutex provided by `parking_lot` uses eventual locking fairness (after some
-/// time it will default to the fair algorithm), but eventual fairness does not provide the same
-/// garantees a always fair method would. Fair mutexes are generally slower, but sometimes needed.
-/// This wrapper was created to avoid using a unfair protocol when it's forbidden by mistake.
+/// The regular mutex provided by `parking_lot` uses eventual locking fairness
+/// (after some time it will default to the fair algorithm), but eventual
+/// fairness does not provide the same garantees a always fair method would.
+/// Fair mutexes are generally slower, but sometimes needed. This wrapper was
+/// created to avoid using a unfair protocol when it's forbidden by mistake.
 ///
-/// In a fair mutex the lock is provided to whichever thread asked first. Always following the
-/// first-in first-out order. By not allowing other threads to steal the lock even if it would mean
-/// a faster execution.
+/// In a fair mutex the lock is provided to whichever thread asked first,
+/// they form a queue and always follow the first-in first-out order. This
+/// means some thread in the queue won't be able to steal the lock and use it fast
+/// to increase throughput, at the cost of latency. Since the response time will grow
+/// for some threads that are waiting for the lock and losing to faster but later ones,
+/// but it may make sending more responses possible.
+///
+/// A fair mutex may not be interesting if threads have different priorities (this is known as
+/// priority inversion).
 ///
 /// # Differences from the standard library `Mutex`
 ///
