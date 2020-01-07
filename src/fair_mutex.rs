@@ -8,7 +8,7 @@
 use crate::raw_fair_mutex::RawFairMutex;
 use lock_api;
 
-/// A always fair mutual exclusion primitive useful for protecting shared data
+/// A mutual exclusive primitive that is always fair, useful for protecting shared data
 ///
 /// This mutex will block threads waiting for the lock to become available. The
 /// mutex can also be statically initialized or created via a `new`
@@ -17,9 +17,16 @@ use lock_api;
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
 /// ever accessed when the mutex is locked.
 ///
-/// This mutex is always fair.
+/// The regular mutex provided by `parking_lot` uses eventual locking fairness (after some
+/// time it will default to the fair algorithm), but eventual fairness does not provide the same
+/// garantees a always fair method would. Fair mutexes are generally slower, but sometimes needed.
+/// This wrapper was created to avoid using a unfair protocol when it's forbidden by mistake.
 ///
-/// # Differences from the standard library `FairMutex`
+/// In a fair mutex the lock is provided to whichever thread asked first. Always following the
+/// first-in first-out order. By not allowing other threads to steal the lock even if it would mean
+/// a faster execution.
+///
+/// # Differences from the standard library `Mutex`
 ///
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 byte of space, whereas the standard library boxes the
@@ -29,8 +36,6 @@ use lock_api;
 /// - Inline fast path for the uncontended case.
 /// - Efficient handling of micro-contention using adaptive spinning.
 /// - Allows raw locking & unlocking without a guard.
-/// - Supports eventual fairness so that the mutex is fair on average.
-/// - Optionally allows making the mutex fair by calling `FairMutexGuard::unlock_fair`.
 ///
 /// # Examples
 ///
