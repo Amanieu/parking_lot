@@ -579,4 +579,28 @@ mod tests {
         assert_eq!(*(mutex.read()), *(deserialized.read()));
         assert_eq!(contents, *(deserialized.read()));
     }
+
+    #[test]
+    fn test_issue_203() {
+        struct Bar(RwLock<()>);
+
+        impl Drop for Bar {
+            fn drop(&mut self) {
+                let _n = self.0.write();
+            }
+        }
+
+        thread_local! {
+            static B: Bar = Bar(RwLock::new(()));
+        }
+
+        thread::spawn(|| {
+            B.with(|_| ());
+
+            let a = RwLock::new(());
+            let _a = a.read();
+        })
+        .join()
+        .unwrap();
+    }
 }

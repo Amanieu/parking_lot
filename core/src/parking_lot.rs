@@ -1198,6 +1198,11 @@ mod deadlock_impl {
     pub unsafe fn release_resource(key: usize) {
         with_thread_data(|thread_data| {
             let resources = &mut (*thread_data.deadlock_data.resources.get());
+
+            // There is only one situation where we can fail to find the
+            // resource: we are currently running TLS destructors and our
+            // ThreadData has already been freed. There isn't much we can do
+            // about it at this point, so just ignore it.
             if let Some(p) = resources.iter().rposition(|x| *x == key) {
                 resources.swap_remove(p);
             }
