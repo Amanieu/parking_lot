@@ -81,7 +81,7 @@ impl WaitTimeoutResult {
 /// if !*started {
 ///     cvar.wait(&mut started);
 /// }
-/// // Note that we used and if instead of a while loop above. This is only
+/// // Note that we used an if instead of a while loop above. This is only
 /// // possible because parking_lot's Condvar will never spuriously wake up.
 /// // This means that wait() will only return after notify_one or notify_all is
 /// // called.
