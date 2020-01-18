@@ -40,7 +40,8 @@ pub unsafe trait RawMutex {
     /// Acquires this mutex, blocking the current thread until it is able to do so.
     fn lock(&self);
 
-    /// Attempts to acquire this mutex without blocking.
+    /// Attempts to acquire this mutex without blocking. Returns `true`
+    /// if the lock was successfully acquired and `false` otherwise.
     fn try_lock(&self) -> bool;
 
     /// Unlocks this mutex.
