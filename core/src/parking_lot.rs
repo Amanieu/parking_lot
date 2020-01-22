@@ -216,8 +216,8 @@ fn create_hashtable() -> &'static HashTable {
     let table = match HASHTABLE.compare_exchange(
         ptr::null_mut(),
         new_table,
-        Ordering::Release,
-        Ordering::Relaxed,
+        Ordering::AcqRel,
+        Ordering::Acquire,
     ) {
         Ok(_) => new_table,
         Err(old_table) => {
