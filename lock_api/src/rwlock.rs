@@ -231,7 +231,7 @@ pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
 /// allow concurrent access through readers. The RAII guards returned from the
 /// locking methods implement `Deref` (and `DerefMut` for the `write` methods)
 /// to allow access to the contained of the lock.
-pub struct RwLock<R: RawRwLock, T: ?Sized> {
+pub struct RwLock<R, T: ?Sized> {
     raw: R,
     data: UnsafeCell<T>,
 }
@@ -294,6 +294,19 @@ impl<R: RawRwLock, T> RwLock<R, T> {
     #[allow(unused_unsafe)]
     pub fn into_inner(self) -> T {
         unsafe { self.data.into_inner() }
+    }
+}
+
+impl<R, T> RwLock<R, T> {
+    /// Creates a new new instance of an `RwLock<T>` based on a pre-existing
+    /// `RawRwLock<T>`. This allows creating a `RwLock<T>` in a constant context
+    /// on stable Rust.
+    #[inline]
+    pub const fn const_new(raw_rwlock: R, val: T) -> RwLock<R, T> {
+        RwLock {
+            data: UnsafeCell::new(val),
+            raw: raw_rwlock,
+        }
     }
 }
 

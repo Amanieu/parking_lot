@@ -47,7 +47,7 @@ pub unsafe trait GetThreadId {
     fn nonzero_thread_id(&self) -> NonZeroUsize;
 }
 
-struct RawReentrantMutex<R: RawMutex, G: GetThreadId> {
+struct RawReentrantMutex<R, G> {
     owner: AtomicUsize,
     lock_count: Cell<usize>,
     mutex: R,
@@ -145,7 +145,7 @@ impl<R: RawMutexTimed, G: GetThreadId> RawReentrantMutex<R, G> {
 ///
 /// See [`Mutex`](struct.Mutex.html) for more details about the underlying mutex
 /// primitive.
-pub struct ReentrantMutex<R: RawMutex, G: GetThreadId, T: ?Sized> {
+pub struct ReentrantMutex<R, G, T: ?Sized> {
     raw: RawReentrantMutex<R, G>,
     data: UnsafeCell<T>,
 }
@@ -194,6 +194,28 @@ impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
     #[inline]
     pub fn into_inner(self) -> T {
         self.data.into_inner()
+    }
+}
+
+impl<R, G, T> ReentrantMutex<R, G, T> {
+    /// Creates a new reentrant mutex based on a pre-existing raw reentrant
+    /// mutex and a helper to get the thread ID. This allows creating a
+    /// reentrant mutex in a constant context on stable Rust.
+    #[inline]
+    pub const fn const_new(
+        raw_reentrant_mutex: R,
+        get_thread_id: G,
+        val: T,
+    ) -> ReentrantMutex<R, G, T> {
+        ReentrantMutex {
+            data: UnsafeCell::new(val),
+            raw: RawReentrantMutex {
+                owner: AtomicUsize::new(0),
+                lock_count: Cell::new(0),
+                mutex: raw_reentrant_mutex,
+                get_thread_id,
+            },
+        }
     }
 }
 
