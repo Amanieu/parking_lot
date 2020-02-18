@@ -18,8 +18,8 @@ mod elision;
 mod fair_mutex;
 mod mutex;
 mod once;
-mod raw_mutex;
 mod raw_fair_mutex;
+mod raw_mutex;
 mod raw_rwlock;
 mod remutex;
 mod rwlock;
@@ -31,17 +31,18 @@ pub mod deadlock;
 mod deadlock;
 
 pub use self::condvar::{Condvar, WaitTimeoutResult};
-pub use self::mutex::{MappedMutexGuard, Mutex, MutexGuard};
-pub use self::fair_mutex::{MappedFairMutexGuard, FairMutex, FairMutexGuard};
+pub use self::fair_mutex::{new_fair_mutex, FairMutex, FairMutexGuard, MappedFairMutexGuard};
+pub use self::mutex::{new_mutex, MappedMutexGuard, Mutex, MutexGuard};
 pub use self::once::{Once, OnceState};
-pub use self::raw_mutex::RawMutex;
 pub use self::raw_fair_mutex::RawFairMutex;
+pub use self::raw_mutex::RawMutex;
 pub use self::raw_rwlock::RawRwLock;
 pub use self::remutex::{
-    MappedReentrantMutexGuard, RawThreadId, ReentrantMutex, ReentrantMutexGuard,
+    new_reentrant_mutex, MappedReentrantMutexGuard, RawThreadId, ReentrantMutex,
+    ReentrantMutexGuard,
 };
 pub use self::rwlock::{
-    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
+    new_rwlock, MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
     RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
 pub use ::lock_api;

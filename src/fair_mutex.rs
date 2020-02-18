@@ -80,6 +80,12 @@ use lock_api;
 /// ```
 pub type FairMutex<T> = lock_api::Mutex<RawFairMutex, T>;
 
+/// Creates a new fair mutex in an unlocked state ready for use. This allows
+/// creating a fair mutex in a constant context on stable Rust.
+pub const fn new_fair_mutex<T>(val: T) -> FairMutex<T> {
+    FairMutex::const_new(<RawFairMutex as lock_api::RawMutex>::INIT, val)
+}
+
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
 /// dropped (falls out of scope), the lock will be unlocked.
 ///
