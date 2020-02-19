@@ -87,8 +87,9 @@ lock.
 
 There are a few restrictions when using this library on stable Rust:
 
-- You will have to use `lazy_static!` or equivalent to statically initialize `Mutex`
-  and `RwLock` types. They use generics and can't be `const fn`s on stable yet.
+- You will have to use the `const_*` functions (e.g. `const_mutex(val)`) to
+  statically initialize the locking primitives. Using e.g. `Mutex::new(val)`
+  does not work on stable Rust yet.
 - `RwLock` will not be able to take advantage of hardware lock elision for
   readers, which improves performance when there are multiple readers.
 

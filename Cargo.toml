@@ -16,7 +16,6 @@ lock_api = { path = "lock_api", version = "0.3.1" }
 
 [dev-dependencies]
 rand = "0.7"
-lazy_static = "1.0"
 
 # Used when testing out serde support.
 bincode = {version = "1.1.3"}
