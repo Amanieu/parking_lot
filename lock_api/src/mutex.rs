@@ -132,8 +132,9 @@ impl<R: RawMutex, T> Mutex<R, T> {
 }
 
 impl<R, T> Mutex<R, T> {
-    /// Creates a new mutex based on a pre-existing raw mutex. This allows
-    /// creating a mutex in a constant context on stable Rust.
+    /// Creates a new mutex based on a pre-existing raw mutex.
+    ///
+    /// This allows creating a mutex in a constant context on stable Rust.
     #[inline]
     pub const fn const_new(raw_mutex: R, val: T) -> Mutex<R, T> {
         Mutex {

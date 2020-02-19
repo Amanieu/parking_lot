@@ -88,9 +88,10 @@ use lock_api;
 /// ```
 pub type RwLock<T> = lock_api::RwLock<RawRwLock, T>;
 
-/// Creates a new instance of an `RwLock<T>` which is unlocked. This allows
-/// creating a `RwLock<T>` in a constant context on stable Rust.
-pub const fn new_rwlock<T>(val: T) -> RwLock<T> {
+/// Creates a new instance of an `RwLock<T>` which is unlocked.
+///
+/// This allows creating a `RwLock<T>` in a constant context on stable Rust.
+pub const fn const_rwlock<T>(val: T) -> RwLock<T> {
     RwLock::const_new(<RawRwLock as lock_api::RawRwLock>::INIT, val)
 }
 

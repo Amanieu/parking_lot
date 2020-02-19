@@ -299,8 +299,10 @@ impl<R: RawRwLock, T> RwLock<R, T> {
 
 impl<R, T> RwLock<R, T> {
     /// Creates a new new instance of an `RwLock<T>` based on a pre-existing
-    /// `RawRwLock<T>`. This allows creating a `RwLock<T>` in a constant context
-    /// on stable Rust.
+    /// `RawRwLock<T>`.
+    ///
+    /// This allows creating a `RwLock<T>` in a constant context on stable
+    /// Rust.
     #[inline]
     pub const fn const_new(raw_rwlock: R, val: T) -> RwLock<R, T> {
         RwLock {

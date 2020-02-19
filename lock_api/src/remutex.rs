@@ -198,21 +198,19 @@ impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
 }
 
 impl<R, G, T> ReentrantMutex<R, G, T> {
-    /// Creates a new reentrant mutex based on a pre-existing raw reentrant
-    /// mutex and a helper to get the thread ID. This allows creating a
-    /// reentrant mutex in a constant context on stable Rust.
+    /// Creates a new reentrant mutex based on a pre-existing raw mutex and a
+    /// helper to get the thread ID.
+    ///
+    /// This allows creating a reentrant mutex in a constant context on stable
+    /// Rust.
     #[inline]
-    pub const fn const_new(
-        raw_reentrant_mutex: R,
-        get_thread_id: G,
-        val: T,
-    ) -> ReentrantMutex<R, G, T> {
+    pub const fn const_new(raw_mutex: R, get_thread_id: G, val: T) -> ReentrantMutex<R, G, T> {
         ReentrantMutex {
             data: UnsafeCell::new(val),
             raw: RawReentrantMutex {
                 owner: AtomicUsize::new(0),
                 lock_count: Cell::new(0),
-                mutex: raw_reentrant_mutex,
+                mutex: raw_mutex,
                 get_thread_id,
             },
         }

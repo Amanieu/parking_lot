@@ -31,18 +31,18 @@ pub mod deadlock;
 mod deadlock;
 
 pub use self::condvar::{Condvar, WaitTimeoutResult};
-pub use self::fair_mutex::{new_fair_mutex, FairMutex, FairMutexGuard, MappedFairMutexGuard};
-pub use self::mutex::{new_mutex, MappedMutexGuard, Mutex, MutexGuard};
+pub use self::fair_mutex::{const_fair_mutex, FairMutex, FairMutexGuard, MappedFairMutexGuard};
+pub use self::mutex::{const_mutex, MappedMutexGuard, Mutex, MutexGuard};
 pub use self::once::{Once, OnceState};
 pub use self::raw_fair_mutex::RawFairMutex;
 pub use self::raw_mutex::RawMutex;
 pub use self::raw_rwlock::RawRwLock;
 pub use self::remutex::{
-    new_reentrant_mutex, MappedReentrantMutexGuard, RawThreadId, ReentrantMutex,
+    const_reentrant_mutex, MappedReentrantMutexGuard, RawThreadId, ReentrantMutex,
     ReentrantMutexGuard,
 };
 pub use self::rwlock::{
-    new_rwlock, MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
+    const_rwlock, MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
     RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
 pub use ::lock_api;
