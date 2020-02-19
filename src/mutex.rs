@@ -86,6 +86,13 @@ use lock_api;
 /// ```
 pub type Mutex<T> = lock_api::Mutex<RawMutex, T>;
 
+/// Creates a new mutex in an unlocked state ready for use.
+///
+/// This allows creating a mutex in a constant context on stable Rust.
+pub const fn const_mutex<T>(val: T) -> Mutex<T> {
+    Mutex::const_new(<RawMutex as lock_api::RawMutex>::INIT, val)
+}
+
 /// An RAII implementation of a "scoped lock" of a mutex. When this structure is
 /// dropped (falls out of scope), the lock will be unlocked.
 ///

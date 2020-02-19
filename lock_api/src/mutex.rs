@@ -95,7 +95,7 @@ pub unsafe trait RawMutexTimed: RawMutex {
 /// it is protecting. The data can only be accessed through the RAII guards
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
 /// ever accessed when the mutex is locked.
-pub struct Mutex<R: RawMutex, T: ?Sized> {
+pub struct Mutex<R, T: ?Sized> {
     raw: R,
     data: UnsafeCell<T>,
 }
@@ -128,6 +128,19 @@ impl<R: RawMutex, T> Mutex<R, T> {
     #[inline]
     pub fn into_inner(self) -> T {
         self.data.into_inner()
+    }
+}
+
+impl<R, T> Mutex<R, T> {
+    /// Creates a new mutex based on a pre-existing raw mutex.
+    ///
+    /// This allows creating a mutex in a constant context on stable Rust.
+    #[inline]
+    pub const fn const_new(raw_mutex: R, val: T) -> Mutex<R, T> {
+        Mutex {
+            raw: raw_mutex,
+            data: UnsafeCell::new(val),
+        }
     }
 }
 
