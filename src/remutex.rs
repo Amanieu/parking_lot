@@ -36,7 +36,7 @@ unsafe impl GetThreadId for RawThreadId {
 /// - `ReentrantMutexGuard` does not give mutable references to the locked data.
 ///   Use a `RefCell` if you need this.
 ///
-/// See [`Mutex`](struct.Mutex.html) for more details about the underlying mutex
+/// See [`Mutex`](type.Mutex.html) for more details about the underlying mutex
 /// primitive.
 pub type ReentrantMutex<T> = lock_api::ReentrantMutex<RawMutex, RawThreadId, T>;
 
