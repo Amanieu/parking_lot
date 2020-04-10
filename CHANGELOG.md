@@ -1,3 +1,7 @@
+## parking_lot 0.10.2 (2020-04-10)
+
+- Update minimum version of `lock_api`.
+
 ## parking_lot 0.10.1, parking_lot_core 0.7.1, lock_api 0.3.4 (2020-04-10)
 
 - Add methods to construct `Mutex`, `RwLock`, etc in a `const` context. (#217)
