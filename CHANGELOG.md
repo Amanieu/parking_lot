@@ -1,3 +1,15 @@
+## parking_lot 0.10.1, parking_lot_core 0.7.1, lock_api 0.3.4 (2020-04-10)
+
+- Add methods to construct `Mutex`, `RwLock`, etc in a `const` context. (#217)
+- Add `FairMutex` which always uses fair unlocking. (#204)
+- Fixed panic with deadlock detection on macOS. (#203)
+- Fixed incorrect synchronization in `create_hashtable`. (#210)
+- Use `llvm_asm!` instead of the deprecated `asm!`. (#223)
+
+## lock_api 0.3.3 (2020-01-04)
+
+- Deprecate unsound `MappedRwLockWriteGuard::downgrade` (#198)
+
 ## parking_lot 0.10.0, parking_lot_core 0.7.0, lock_api 0.3.2 (2019-11-25)
 
 - Upgrade smallvec dependency to 1.0 in parking_lot_core.
