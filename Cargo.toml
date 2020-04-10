@@ -11,8 +11,8 @@ categories = ["concurrency"]
 edition = "2018"
 
 [dependencies]
-parking_lot_core = { path = "core", version = "0.7.0" }
-lock_api = { path = "lock_api", version = "0.3.1" }
+parking_lot_core = { path = "core", version = "0.7.1" }
+lock_api = { path = "lock_api", version = "0.3.4" }
 
 [dev-dependencies]
 rand = "0.7"
