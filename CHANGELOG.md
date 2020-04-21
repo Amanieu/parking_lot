@@ -1,3 +1,7 @@
+## parking_lot_core 0.7.2 (2020-04-21)
+
+- Add support for `wasm32-unknown-unknown` under the "nightly" feature. (#226)
+
 ## parking_lot 0.10.2 (2020-04-10)
 
 - Update minimum version of `lock_api`.
