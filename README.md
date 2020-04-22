@@ -93,7 +93,7 @@ There are a few restrictions when using this library on stable Rust:
 - `RwLock` will not be able to take advantage of hardware lock elision for
   readers, which improves performance when there are multiple readers.
 - The `wasm32-unknown-unknown` target is only supported on nightly and requires
-  `-C target-feature=+atomic` in `RUSTFLAGS`.
+  `-C target-feature=+atomics` in `RUSTFLAGS`.
 
 To enable nightly-only functionality, you need to enable the `nightly` feature
 in Cargo (see below).
