@@ -18,6 +18,9 @@ jobs:
         os: [ubuntu, macos, windows]
         channel: [1.36.0, stable, beta, nightly]
         feature: [serde, deadlock_detection]
+        exclude: 
+          - feature: deadlock_detection
+            channel: '1.36.0'
         include:
           - channel: nightly
             feature: nightly
