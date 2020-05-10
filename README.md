@@ -1,7 +1,8 @@
 parking_lot
 ============
 
-[![Build Status](https://travis-ci.org/Amanieu/parking_lot.svg?branch=master)](https://travis-ci.org/Amanieu/parking_lot) [![Build status](https://ci.appveyor.com/api/projects/status/wppcc32ttpud0a30/branch/master?svg=true)](https://ci.appveyor.com/project/Amanieu/parking-lot/branch/master) [![Crates.io](https://img.shields.io/crates/v/parking_lot.svg)](https://crates.io/crates/parking_lot)
+![Rust](https://github.com/Amanieu/parking_lot/workflows/Rust/badge.svg)
+[![Crates.io](https://img.shields.io/crates/v/parking_lot.svg)](https://crates.io/crates/parking_lot)
 
 [Documentation (synchronization primitives)](https://docs.rs/parking_lot/)
 
