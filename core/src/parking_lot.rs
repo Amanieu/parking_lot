@@ -4,17 +4,18 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
-use cfg_if::cfg_if;
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::util::UncheckedOptionExt;
 use crate::word_lock::WordLock;
+use cfg_if::cfg_if;
 use core::{
     cell::{Cell, UnsafeCell},
     ptr,
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
+use instant::Instant;
 use smallvec::SmallVec;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 cfg_if! {
     if #[cfg(all(
@@ -51,7 +52,7 @@ cfg_if! {
         // See https://github.com/rust-lang/rust/blob/master/src/libstd/sys/wasm/time.rs
         type InstantType = DummyInstant;
     } else {
-        // Otherwise use `std::time::Instant`
+        // Otherwise use `instant::Instant`
         type InstantType = Instant;
     }
 }

@@ -12,11 +12,12 @@ use core::{
     cell::Cell,
     sync::atomic::{AtomicUsize, Ordering},
 };
+use instant::Instant;
 use lock_api::{GuardNoSend, RawRwLock as RawRwLock_, RawRwLockUpgrade};
 use parking_lot_core::{
     self, deadlock, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken,
 };
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 // This reader-writer lock implementation is based on Boost's upgrade_mutex:
 // https://github.com/boostorg/thread/blob/fc08c1fe2840baeeee143440fba31ef9e9a813c8/include/boost/thread/v2/shared_mutex.hpp#L432

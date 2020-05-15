@@ -15,6 +15,7 @@ smallvec = "1.0"
 petgraph = { version = "0.5", optional = true }
 thread-id = { version = "3.2.0", optional = true }
 backtrace = { version = "0.3.2", optional = true }
+instant = "0.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.55"

@@ -11,7 +11,8 @@ use core::{
     mem::{self, MaybeUninit},
     sync::atomic::{AtomicU32, Ordering},
 };
-use std::{convert::TryFrom, thread, time::Instant};
+use instant::Instant;
+use std::{convert::TryFrom, thread};
 
 extern "C" {
     #[thread_local]
