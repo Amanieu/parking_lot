@@ -30,6 +30,11 @@ unsafe impl lock_api::RawMutex for RawFairMutex {
     fn unlock(&self) {
         self.unlock_fair()
     }
+
+    #[inline]
+    fn is_locked(&self) -> bool {
+        self.0.is_locked()
+    }
 }
 
 unsafe impl lock_api::RawMutexFair for RawFairMutex {

@@ -108,6 +108,12 @@ unsafe impl lock_api::RawMutex for RawMutex {
         }
         self.unlock_slow(false);
     }
+
+    #[inline]
+    fn is_locked(&self) -> bool {
+        let state = self.state.load(Ordering::Relaxed);
+        state & LOCKED_BIT != 0
+    }
 }
 
 unsafe impl lock_api::RawMutexFair for RawMutex {
