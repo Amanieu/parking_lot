@@ -59,20 +59,6 @@ pub unsafe trait RawRwLock {
 
     /// Checks if this `RwLock` is currently locked in any way.
     fn is_locked(&self) -> bool {
-        self.is_locked_shared() || self.is_locked_exclusive()
-    }
-
-    /// Checks if this `RwLock` currently has shared locks.
-    fn is_locked_shared(&self) -> bool {
-        let acquired_lock = self.try_lock_shared();
-        if acquired_lock {
-            self.unlock_shared();
-        }
-        !acquired_lock
-    }
-
-    /// Checks if this `RwLock` is currently locked exclusively.
-    fn is_locked_exclusive(&self) -> bool {
         let acquired_lock = self.try_lock_exclusive();
         if acquired_lock {
             self.unlock_exclusive();
@@ -439,18 +425,6 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     #[inline]
     pub fn is_locked(&self) -> bool {
         self.raw.is_locked()
-    }
-
-    /// Checks whether this `RwLock` currently has any read locks.
-    #[inline]
-    pub fn is_read_locked(&self) -> bool {
-        self.raw.is_locked_shared()
-    }
-
-    /// Checks whether this `RwLock` currently has a write lock.
-    #[inline]
-    pub fn is_write_locked(&self) -> bool {
-        self.raw.is_locked_shared()
     }
 
     /// Forcibly unlocks a read lock.
