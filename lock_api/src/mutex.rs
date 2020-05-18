@@ -207,6 +207,12 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
         unsafe { &mut *self.data.get() }
     }
 
+    /// Checks whether the mutex is currently locked.
+    #[inline]
+    pub fn is_locked(&self) -> bool {
+        self.raw.is_locked()
+    }
+
     /// Forcibly unlocks the mutex.
     ///
     /// This is useful when combined with `mem::forget` to hold a lock without
