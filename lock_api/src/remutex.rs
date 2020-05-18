@@ -101,8 +101,7 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
 
     #[inline]
     fn is_locked(&self) -> bool {
-        let id = self.get_thread_id.nonzero_thread_id().get();
-        self.owner.load(Ordering::Relaxed) == id || self.mutex.is_locked()
+        self.mutex.is_locked()
     }
 }
 
