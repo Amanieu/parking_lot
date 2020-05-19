@@ -56,6 +56,15 @@ pub unsafe trait RawRwLock {
 
     /// Releases an exclusive lock.
     fn unlock_exclusive(&self);
+
+    /// Checks if this `RwLock` is currently locked in any way.
+    fn is_locked(&self) -> bool {
+        let acquired_lock = self.try_lock_exclusive();
+        if acquired_lock {
+            self.unlock_exclusive();
+        }
+        !acquired_lock
+    }
 }
 
 /// Additional methods for RwLocks which support fair unlocking.
@@ -410,6 +419,12 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     #[inline]
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
+    }
+
+    /// Checks whether this `RwLock` is currently locked in any way.
+    #[inline]
+    pub fn is_locked(&self) -> bool {
+        self.raw.is_locked()
     }
 
     /// Forcibly unlocks a read lock.

@@ -98,6 +98,11 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
             self.mutex.unlock();
         }
     }
+
+    #[inline]
+    fn is_locked(&self) -> bool {
+        self.mutex.is_locked()
+    }
 }
 
 impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
@@ -270,6 +275,12 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     #[inline]
     pub fn get_mut(&mut self) -> &mut T {
         unsafe { &mut *self.data.get() }
+    }
+
+    /// Checks whether the mutex is currently locked.
+    #[inline]
+    pub fn is_locked(&self) -> bool {
+        self.raw.is_locked()
     }
 
     /// Forcibly unlocks the mutex.
