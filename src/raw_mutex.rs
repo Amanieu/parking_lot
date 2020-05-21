@@ -62,7 +62,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
 
     type GuardMarker = GuardNoSend;
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn lock(&self) {
         if self
             .state
@@ -74,7 +74,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
         unsafe { deadlock::acquire_resource(self as *const _ as usize) };
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock(&self) -> bool {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -96,7 +96,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
         }
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn unlock(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
         if self
@@ -109,7 +109,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
         self.unlock_slow(false);
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn is_locked(&self) -> bool {
         let state = self.state.load(Ordering::Relaxed);
         state & LOCKED_BIT != 0
@@ -117,7 +117,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
 }
 
 unsafe impl lock_api::RawMutexFair for RawMutex {
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn unlock_fair(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
         if self
@@ -130,7 +130,7 @@ unsafe impl lock_api::RawMutexFair for RawMutex {
         self.unlock_slow(true);
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn bump(&self) {
         if self.state.load(Ordering::Relaxed) & PARKED_BIT != 0 {
             self.bump_slow();
@@ -142,7 +142,7 @@ unsafe impl lock_api::RawMutexTimed for RawMutex {
     type Duration = Duration;
     type Instant = Instant;
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_until(&self, timeout: Instant) -> bool {
         let result = if self
             .state
@@ -159,7 +159,7 @@ unsafe impl lock_api::RawMutexTimed for RawMutex {
         result
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_for(&self, timeout: Duration) -> bool {
         let result = if self
             .state

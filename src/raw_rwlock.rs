@@ -64,7 +64,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
 
     type GuardMarker = GuardNoSend;
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn lock_exclusive(&self) {
         if self
             .state
@@ -77,7 +77,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
         self.deadlock_acquire();
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_exclusive(&self) -> bool {
         if self
             .state
@@ -91,7 +91,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
         }
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn unlock_exclusive(&self) {
         self.deadlock_release();
         if self
@@ -104,7 +104,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
         self.unlock_exclusive_slow(false);
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn lock_shared(&self) {
         if !self.try_lock_shared_fast(false) {
             let result = self.lock_shared_slow(false, None);
@@ -113,7 +113,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
         self.deadlock_acquire();
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_shared(&self) -> bool {
         let result = if self.try_lock_shared_fast(false) {
             true
@@ -126,7 +126,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
         result
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn unlock_shared(&self) {
         self.deadlock_release();
         let state = if have_elision() {
@@ -139,7 +139,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
         }
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn is_locked(&self) -> bool {
         let state = self.state.load(Ordering::Relaxed);
         state & (WRITER_BIT | READERS_MASK) != 0
@@ -147,13 +147,13 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
 }
 
 unsafe impl lock_api::RawRwLockFair for RawRwLock {
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn unlock_shared_fair(&self) {
         // Shared unlocking is always fair in this implementation.
         self.unlock_shared();
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn unlock_exclusive_fair(&self) {
         self.deadlock_release();
         if self
@@ -166,7 +166,7 @@ unsafe impl lock_api::RawRwLockFair for RawRwLock {
         self.unlock_exclusive_slow(true);
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn bump_shared(&self) {
         if self.state.load(Ordering::Relaxed) & (READERS_MASK | WRITER_BIT)
             == ONE_READER | WRITER_BIT
@@ -175,7 +175,7 @@ unsafe impl lock_api::RawRwLockFair for RawRwLock {
         }
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn bump_exclusive(&self) {
         if self.state.load(Ordering::Relaxed) & PARKED_BIT != 0 {
             self.bump_exclusive_slow();
@@ -184,7 +184,7 @@ unsafe impl lock_api::RawRwLockFair for RawRwLock {
 }
 
 unsafe impl lock_api::RawRwLockDowngrade for RawRwLock {
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn downgrade(&self) {
         let state = self
             .state
@@ -201,7 +201,7 @@ unsafe impl lock_api::RawRwLockTimed for RawRwLock {
     type Duration = Duration;
     type Instant = Instant;
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_shared_for(&self, timeout: Self::Duration) -> bool {
         let result = if self.try_lock_shared_fast(false) {
             true
@@ -214,7 +214,7 @@ unsafe impl lock_api::RawRwLockTimed for RawRwLock {
         result
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_shared_until(&self, timeout: Self::Instant) -> bool {
         let result = if self.try_lock_shared_fast(false) {
             true
@@ -227,7 +227,7 @@ unsafe impl lock_api::RawRwLockTimed for RawRwLock {
         result
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_exclusive_for(&self, timeout: Duration) -> bool {
         let result = if self
             .state
@@ -244,7 +244,7 @@ unsafe impl lock_api::RawRwLockTimed for RawRwLock {
         result
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_exclusive_until(&self, timeout: Instant) -> bool {
         let result = if self
             .state
@@ -263,7 +263,7 @@ unsafe impl lock_api::RawRwLockTimed for RawRwLock {
 }
 
 unsafe impl lock_api::RawRwLockRecursive for RawRwLock {
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn lock_shared_recursive(&self) {
         if !self.try_lock_shared_fast(true) {
             let result = self.lock_shared_slow(true, None);
@@ -272,7 +272,7 @@ unsafe impl lock_api::RawRwLockRecursive for RawRwLock {
         self.deadlock_acquire();
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_shared_recursive(&self) -> bool {
         let result = if self.try_lock_shared_fast(true) {
             true
@@ -287,7 +287,7 @@ unsafe impl lock_api::RawRwLockRecursive for RawRwLock {
 }
 
 unsafe impl lock_api::RawRwLockRecursiveTimed for RawRwLock {
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_shared_recursive_for(&self, timeout: Self::Duration) -> bool {
         let result = if self.try_lock_shared_fast(true) {
             true
@@ -300,7 +300,7 @@ unsafe impl lock_api::RawRwLockRecursiveTimed for RawRwLock {
         result
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_shared_recursive_until(&self, timeout: Self::Instant) -> bool {
         let result = if self.try_lock_shared_fast(true) {
             true
@@ -315,7 +315,7 @@ unsafe impl lock_api::RawRwLockRecursiveTimed for RawRwLock {
 }
 
 unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn lock_upgradable(&self) {
         if !self.try_lock_upgradable_fast() {
             let result = self.lock_upgradable_slow(None);
@@ -324,7 +324,7 @@ unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
         self.deadlock_acquire();
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_upgradable(&self) -> bool {
         let result = if self.try_lock_upgradable_fast() {
             true
@@ -337,7 +337,7 @@ unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
         result
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn unlock_upgradable(&self) {
         self.deadlock_release();
         let state = self.state.load(Ordering::Relaxed);
@@ -358,7 +358,7 @@ unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
         self.unlock_upgradable_slow(false);
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn upgrade(&self) {
         let state = self.state.fetch_sub(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
@@ -370,7 +370,7 @@ unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
         }
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_upgrade(&self) -> bool {
         if self
             .state
@@ -390,7 +390,7 @@ unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
 }
 
 unsafe impl lock_api::RawRwLockUpgradeFair for RawRwLock {
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn unlock_upgradable_fair(&self) {
         self.deadlock_release();
         let state = self.state.load(Ordering::Relaxed);
@@ -411,7 +411,7 @@ unsafe impl lock_api::RawRwLockUpgradeFair for RawRwLock {
         self.unlock_upgradable_slow(false);
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn bump_upgradable(&self) {
         if self.state.load(Ordering::Relaxed) == ONE_READER | UPGRADABLE_BIT | PARKED_BIT {
             self.bump_upgradable_slow();
@@ -420,7 +420,7 @@ unsafe impl lock_api::RawRwLockUpgradeFair for RawRwLock {
 }
 
 unsafe impl lock_api::RawRwLockUpgradeDowngrade for RawRwLock {
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn downgrade_upgradable(&self) {
         let state = self.state.fetch_sub(UPGRADABLE_BIT, Ordering::Relaxed);
 
@@ -430,7 +430,7 @@ unsafe impl lock_api::RawRwLockUpgradeDowngrade for RawRwLock {
         }
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn downgrade_to_upgradable(&self) {
         let state = self.state.fetch_add(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
@@ -445,7 +445,7 @@ unsafe impl lock_api::RawRwLockUpgradeDowngrade for RawRwLock {
 }
 
 unsafe impl lock_api::RawRwLockUpgradeTimed for RawRwLock {
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_upgradable_until(&self, timeout: Instant) -> bool {
         let result = if self.try_lock_upgradable_fast() {
             true
@@ -458,7 +458,7 @@ unsafe impl lock_api::RawRwLockUpgradeTimed for RawRwLock {
         result
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_lock_upgradable_for(&self, timeout: Duration) -> bool {
         let result = if self.try_lock_upgradable_fast() {
             true
@@ -471,7 +471,7 @@ unsafe impl lock_api::RawRwLockUpgradeTimed for RawRwLock {
         result
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_upgrade_until(&self, timeout: Instant) -> bool {
         let state = self.state.fetch_sub(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
@@ -484,7 +484,7 @@ unsafe impl lock_api::RawRwLockUpgradeTimed for RawRwLock {
         }
     }
 
-    #[inline]
+    #[cfg_attr(not(feature = "inline-less"), inline)]
     fn try_upgrade_for(&self, timeout: Duration) -> bool {
         let state = self.state.fetch_sub(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
