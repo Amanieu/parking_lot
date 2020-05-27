@@ -11,7 +11,7 @@ use core::{
     time::Duration,
 };
 use instant::Instant;
-use lock_api::{GuardNoSend, RawMutex as RawMutex_};
+use lock_api::RawMutex as RawMutex_;
 use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
 
 // UnparkToken used to indicate that that the target thread should attempt to
@@ -60,7 +60,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
         state: AtomicU8::new(0),
     };
 
-    type GuardMarker = GuardNoSend;
+    type GuardMarker = crate::GuardMarker;
 
     #[inline]
     fn lock(&self) {

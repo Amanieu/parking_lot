@@ -72,6 +72,8 @@ in the Rust standard library:
 18. Optional support for [serde](https://docs.serde.rs/serde/).  Enable via the
     feature `serde`.  **NOTE!** this support is for `Mutex`, `ReentrantMutex`,
     and `RwLock` only; `Condvar` and `Once` are not currently supported.
+19. Lock guards can be sent to other threads when the `send_guard` geature is
+    enabled.
 
 ## The parking lot
 
@@ -117,6 +119,12 @@ parking_lot = { version = "0.10", features = ["nightly"] }
 
 The experimental deadlock detector can be enabled with the
 `deadlock_detection` Cargo feature.
+
+To allow sending `MutexGuard`s and `RwLock*Guard`s to other threads, enable the
+`send_guard` option.
+
+Note that the `deadlock_detection` and `send_guard` features are incompatible
+and cannot be used together.
 
 The core parking lot API is provided by the `parking_lot_core` crate. It is
 separate from the synchronization primitives in the `parking_lot` crate so that
