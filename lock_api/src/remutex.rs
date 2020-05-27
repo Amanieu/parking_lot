@@ -126,6 +126,7 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
         }
     }
 
+    /// Checks whether the mutex is currently locked.
     #[inline]
     pub fn is_locked(&self) -> bool {
         self.mutex.is_locked()
