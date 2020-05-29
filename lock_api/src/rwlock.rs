@@ -58,6 +58,7 @@ pub unsafe trait RawRwLock {
     fn unlock_exclusive(&self);
 
     /// Checks if this `RwLock` is currently locked in any way.
+    #[inline]
     fn is_locked(&self) -> bool {
         let acquired_lock = self.try_lock_exclusive();
         if acquired_lock {

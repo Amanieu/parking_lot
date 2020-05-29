@@ -48,6 +48,7 @@ pub unsafe trait RawMutex {
     fn unlock(&self);
 
     /// Checks whether the mutex is currently locked.
+    #[inline]
     fn is_locked(&self) -> bool {
         let acquired_lock = self.try_lock();
         if acquired_lock {
