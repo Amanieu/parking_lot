@@ -72,7 +72,7 @@ in the Rust standard library:
 18. Optional support for [serde](https://docs.serde.rs/serde/).  Enable via the
     feature `serde`.  **NOTE!** this support is for `Mutex`, `ReentrantMutex`,
     and `RwLock` only; `Condvar` and `Once` are not currently supported.
-19. Lock guards can be sent to other threads when the `send_guard` geature is
+19. Lock guards can be sent to other threads when the `send_guard` feature is
     enabled.
 
 ## The parking lot
