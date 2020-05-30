@@ -13,7 +13,7 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 use instant::Instant;
-use lock_api::{GuardNoSend, RawRwLock as RawRwLock_, RawRwLockUpgrade};
+use lock_api::{RawRwLock as RawRwLock_, RawRwLockUpgrade};
 use parking_lot_core::{
     self, deadlock, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken,
 };
@@ -62,7 +62,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
         state: AtomicUsize::new(0),
     };
 
-    type GuardMarker = GuardNoSend;
+    type GuardMarker = crate::GuardMarker;
 
     #[inline]
     fn lock_exclusive(&self) {

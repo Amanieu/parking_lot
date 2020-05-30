@@ -33,7 +33,6 @@ jobs:
     - run: cargo test --all
     - run: cargo build --all --features ${{ matrix.feature }}
     - run: cargo test --all --features ${{ matrix.feature }}
-    - run: cargo test --all --all-features
       if: matrix.feature == 'nightly'
   build_other_platforms:
     runs-on: ubuntu-latest
@@ -55,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: rustup default nightly
-      - run: cargo doc --workspace --all-features --no-deps -p parking_lot -p parking_lot_core -p lock_api
+      - run: cargo doc --workspace --features serde,deadlock_detection --no-deps -p parking_lot -p parking_lot_core -p lock_api
   benchmark:
     runs-on: ubuntu-latest
     steps:

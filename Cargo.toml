@@ -29,6 +29,7 @@ deadlock_detection = ["parking_lot_core/deadlock_detection"]
 serde = ["lock_api/serde"]
 stdweb = ["instant/stdweb"]
 wasm-bindgen = ["instant/wasm-bindgen"]
+send_guard = []
 
 [workspace]
 exclude = ["benchmark"]
