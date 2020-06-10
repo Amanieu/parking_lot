@@ -46,7 +46,11 @@ pub unsafe trait RawRwLock {
     fn try_lock_shared(&self) -> bool;
 
     /// Releases a shared lock.
-    fn unlock_shared(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if a shared lock is held in the current context.
+    unsafe fn unlock_shared(&self);
 
     /// Acquires an exclusive lock, blocking the current thread until it is able to do so.
     fn lock_exclusive(&self);
@@ -55,14 +59,21 @@ pub unsafe trait RawRwLock {
     fn try_lock_exclusive(&self) -> bool;
 
     /// Releases an exclusive lock.
-    fn unlock_exclusive(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an exclusive lock is held in the current context.
+    unsafe fn unlock_exclusive(&self);
 
     /// Checks if this `RwLock` is currently locked in any way.
     #[inline]
     fn is_locked(&self) -> bool {
         let acquired_lock = self.try_lock_exclusive();
         if acquired_lock {
-            self.unlock_exclusive();
+            // Safety: A lock was successfully acquired above.
+            unsafe {
+                self.unlock_exclusive();
+            }
         }
         !acquired_lock
     }
@@ -76,17 +87,29 @@ pub unsafe trait RawRwLock {
 /// unlocking, but may be necessary in certain circumstances.
 pub unsafe trait RawRwLockFair: RawRwLock {
     /// Releases a shared lock using a fair unlock protocol.
-    fn unlock_shared_fair(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if a shared lock is held in the current context.
+    unsafe fn unlock_shared_fair(&self);
 
     /// Releases an exclusive lock using a fair unlock protocol.
-    fn unlock_exclusive_fair(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an exclusive lock is held in the current context.
+    unsafe fn unlock_exclusive_fair(&self);
 
     /// Temporarily yields a shared lock to a waiting thread if there is one.
     ///
     /// This method is functionally equivalent to calling `unlock_shared_fair` followed
     /// by `lock_shared`, however it can be much more efficient in the case where there
     /// are no waiting threads.
-    fn bump_shared(&self) {
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if a shared lock is held in the current context.
+    unsafe fn bump_shared(&self) {
         self.unlock_shared_fair();
         self.lock_shared();
     }
@@ -96,7 +119,11 @@ pub unsafe trait RawRwLockFair: RawRwLock {
     /// This method is functionally equivalent to calling `unlock_exclusive_fair` followed
     /// by `lock_exclusive`, however it can be much more efficient in the case where there
     /// are no waiting threads.
-    fn bump_exclusive(&self) {
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an exclusive lock is held in the current context.
+    unsafe fn bump_exclusive(&self) {
         self.unlock_exclusive_fair();
         self.lock_exclusive();
     }
@@ -107,7 +134,11 @@ pub unsafe trait RawRwLockFair: RawRwLock {
 pub unsafe trait RawRwLockDowngrade: RawRwLock {
     /// Atomically downgrades an exclusive lock into a shared lock without
     /// allowing any thread to take an exclusive lock in the meantime.
-    fn downgrade(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an exclusive lock is held in the current context.
+    unsafe fn downgrade(&self);
 }
 
 /// Additional methods for RwLocks which support locking with timeouts.
@@ -174,28 +205,48 @@ pub unsafe trait RawRwLockUpgrade: RawRwLock {
     fn try_lock_upgradable(&self) -> bool;
 
     /// Releases an upgradable lock.
-    fn unlock_upgradable(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an upgradable lock is held in the current context.
+    unsafe fn unlock_upgradable(&self);
 
     /// Upgrades an upgradable lock to an exclusive lock.
-    fn upgrade(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an upgradable lock is held in the current context.
+    unsafe fn upgrade(&self);
 
     /// Attempts to upgrade an upgradable lock to an exclusive lock without
     /// blocking.
-    fn try_upgrade(&self) -> bool;
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an upgradable lock is held in the current context.
+    unsafe fn try_upgrade(&self) -> bool;
 }
 
 /// Additional methods for RwLocks which support upgradable locks and fair
 /// unlocking.
 pub unsafe trait RawRwLockUpgradeFair: RawRwLockUpgrade + RawRwLockFair {
     /// Releases an upgradable lock using a fair unlock protocol.
-    fn unlock_upgradable_fair(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an upgradable lock is held in the current context.
+    unsafe fn unlock_upgradable_fair(&self);
 
     /// Temporarily yields an upgradable lock to a waiting thread if there is one.
     ///
     /// This method is functionally equivalent to calling `unlock_upgradable_fair` followed
     /// by `lock_upgradable`, however it can be much more efficient in the case where there
     /// are no waiting threads.
-    fn bump_upgradable(&self) {
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an upgradable lock is held in the current context.
+    unsafe fn bump_upgradable(&self) {
         self.unlock_upgradable_fair();
         self.lock_upgradable();
     }
@@ -205,10 +256,18 @@ pub unsafe trait RawRwLockUpgradeFair: RawRwLockUpgrade + RawRwLockFair {
 /// downgrading.
 pub unsafe trait RawRwLockUpgradeDowngrade: RawRwLockUpgrade + RawRwLockDowngrade {
     /// Downgrades an upgradable lock to a shared lock.
-    fn downgrade_upgradable(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an upgradable lock is held in the current context.
+    unsafe fn downgrade_upgradable(&self);
 
     /// Downgrades an exclusive lock to an upgradable lock.
-    fn downgrade_to_upgradable(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an exclusive lock is held in the current context.
+    unsafe fn downgrade_to_upgradable(&self);
 }
 
 /// Additional methods for RwLocks which support upgradable locks and locking
@@ -222,11 +281,19 @@ pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
 
     /// Attempts to upgrade an upgradable lock to an exclusive lock until a
     /// timeout is reached.
-    fn try_upgrade_for(&self, timeout: Self::Duration) -> bool;
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an upgradable lock is held in the current context.
+    unsafe fn try_upgrade_for(&self, timeout: Self::Duration) -> bool;
 
     /// Attempts to upgrade an upgradable lock to an exclusive lock until a
     /// timeout is reached.
-    fn try_upgrade_until(&self, timeout: Self::Instant) -> bool;
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if an upgradable lock is held in the current context.
+    unsafe fn try_upgrade_until(&self, timeout: Self::Instant) -> bool;
 }
 
 /// A reader-writer lock
@@ -860,7 +927,10 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        s.rwlock.raw.unlock_shared();
+        // Safety: An RwLockReadGuard always holds a shared lock.
+        unsafe {
+            s.rwlock.raw.unlock_shared();
+        }
         defer!(s.rwlock.raw.lock_shared());
         f()
     }
@@ -881,7 +951,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     /// using this method instead of dropping the `RwLockReadGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.rwlock.raw.unlock_shared_fair();
+        // Safety: An RwLockReadGuard always holds a shared lock.
+        unsafe {
+            s.rwlock.raw.unlock_shared_fair();
+        }
         mem::forget(s);
     }
 
@@ -896,7 +969,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        s.rwlock.raw.unlock_shared_fair();
+        // Safety: An RwLockReadGuard always holds a shared lock.
+        unsafe {
+            s.rwlock.raw.unlock_shared_fair();
+        }
         defer!(s.rwlock.raw.lock_shared());
         f()
     }
@@ -908,7 +984,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     /// are no waiting threads.
     #[inline]
     pub fn bump(s: &mut Self) {
-        s.rwlock.raw.bump_shared();
+        // Safety: An RwLockReadGuard always holds a shared lock.
+        unsafe {
+            s.rwlock.raw.bump_shared();
+        }
     }
 }
 
@@ -923,7 +1002,10 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for RwLockReadGuard<'a, R, T> 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Drop for RwLockReadGuard<'a, R, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.raw.unlock_shared();
+        // Safety: An RwLockReadGuard always holds a shared lock.
+        unsafe {
+            self.rwlock.raw.unlock_shared();
+        }
     }
 }
 
@@ -1019,7 +1101,10 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        s.rwlock.raw.unlock_exclusive();
+        // Safety: An RwLockReadGuard always holds a shared lock.
+        unsafe {
+            s.rwlock.raw.unlock_exclusive();
+        }
         defer!(s.rwlock.raw.lock_exclusive());
         f()
     }
@@ -1033,7 +1118,10 @@ impl<'a, R: RawRwLockDowngrade + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> 
     /// then other readers may not be able to acquire the lock even if it was
     /// downgraded.
     pub fn downgrade(s: Self) -> RwLockReadGuard<'a, R, T> {
-        s.rwlock.raw.downgrade();
+        // Safety: An RwLockWriteGuard always holds an exclusive lock.
+        unsafe {
+            s.rwlock.raw.downgrade();
+        }
         let rwlock = s.rwlock;
         mem::forget(s);
         RwLockReadGuard {
@@ -1051,7 +1139,10 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a,
     /// then other readers may not be able to acquire the lock even if it was
     /// downgraded.
     pub fn downgrade_to_upgradable(s: Self) -> RwLockUpgradableReadGuard<'a, R, T> {
-        s.rwlock.raw.downgrade_to_upgradable();
+        // Safety: An RwLockWriteGuard always holds an exclusive lock.
+        unsafe {
+            s.rwlock.raw.downgrade_to_upgradable();
+        }
         let rwlock = s.rwlock;
         mem::forget(s);
         RwLockUpgradableReadGuard {
@@ -1076,7 +1167,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     /// using this method instead of dropping the `RwLockWriteGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.rwlock.raw.unlock_exclusive_fair();
+        // Safety: An RwLockWriteGuard always holds an exclusive lock.
+        unsafe {
+            s.rwlock.raw.unlock_exclusive_fair();
+        }
         mem::forget(s);
     }
 
@@ -1091,7 +1185,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        s.rwlock.raw.unlock_exclusive_fair();
+        // Safety: An RwLockWriteGuard always holds an exclusive lock.
+        unsafe {
+            s.rwlock.raw.unlock_exclusive_fair();
+        }
         defer!(s.rwlock.raw.lock_exclusive());
         f()
     }
@@ -1103,7 +1200,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     /// are no waiting threads.
     #[inline]
     pub fn bump(s: &mut Self) {
-        s.rwlock.raw.bump_exclusive();
+        // Safety: An RwLockWriteGuard always holds an exclusive lock.
+        unsafe {
+            s.rwlock.raw.bump_exclusive();
+        }
     }
 }
 
@@ -1125,7 +1225,10 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> DerefMut for RwLockWriteGuard<'a, R,
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Drop for RwLockWriteGuard<'a, R, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.raw.unlock_exclusive();
+        // Safety: An RwLockWriteGuard always holds an exclusive lock.
+        unsafe {
+            self.rwlock.raw.unlock_exclusive();
+        }
     }
 }
 
@@ -1174,7 +1277,10 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
     where
         F: FnOnce() -> U,
     {
-        s.rwlock.raw.unlock_upgradable();
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            s.rwlock.raw.unlock_upgradable();
+        }
         defer!(s.rwlock.raw.lock_upgradable());
         f()
     }
@@ -1182,7 +1288,10 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
     /// Atomically upgrades an upgradable read lock lock into a exclusive write lock,
     /// blocking the current thread until it can be acquired.
     pub fn upgrade(s: Self) -> RwLockWriteGuard<'a, R, T> {
-        s.rwlock.raw.upgrade();
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            s.rwlock.raw.upgrade();
+        }
         let rwlock = s.rwlock;
         mem::forget(s);
         RwLockWriteGuard {
@@ -1195,7 +1304,8 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
     ///
     /// If the access could not be granted at this time, then the current guard is returned.
     pub fn try_upgrade(s: Self) -> Result<RwLockWriteGuard<'a, R, T>, Self> {
-        if s.rwlock.raw.try_upgrade() {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        if unsafe { s.rwlock.raw.try_upgrade() } {
             let rwlock = s.rwlock;
             mem::forget(s);
             Ok(RwLockWriteGuard {
@@ -1223,7 +1333,10 @@ impl<'a, R: RawRwLockUpgradeFair + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard
     /// using this method instead of dropping the `RwLockUpgradableReadGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.rwlock.raw.unlock_upgradable_fair();
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            s.rwlock.raw.unlock_upgradable_fair();
+        }
         mem::forget(s);
     }
 
@@ -1238,7 +1351,10 @@ impl<'a, R: RawRwLockUpgradeFair + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard
     where
         F: FnOnce() -> U,
     {
-        s.rwlock.raw.unlock_upgradable_fair();
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            s.rwlock.raw.unlock_upgradable_fair();
+        }
         defer!(s.rwlock.raw.lock_upgradable());
         f()
     }
@@ -1250,7 +1366,10 @@ impl<'a, R: RawRwLockUpgradeFair + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard
     /// are no waiting threads.
     #[inline]
     pub fn bump(s: &mut Self) {
-        s.rwlock.raw.bump_upgradable();
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            s.rwlock.raw.bump_upgradable();
+        }
     }
 }
 
@@ -1263,7 +1382,10 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
     /// then other readers may not be able to acquire the lock even if it was
     /// downgraded.
     pub fn downgrade(s: Self) -> RwLockReadGuard<'a, R, T> {
-        s.rwlock.raw.downgrade_upgradable();
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            s.rwlock.raw.downgrade_upgradable();
+        }
         let rwlock = s.rwlock;
         mem::forget(s);
         RwLockReadGuard {
@@ -1283,7 +1405,8 @@ impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuar
         s: Self,
         timeout: R::Duration,
     ) -> Result<RwLockWriteGuard<'a, R, T>, Self> {
-        if s.rwlock.raw.try_upgrade_for(timeout) {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        if unsafe { s.rwlock.raw.try_upgrade_for(timeout) } {
             let rwlock = s.rwlock;
             mem::forget(s);
             Ok(RwLockWriteGuard {
@@ -1305,7 +1428,8 @@ impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuar
         s: Self,
         timeout: R::Instant,
     ) -> Result<RwLockWriteGuard<'a, R, T>, Self> {
-        if s.rwlock.raw.try_upgrade_until(timeout) {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        if unsafe { s.rwlock.raw.try_upgrade_until(timeout) } {
             let rwlock = s.rwlock;
             mem::forget(s);
             Ok(RwLockWriteGuard {
@@ -1329,7 +1453,10 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> Deref for RwLockUpgradableRea
 impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> Drop for RwLockUpgradableReadGuard<'a, R, T> {
     #[inline]
     fn drop(&mut self) {
-        self.rwlock.raw.unlock_upgradable();
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            self.rwlock.raw.unlock_upgradable();
+        }
     }
 }
 
@@ -1442,7 +1569,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> 
     /// using this method instead of dropping the `MappedRwLockReadGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.raw.unlock_shared_fair();
+        // Safety: A MappedRwLockReadGuard always holds a shared lock.
+        unsafe {
+            s.raw.unlock_shared_fair();
+        }
         mem::forget(s);
     }
 }
@@ -1458,7 +1588,10 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for MappedRwLockReadGuard<'a, 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Drop for MappedRwLockReadGuard<'a, R, T> {
     #[inline]
     fn drop(&mut self) {
-        self.raw.unlock_shared();
+        // Safety: A MappedRwLockReadGuard always holds a shared lock.
+        unsafe {
+            self.raw.unlock_shared();
+        }
     }
 }
 
@@ -1574,7 +1707,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T>
     /// using this method instead of dropping the `MappedRwLockWriteGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.raw.unlock_exclusive_fair();
+        // Safety: A MappedRwLockWriteGuard always holds an exclusive lock.
+        unsafe {
+            s.raw.unlock_exclusive_fair();
+        }
         mem::forget(s);
     }
 }
@@ -1597,7 +1733,10 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> DerefMut for MappedRwLockWriteGuard<
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Drop for MappedRwLockWriteGuard<'a, R, T> {
     #[inline]
     fn drop(&mut self) {
-        self.raw.unlock_exclusive();
+        // Safety: A MappedRwLockWriteGuard always holds an exclusive lock.
+        unsafe {
+            self.raw.unlock_exclusive();
+        }
     }
 }
 
