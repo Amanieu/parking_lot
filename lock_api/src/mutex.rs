@@ -79,14 +79,23 @@ pub unsafe trait RawMutex {
 /// unlocking, but may be necessary in certain circumstances.
 pub unsafe trait RawMutexFair: RawMutex {
     /// Unlocks this mutex using a fair unlock protocol.
-    fn unlock_fair(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if the mutex is held in the current context, see
+    /// the documentation of [`unlock`].
+    ///
+    /// [`unlock`]: trait.RawMutex.html#tymethod.unlock
+    unsafe fn unlock_fair(&self);
 
     /// Temporarily yields the mutex to a waiting thread if there is one.
     ///
     /// This method is functionally equivalent to calling `unlock_fair` followed
     /// by `lock`, however it can be much more efficient in the case where there
     /// are no waiting threads.
-    fn bump(&self) {
+    ///
+    /// [`unlock`]: trait.RawMutex.html#tymethod.unlock
+    unsafe fn bump(&self) {
         self.unlock_fair();
         self.lock();
     }
@@ -473,7 +482,10 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// using this method instead of dropping the `MutexGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.mutex.raw.unlock_fair();
+        // Safety: A MutexGuard always holds the lock.
+        unsafe {
+            s.mutex.raw.unlock_fair();
+        }
         mem::forget(s);
     }
 
@@ -488,7 +500,10 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        s.mutex.raw.unlock_fair();
+        // Safety: A MutexGuard always holds the lock.
+        unsafe {
+            s.mutex.raw.unlock_fair();
+        }
         defer!(s.mutex.raw.lock());
         f()
     }
@@ -500,7 +515,10 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// are no waiting threads.
     #[inline]
     pub fn bump(s: &mut Self) {
-        s.mutex.raw.bump();
+        // Safety: A MutexGuard always holds the lock.
+        unsafe {
+            s.mutex.raw.bump();
+        }
     }
 }
 
@@ -634,7 +652,10 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     /// using this method instead of dropping the `MutexGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.raw.unlock_fair();
+        // Safety: A MutexGuard always holds the lock.
+        unsafe {
+            s.raw.unlock_fair();
+        }
         mem::forget(s);
     }
 }
