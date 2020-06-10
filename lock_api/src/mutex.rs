@@ -45,14 +45,27 @@ pub unsafe trait RawMutex {
     fn try_lock(&self) -> bool;
 
     /// Unlocks this mutex.
-    fn unlock(&self);
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if the mutex is held in the current context, i.e. it must
+    /// be paired with a successful call to [`lock`], [`try_lock`], [`try_lock_for`] or [`try_lock_until`].
+    ///
+    /// [`lock`]: #tymethod.lock
+    /// [`try_lock`]: #tymethod.try_lock
+    /// [`try_lock_for`]: trait.RawMutexTimed.html#tymethod.try_lock_for
+    /// [`try_lock_until`]: trait.RawMutexTimed.html#tymethod.try_lock_until
+    unsafe fn unlock(&self);
 
     /// Checks whether the mutex is currently locked.
     #[inline]
     fn is_locked(&self) -> bool {
         let acquired_lock = self.try_lock();
         if acquired_lock {
-            self.unlock();
+            // Safety: The lock has been successfully acquired above.
+            unsafe {
+                self.unlock();
+            }
         }
         !acquired_lock
     }
@@ -436,7 +449,10 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        s.mutex.raw.unlock();
+        // Safety: A MutexGuard always holds the lock.
+        unsafe {
+            s.mutex.raw.unlock();
+        }
         defer!(s.mutex.raw.lock());
         f()
     }
@@ -506,7 +522,10 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> DerefMut for MutexGuard<'a, R, T> {
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MutexGuard<'a, R, T> {
     #[inline]
     fn drop(&mut self) {
-        self.mutex.raw.unlock();
+        // Safety: A MutexGuard always holds the lock.
+        unsafe {
+            self.mutex.raw.unlock();
+        }
     }
 }
 
@@ -638,7 +657,10 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> DerefMut for MappedMutexGuard<'a, R, 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MappedMutexGuard<'a, R, T> {
     #[inline]
     fn drop(&mut self) {
-        self.raw.unlock();
+        // Safety: A MappedMutexGuard always holds the lock.
+        unsafe {
+            self.raw.unlock();
+        }
     }
 }
 

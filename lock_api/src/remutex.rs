@@ -116,8 +116,12 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
 
     /// Unlocks this mutex. The inner mutex may not be unlocked if
     /// this mutex was acquired previously in the current thread.
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if the mutex is held by the current thread.
     #[inline]
-    pub fn unlock(&self) {
+    pub unsafe fn unlock(&self) {
         let lock_count = self.lock_count.get() - 1;
         self.lock_count.set(lock_count);
         if lock_count == 0 {
@@ -554,7 +558,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     where
         F: FnOnce() -> U,
     {
-        s.remutex.raw.unlock();
+        // Safety: A ReentrantMutexGuard always holds the lock.
+        unsafe {
+            s.remutex.raw.unlock();
+        }
         defer!(s.remutex.raw.lock());
         f()
     }
@@ -623,7 +630,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Drop
 {
     #[inline]
     fn drop(&mut self) {
-        self.remutex.raw.unlock();
+        // Safety: A ReentrantMutexGuard always holds the lock.
+        unsafe {
+            self.remutex.raw.unlock();
+        }
     }
 }
 
@@ -762,7 +772,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Drop
 {
     #[inline]
     fn drop(&mut self) {
-        self.raw.unlock();
+        // Safety: A MappedReentrantMutexGuard always holds the lock.
+        unsafe {
+            self.raw.unlock();
+        }
     }
 }
 

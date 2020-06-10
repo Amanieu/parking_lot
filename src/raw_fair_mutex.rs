@@ -27,7 +27,7 @@ unsafe impl lock_api::RawMutex for RawFairMutex {
     }
 
     #[inline]
-    fn unlock(&self) {
+    unsafe fn unlock(&self) {
         self.unlock_fair()
     }
 

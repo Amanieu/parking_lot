@@ -97,8 +97,8 @@ unsafe impl lock_api::RawMutex for RawMutex {
     }
 
     #[inline]
-    fn unlock(&self) {
-        unsafe { deadlock::release_resource(self as *const _ as usize) };
+    unsafe fn unlock(&self) {
+        deadlock::release_resource(self as *const _ as usize);
         if self
             .state
             .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
