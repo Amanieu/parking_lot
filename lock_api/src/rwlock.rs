@@ -1559,30 +1559,6 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
     }
 }
 
-impl<'a, R: RawRwLockDowngrade + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
-    /// Atomically downgrades a write lock into a read lock without allowing any
-    /// writers to take exclusive access of the lock in the meantime.
-    ///
-    /// Note that if there are any writers currently waiting to take the lock
-    /// then other readers may not be able to acquire the lock even if it was
-    /// downgraded.
-    #[deprecated(
-        since = "0.3.3",
-        note = "This function is unsound and will be removed in the future, see issue #198"
-    )]
-    pub fn downgrade(s: Self) -> MappedRwLockReadGuard<'a, R, T> {
-        s.raw.downgrade();
-        let raw = s.raw;
-        let data = s.data;
-        mem::forget(s);
-        MappedRwLockReadGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        }
-    }
-}
-
 impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
     /// Unlocks the `RwLock` using a fair unlock protocol.
     ///
