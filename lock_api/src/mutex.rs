@@ -94,6 +94,11 @@ pub unsafe trait RawMutexFair: RawMutex {
     /// by `lock`, however it can be much more efficient in the case where there
     /// are no waiting threads.
     ///
+    /// # Safety
+    ///
+    /// This method may only be called if the mutex is held in the current context, see
+    /// the documentation of [`unlock`].
+    ///
     /// [`unlock`]: trait.RawMutex.html#tymethod.unlock
     unsafe fn bump(&self) {
         self.unlock_fair();

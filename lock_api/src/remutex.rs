@@ -161,6 +161,8 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
     /// by `lock`, however it can be much more efficient in the case where there
     /// are no waiting threads.
     ///
+    /// # Safety
+    ///
     /// This method may only be called if the mutex is held by the current thread.
     #[inline]
     pub unsafe fn bump(&self) {
