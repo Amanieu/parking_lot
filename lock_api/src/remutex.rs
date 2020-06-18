@@ -116,8 +116,12 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
 
     /// Unlocks this mutex. The inner mutex may not be unlocked if
     /// this mutex was acquired previously in the current thread.
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if the mutex is held by the current thread.
     #[inline]
-    pub fn unlock(&self) {
+    pub unsafe fn unlock(&self) {
         let lock_count = self.lock_count.get() - 1;
         self.lock_count.set(lock_count);
         if lock_count == 0 {
@@ -137,8 +141,12 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
     /// Unlocks this mutex using a fair unlock protocol. The inner mutex
     /// may not be unlocked if this mutex was acquired previously in the
     /// current thread.
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if the mutex is held by the current thread.
     #[inline]
-    pub fn unlock_fair(&self) {
+    pub unsafe fn unlock_fair(&self) {
         let lock_count = self.lock_count.get() - 1;
         self.lock_count.set(lock_count);
         if lock_count == 0 {
@@ -152,8 +160,12 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
     /// This method is functionally equivalent to calling `unlock_fair` followed
     /// by `lock`, however it can be much more efficient in the case where there
     /// are no waiting threads.
+    ///
+    /// # Safety
+    ///
+    /// This method may only be called if the mutex is held by the current thread.
     #[inline]
-    pub fn bump(&self) {
+    pub unsafe fn bump(&self) {
         if self.lock_count.get() == 1 {
             let id = self.owner.load(Ordering::Relaxed);
             self.owner.store(0, Ordering::Relaxed);
@@ -554,7 +566,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     where
         F: FnOnce() -> U,
     {
-        s.remutex.raw.unlock();
+        // Safety: A ReentrantMutexGuard always holds the lock.
+        unsafe {
+            s.remutex.raw.unlock();
+        }
         defer!(s.remutex.raw.lock());
         f()
     }
@@ -577,7 +592,10 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// using this method instead of dropping the `ReentrantMutexGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.remutex.raw.unlock_fair();
+        // Safety: A ReentrantMutexGuard always holds the lock
+        unsafe {
+            s.remutex.raw.unlock_fair();
+        }
         mem::forget(s);
     }
 
@@ -592,7 +610,10 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     where
         F: FnOnce() -> U,
     {
-        s.remutex.raw.unlock_fair();
+        // Safety: A ReentrantMutexGuard always holds the lock
+        unsafe {
+            s.remutex.raw.unlock_fair();
+        }
         defer!(s.remutex.raw.lock());
         f()
     }
@@ -604,7 +625,10 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// are no waiting threads.
     #[inline]
     pub fn bump(s: &mut Self) {
-        s.remutex.raw.bump();
+        // Safety: A ReentrantMutexGuard always holds the lock
+        unsafe {
+            s.remutex.raw.bump();
+        }
     }
 }
 
@@ -623,7 +647,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Drop
 {
     #[inline]
     fn drop(&mut self) {
-        self.remutex.raw.unlock();
+        // Safety: A ReentrantMutexGuard always holds the lock.
+        unsafe {
+            self.remutex.raw.unlock();
+        }
     }
 }
 
@@ -742,7 +769,10 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// using this method instead of dropping the `ReentrantMutexGuard` normally.
     #[inline]
     pub fn unlock_fair(s: Self) {
-        s.raw.unlock_fair();
+        // Safety: A MappedReentrantMutexGuard always holds the lock
+        unsafe {
+            s.raw.unlock_fair();
+        }
         mem::forget(s);
     }
 }
@@ -762,7 +792,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Drop
 {
     #[inline]
     fn drop(&mut self) {
-        self.raw.unlock();
+        // Safety: A MappedReentrantMutexGuard always holds the lock.
+        unsafe {
+            self.raw.unlock();
+        }
     }
 }
 
