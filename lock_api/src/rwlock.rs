@@ -540,6 +540,22 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     pub unsafe fn raw(&self) -> &R {
         &self.raw
     }
+
+    /// Returns a raw pointer to the underlying data.
+    ///
+    /// This is useful when combined with `mem::forget` to hold a lock without
+    /// the need to maintain a `RwLockReadGuard` or `RwLockWriteGuard` object
+    /// alive, for example when dealing with FFI.
+    ///
+    /// # Safety
+    ///
+    /// The returned pointer must only be dereferenced if the current thread
+    /// logically owns a `RwLockReadGuard` or `RwLockWriteGuard` but that guard
+    /// has been discarded using `mem::forget`.
+    #[inline]
+    pub fn data_ptr(&self) -> *mut T {
+        self.data.get()
+    }
 }
 
 impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
