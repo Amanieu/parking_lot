@@ -279,9 +279,9 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     ///
     /// # Safety
     ///
-    /// The returned pointer must only be dereferenced if the current thread
-    /// logically owns a `MutexGuard` but that guard has been discarded using
-    /// `mem::forget`.
+    /// You must ensure that there are no data races when dereferencing the
+    /// returned pointer, for example if the current thread logically owns
+    /// a `MutexGuard` but that guard has been discarded using `mem::forget`.
     #[inline]
     pub fn data_ptr(&self) -> *mut T {
         self.data.get()
