@@ -270,6 +270,22 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     pub unsafe fn raw(&self) -> &R {
         &self.raw
     }
+
+    /// Returns a raw pointer to the underlying data.
+    ///
+    /// This is useful when combined with `mem::forget` to hold a lock without
+    /// the need to maintain a `MutexGuard` object alive, for example when
+    /// dealing with FFI.
+    ///
+    /// # Safety
+    ///
+    /// You must ensure that there are no data races when dereferencing the
+    /// returned pointer, for example if the current thread logically owns
+    /// a `MutexGuard` but that guard has been discarded using `mem::forget`.
+    #[inline]
+    pub fn data_ptr(&self) -> *mut T {
+        self.data.get()
+    }
 }
 
 impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
