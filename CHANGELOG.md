@@ -1,3 +1,8 @@
+## lock_api 0.4.1 (2020-07-06)
+
+- Add `data_ptr` method to lock types to allow unsafely accessing the inner data
+  without a guard. (#247)
+
 ## parking_lot 0.11.0, parking_lot_core 0.8.0, lock_api 0.4.0 (2020-06-23)
 
 - Add `is_locked` method to mutex types. (#235)
