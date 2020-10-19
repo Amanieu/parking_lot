@@ -12,8 +12,8 @@ edition = "2018"
 
 [dependencies]
 parking_lot_core = { path = "core", version = "0.8.0" }
-lock_api = { path = "lock_api", version = "0.4.0" }
-instant = "0.1.4"
+lock_api = { path = "lock_api", version = "0.4.1" }
+instant = "0.1.7"
 
 [dev-dependencies]
 rand = "0.7.3"
