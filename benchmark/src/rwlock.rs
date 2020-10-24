@@ -8,7 +8,7 @@
 mod args;
 use crate::args::ArgRange;
 
-#[cfg(unix)]
+#[cfg(any(windows, unix))]
 use std::cell::UnsafeCell;
 use std::{
     sync::{
@@ -90,6 +90,57 @@ impl<T: Copy> RwLock<T> for seqlock::SeqLock<T> {
     }
     fn name() -> &'static str {
         "seqlock::SeqLock"
+    }
+}
+
+#[cfg(not(windows))]
+type SrwLock<T> = std::sync::RwLock<T>;
+
+#[cfg(windows)]
+use winapi::um::synchapi;
+#[cfg(windows)]
+struct SrwLock<T>(UnsafeCell<T>, UnsafeCell<synchapi::SRWLOCK>);
+#[cfg(windows)]
+unsafe impl<T> Sync for SrwLock<T> {}
+#[cfg(windows)]
+unsafe impl<T: Send> Send for SrwLock<T> {}
+#[cfg(windows)]
+impl<T> RwLock<T> for SrwLock<T> {
+    fn new(v: T) -> Self {
+        let mut h: synchapi::SRWLOCK = synchapi::SRWLOCK { Ptr: std::ptr::null_mut() };
+
+        unsafe {
+            synchapi::InitializeSRWLock(&mut h);
+        }
+        SrwLock(
+            UnsafeCell::new(v),
+            UnsafeCell::new(h),
+        )
+    }
+    fn read<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&T) -> R,
+    {
+        unsafe {
+            synchapi::AcquireSRWLockShared(self.1.get());
+            let res = f(&*self.0.get());
+            synchapi::ReleaseSRWLockShared(self.1.get());
+            res
+        }
+    }
+    fn write<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        unsafe {
+            synchapi::AcquireSRWLockExclusive(self.1.get());
+            let res = f(&mut *self.0.get());
+            synchapi::ReleaseSRWLockExclusive(self.1.get());
+            res
+        }
+    }
+    fn name() -> &'static str {
+        "winapi_srwlock"
     }
 }
 
@@ -304,14 +355,16 @@ fn run_all(
         seconds_per_test,
         test_iterations,
     );
-    run_benchmark_iterations::<std::sync::RwLock<f64>>(
-        num_writer_threads,
-        num_reader_threads,
-        work_per_critical_section,
-        work_between_critical_sections,
-        seconds_per_test,
-        test_iterations,
-    );
+    if cfg!(windows) {
+        run_benchmark_iterations::<std::sync::RwLock<f64>>(
+            num_writer_threads,
+            num_reader_threads,
+            work_per_critical_section,
+            work_between_critical_sections,
+            seconds_per_test,
+            test_iterations,
+        );
+    }
     if cfg!(unix) {
         run_benchmark_iterations::<PthreadRwLock<f64>>(
             num_writer_threads,

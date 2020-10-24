@@ -8,7 +8,7 @@
 mod args;
 use crate::args::ArgRange;
 
-#[cfg(unix)]
+#[cfg(any(windows, unix))]
 use std::cell::UnsafeCell;
 use std::{
     sync::{
@@ -54,6 +54,46 @@ impl<T> Mutex<T> for parking_lot::Mutex<T> {
     }
     fn name() -> &'static str {
         "parking_lot::Mutex"
+    }
+}
+
+#[cfg(not(windows))]
+type SrwLock<T> = std::sync::Mutex<T>;
+
+#[cfg(windows)]
+use winapi::um::synchapi;
+#[cfg(windows)]
+struct SrwLock<T>(UnsafeCell<T>, UnsafeCell<synchapi::SRWLOCK>);
+#[cfg(windows)]
+unsafe impl<T> Sync for SrwLock<T> {}
+#[cfg(windows)]
+unsafe impl<T: Send> Send for SrwLock<T> {}
+#[cfg(windows)]
+impl<T> Mutex<T> for SrwLock<T> {
+    fn new(v: T) -> Self {
+        let mut h: synchapi::SRWLOCK = synchapi::SRWLOCK { Ptr: std::ptr::null_mut() };
+
+        unsafe {
+            synchapi::InitializeSRWLock(&mut h);
+        }
+        SrwLock(
+            UnsafeCell::new(v),
+            UnsafeCell::new(h),
+        )
+    }
+    fn lock<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut T) -> R,
+    {
+        unsafe {
+            synchapi::AcquireSRWLockExclusive(self.1.get());
+            let res = f(&mut *self.0.get());
+            synchapi::ReleaseSRWLockExclusive(self.1.get());
+            res
+        }
+    }
+    fn name() -> &'static str {
+        "winapi_srwlock"
     }
 }
 
@@ -220,6 +260,15 @@ fn run_all(
         seconds_per_test,
         test_iterations,
     );
+    if cfg!(windows) {
+        run_benchmark_iterations::<SrwLock<f64>>(
+            num_threads,
+            work_per_critical_section,
+            work_between_critical_sections,
+            seconds_per_test,
+            test_iterations,
+        );
+    }
     if cfg!(unix) {
         run_benchmark_iterations::<PthreadMutex<f64>>(
             num_threads,
