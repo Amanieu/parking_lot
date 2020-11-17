@@ -99,6 +99,8 @@ pub struct GuardSend(());
 /// Marker type which indicates that the Guard type for a lock is not `Send`.
 pub struct GuardNoSend(*mut ());
 
+unsafe impl Sync for GuardNoSend {}
+
 mod mutex;
 pub use crate::mutex::*;
 
