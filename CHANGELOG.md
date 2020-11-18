@@ -1,3 +1,8 @@
+## parking_lot 0.11.1, lock_api 0.4.2 (2020-11-18)
+
+- Fix bounds on Send and Sync impls for lock guards. (#262)
+- Fix incorrect memory ordering in `RwLock`. (#260)
+
 ## lock_api 0.4.1 (2020-07-06)
 
 - Add `data_ptr` method to lock types to allow unsafely accessing the inner data
