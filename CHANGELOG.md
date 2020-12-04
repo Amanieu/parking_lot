@@ -1,3 +1,9 @@
+## parking_lot_core 0.8.1 (2020-12-04)
+
+- Removed deprecated CloudABI support. (#263)
+- Fixed build on wasm32-unknown-unknown. (#265)
+- Relaxed dependency on `smallvec`. (#266)
+
 ## parking_lot 0.11.1, lock_api 0.4.2 (2020-11-18)
 
 - Fix bounds on Send and Sync impls for lock guards. (#262)
