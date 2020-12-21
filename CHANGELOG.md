@@ -1,3 +1,7 @@
+## parking_lot_core 0.8.2 (2020-12-21)
+
+- Fixed assertion failure on OpenBSD. (#270)
+
 ## parking_lot_core 0.8.1 (2020-12-04)
 
 - Removed deprecated CloudABI support. (#263)
