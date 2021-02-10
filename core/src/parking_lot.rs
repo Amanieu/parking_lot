@@ -607,6 +607,14 @@ fn lock_bucket_pair(key1: usize, key2: usize) -> (LockedBucket<'static>, Option<
     }
 }
 
+// reimplementation of Cell::from_mut because it was stabilized in 1.37 and this crate supports
+// 1.36
+fn cell_from_mut<T>(t: &mut T) -> &Cell<T> {
+    // SAFETY: copy-pasted from std 1.37
+    // `&mut` ensures unique access.
+    unsafe { &*(t as *mut T as *const Cell<T>) }
+}
+
 /// Result of a park operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum ParkResult {
@@ -794,7 +802,7 @@ pub unsafe fn park(
 
         // We timed out, so we now need to remove our thread from the queue
         let mut current = queue.head;
-        let mut link = Cell::from_mut(&mut queue.head);
+        let mut link = cell_from_mut(&mut queue.head);
         let mut previous = ptr::null();
         let mut was_last_thread = true;
         while !current.is_null() {
@@ -867,7 +875,7 @@ pub unsafe fn unpark_one(
 
     // Find a thread with a matching key and remove it from the queue
     let mut current = bucket.queue().head;
-    let mut link = Cell::from_mut(&mut bucket.queue().head);
+    let mut link = cell_from_mut(&mut bucket.queue().head);
     let mut previous = ptr::null();
     let mut result = UnparkResult::default();
     while !current.is_null() {
@@ -940,7 +948,7 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
 
     // Remove all threads with the given key in the bucket
     let mut current = queue_mut.head;
-    let mut link = Cell::from_mut(&mut queue_mut.head);
+    let mut link = cell_from_mut(&mut queue_mut.head);
     let mut previous = ptr::null();
     let mut threads = SmallVec::<[_; 8]>::new();
     while !current.is_null() {
@@ -1030,7 +1038,7 @@ pub unsafe fn unpark_requeue(
 
     // Remove all threads with the given key in the source bucket
     let mut current = bucket_from_queue.head;
-    let mut link = Cell::from_mut(&mut bucket_from_queue.head);
+    let mut link = cell_from_mut(&mut bucket_from_queue.head);
     let mut previous = ptr::null();
     let mut requeue_threads: *const ThreadData = ptr::null();
     let mut requeue_threads_tail: *const ThreadData = ptr::null();
@@ -1154,7 +1162,7 @@ pub unsafe fn unpark_filter(
 
     // Go through the queue looking for threads with a matching key
     let mut current = queue.head;
-    let mut link = Cell::from_mut(&mut queue.head);
+    let mut link = cell_from_mut(&mut queue.head);
     let mut previous = ptr::null();
     let mut threads = SmallVec::<[_; 8]>::new();
     let mut result = UnparkResult::default();
