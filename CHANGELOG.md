@@ -1,3 +1,7 @@
+## parking_lot_core 0.8.3 (2021-02-12)
+
+- Updated smallvec to 1.6. (#276)
+
 ## parking_lot_core 0.8.2 (2020-12-21)
 
 - Fixed assertion failure on OpenBSD. (#270)
