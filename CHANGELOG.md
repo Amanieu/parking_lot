@@ -1,3 +1,7 @@
+## lock_api 0.4.3 (2021-04-03)
+
+- Added `[Raw]ReentrantMutex::is_owned`. (#280)
+
 ## parking_lot_core 0.8.3 (2021-02-12)
 
 - Updated smallvec to 1.6. (#276)
