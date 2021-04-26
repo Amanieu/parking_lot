@@ -88,7 +88,7 @@
 #![no_std]
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
-#![cfg_attr(feature = "nightly", feature(const_fn))]
+#![cfg_attr(feature = "nightly", feature(const_fn, const_fn_trait_bound))]
 
 #[macro_use]
 extern crate scopeguard;
