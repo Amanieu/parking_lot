@@ -1,3 +1,7 @@
+## lock_api 0.4.4 (2021-05-01)
+
+- Update for latest nightly. (#281)
+
 ## lock_api 0.4.3 (2021-04-03)
 
 - Added `[Raw]ReentrantMutex::is_owned`. (#280)
