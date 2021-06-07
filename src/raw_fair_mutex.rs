@@ -9,6 +9,7 @@ use crate::raw_mutex::RawMutex;
 use lock_api::RawMutexFair;
 
 /// Raw fair mutex type backed by the parking lot.
+#[cfg_attr(feature = "bytemuck", derive(bytemuck::Zeroable))]
 pub struct RawFairMutex(RawMutex);
 
 unsafe impl lock_api::RawMutex for RawFairMutex {

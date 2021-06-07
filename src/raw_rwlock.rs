@@ -57,6 +57,9 @@ pub struct RawRwLock {
     state: AtomicUsize,
 }
 
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Zeroable for RawRwLock {}
+
 unsafe impl lock_api::RawRwLock for RawRwLock {
     const INIT: RawRwLock = RawRwLock {
         state: AtomicUsize::new(0),

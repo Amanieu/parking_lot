@@ -11,6 +11,9 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
 
+#[cfg(feature = "bytemuck")]
+use bytemuck::Zeroable;
+
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
@@ -312,6 +315,9 @@ pub struct RwLock<R, T: ?Sized> {
     raw: R,
     data: UnsafeCell<T>,
 }
+
+#[cfg(feature = "bytemuck")]
+unsafe impl<R: RawRwLock + Zeroable, T: Zeroable> Zeroable for RwLock<R, T> {}
 
 // Copied and modified from serde
 #[cfg(feature = "serde")]

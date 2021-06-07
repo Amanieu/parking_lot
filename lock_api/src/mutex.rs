@@ -11,6 +11,9 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
 
+#[cfg(feature = "bytemuck")]
+use bytemuck::Zeroable;
+
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
 
@@ -137,6 +140,8 @@ pub struct Mutex<R, T: ?Sized> {
     data: UnsafeCell<T>,
 }
 
+#[cfg(feature = "bytemuck")]
+unsafe impl<R: RawMutex + Zeroable, T: Zeroable> Zeroable for Mutex<R, T> {}
 unsafe impl<R: RawMutex + Send, T: ?Sized + Send> Send for Mutex<R, T> {}
 unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<R, T> {}
 
