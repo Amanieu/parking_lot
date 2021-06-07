@@ -13,6 +13,7 @@ edition = "2018"
 [dependencies]
 parking_lot_core = { path = "core", version = "0.8.0" }
 lock_api = { path = "lock_api", version = "0.4.0" }
+bytemuck = { version = "1.5.1", optional = true, features = ["derive"] }
 instant = "0.1.4"
 
 [dev-dependencies]
@@ -23,6 +24,7 @@ bincode = "1.3.0"
 
 [features]
 default = []
+bytemuck_traits = ["bytemuck", "lock_api/bytemuck"]
 owning_ref = ["lock_api/owning_ref"]
 nightly = ["parking_lot_core/nightly", "lock_api/nightly"]
 deadlock_detection = ["parking_lot_core/deadlock_detection"]

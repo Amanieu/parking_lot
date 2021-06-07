@@ -55,6 +55,9 @@ pub struct RawMutex {
     state: AtomicU8,
 }
 
+#[cfg(feature = "bytemuck")]
+unsafe impl bytemuck::Zeroable for RawMutex {}
+
 unsafe impl lock_api::RawMutex for RawMutex {
     const INIT: RawMutex = RawMutex {
         state: AtomicU8::new(0),
