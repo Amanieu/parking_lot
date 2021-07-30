@@ -789,6 +789,7 @@ pub struct ArcReentrantMutexGuard<R: RawMutex, G: GetThreadId, T: ?Sized> {
     marker: PhantomData<GuardNoSend>,
 }
 
+#[cfg(feature = "arc_lock")]
 impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
     /// Returns a reference to the `ReentrantMutex` this object is guarding, contained in its `Arc`.
     pub fn remutex(s: &Self) -> &Arc<ReentrantMutex<R, G, T>> {
@@ -813,6 +814,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
     }
 }
 
+#[cfg(feature = "arc_lock")]
 impl<R: RawMutexFair, G: GetThreadId, T: ?Sized>
     ArcReentrantMutexGuard<R, G, T>
 {
@@ -856,6 +858,7 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized>
     }
 }
 
+#[cfg(feature = "arc_lock")]
 impl<R: RawMutex, G: GetThreadId, T: ?Sized> Deref
     for ArcReentrantMutexGuard<R, G, T>
 {
@@ -866,8 +869,9 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> Deref
     }
 }
 
+#[cfg(feature = "arc_lock")]
 impl<R: RawMutex, G: GetThreadId, T: ?Sized> Drop
-    for ReentrantMutexGuard<R, G, T>
+    for ArcReentrantMutexGuard<R, G, T>
 {
     #[inline]
     fn drop(&mut self) {
