@@ -783,9 +783,11 @@ unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAdd
 {
 }
 
-/// An RAII mutex guard returned by the `Arc` locking operations on `ReentrantMutex`. This is similar to the 
-/// `ReentrantMutexGuard` struct, except instead of using a reference to unlock the `Mutex` it uses an 
-/// `Arc<ReentrantMutex>`. This has several advantages, most notably that it has an `'static` lifetime.
+/// An RAII mutex guard returned by the `Arc` locking operations on `ReentrantMutex`. 
+/// 
+/// This is similar to the `ReentrantMutexGuard` struct, except instead of using a reference to unlock the 
+/// `Mutex` it uses an `Arc<ReentrantMutex>`. This has several advantages, most notably that it has an `'static`
+/// lifetime.
 #[cfg(feature = "arc_lock")]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct ArcReentrantMutexGuard<R: RawMutex, G: GetThreadId, T: ?Sized> {
@@ -833,8 +835,8 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized>
         }
 
         // SAFETY: ensure that the Arc's refcount is decremented
-        let s = ManuallyDrop::new(s);
-        unsafe { ptr::drop_in_place(&s.rwlock) };
+        let mut s = ManuallyDrop::new(s);
+        unsafe { ptr::drop_in_place(&mut s.remutex) };
     }
 
     /// Temporarily unlocks the mutex to execute the given function.

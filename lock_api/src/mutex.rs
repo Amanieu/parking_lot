@@ -662,9 +662,10 @@ impl<'a, R: RawMutex + 'a, T: fmt::Display + ?Sized + 'a> fmt::Display for Mutex
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'a, R, T> {}
 
-/// An RAII mutex guard returned by the `Arc` locking operations on `Mutex`. This is similar to the `MutexGuard`
-/// struct, except instead of using a reference to unlock the `Mutex` it uses an `Arc<Mutex>`. This has several
-/// advantages, most notably that it has an `'static` lifetime.
+/// An RAII mutex guard returned by the `Arc` locking operations on `Mutex`.
+/// 
+/// This is similar to the `MutexGuard` struct, except instead of using a reference to unlock the `Mutex` it 
+/// uses an `Arc<Mutex>`. This has several advantages, most notably that it has an `'static` lifetime.
 #[cfg(feature = "arc_lock")]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct ArcMutexGuard<R: RawMutex, T: ?Sized> {
@@ -711,8 +712,8 @@ impl<R: RawMutexFair, T: ?Sized> ArcMutexGuard<R, T> {
         }
 
         // SAFETY: make sure the Arc gets it reference decremented
-        let s = ManuallyDrop::new(s);
-        unsafe { ptr::drop_in_place(&s.rwlock) }; 
+        let mut s = ManuallyDrop::new(s);
+        unsafe { ptr::drop_in_place(&mut s.mutex) }; 
     }
 
     /// Temporarily unlocks the mutex to execute the given function.

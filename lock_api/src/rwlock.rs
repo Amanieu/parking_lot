@@ -854,7 +854,7 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
     #[cfg(feature = "arc_lock")]
     #[inline]
     pub fn read_arc_recursive(self: &Arc<Self>) -> ArcRwLockReadGuard<R, T> {
-        this.raw.lock_shared_recursive();
+        self.raw.lock_shared_recursive();
         // SAFETY: locking guarantee is upheld
         unsafe { self.read_guard_arc() }
     }
@@ -1085,7 +1085,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<ArcRwLockUpgradableReadGuard<R, T>> {
         if self.raw.try_lock_upgradable_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.upgradable_guard_arc(this) })
+            Some(unsafe { self.upgradable_guard_arc() })
         } else {
             None
         }
@@ -1098,7 +1098,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     #[cfg(feature = "arc_lock")]
     #[inline]
     pub fn try_upgradable_read_arc_until(
-        this: &Arc<Self>,
+        self: &Arc<Self>,
         timeout: R::Instant,
     ) -> Option<ArcRwLockUpgradableReadGuard<R, T>> {
         if self.raw.try_lock_upgradable_until(timeout) {
@@ -1318,9 +1318,10 @@ impl<'a, R: RawRwLock + 'a, T: fmt::Display + ?Sized + 'a> fmt::Display
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress for RwLockReadGuard<'a, R, T> {}
 
-/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`. This is similar to the
-/// `RwLockReadGuard` struct, except instead of using a reference to unlock the `RwLock` it uses an 
-/// `Arc<RwLock>`. This has several advantages, most notably that it has an `'static` lifetime.
+/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`. 
+/// 
+/// This is similar to the `RwLockReadGuard` struct, except instead of using a reference to unlock the `RwLock` 
+/// it uses an `Arc<RwLock>`. This has several advantages, most notably that it has an `'static` lifetime.
 #[cfg(feature = "arc_lock")]
 #[must_use = "if unused the RwLock will immediately unlock"]
 pub struct ArcRwLockReadGuard<R: RawRwLock, T: ?Sized> {
@@ -1365,8 +1366,8 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockReadGuard<R, T> {
         }
 
         // SAFETY: ensure the Arc has its refcount decremented
-        let s = ManuallyDrop::new(s);
-        unsafe { ptr::drop_in_place(&s.rwlock) };
+        let mut s = ManuallyDrop::new(s);
+        unsafe { ptr::drop_in_place(&mut s.rwlock) };
     }
 
     /// Temporarily unlocks the `RwLock` to execute the given function.
@@ -1654,9 +1655,9 @@ impl<'a, R: RawRwLock + 'a, T: fmt::Display + ?Sized + 'a> fmt::Display
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress for RwLockWriteGuard<'a, R, T> {}
 
-/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`. This is similar to the
-/// `RwLockWriteGuard` struct, except instead of using a reference to unlock the `RwLock` it uses an 
-/// `Arc<RwLock>`. This has several advantages, most notably that it has an `'static` lifetime.
+/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`. 
+/// This is similar to the `RwLockWriteGuard` struct, except instead of using a reference to unlock the `RwLock` 
+/// it uses an `Arc<RwLock>`. This has several advantages, most notably that it has an `'static` lifetime.
 #[cfg(feature = "arc_lock")]
 #[must_use = "if unused the RwLock will immediately unlock"]
 pub struct ArcRwLockWriteGuard<R: RawRwLock, T: ?Sized> {
@@ -1747,8 +1748,8 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockWriteGuard<R, T> {
         }
 
         // SAFETY: prevent the Arc from leaking memory
-        let s = ManuallyDrop::new(s);
-        unsafe { ptr::drop_in_place(&s.rwlock) };
+        let mut s = ManuallyDrop::new(s);
+        unsafe { ptr::drop_in_place(&mut s.rwlock) };
     }
 
     /// Temporarily unlocks the `RwLock` to execute the given function.
@@ -2056,9 +2057,10 @@ unsafe impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> StableAddress
 {
 }
 
-/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`. This is similar to the
-/// `RwLockUpgradableReadGuard` struct, except instead of using a reference to unlock the `RwLock` it uses an 
-/// `Arc<RwLock>`. This has several advantages, most notably that it has an `'static` lifetime.
+/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`.
+/// This is similar to the `RwLockUpgradableReadGuard` struct, except instead of using a reference to unlock the
+/// `RwLock` it uses an `Arc<RwLock>`. This has several advantages, most notably that it has an `'static` 
+/// lifetime.
 #[cfg(feature = "arc_lock")]
 #[must_use = "if unused the RwLock will immediately unlock"]
 pub struct ArcRwLockUpgradableReadGuard<R: RawRwLockUpgrade, T: ?Sized> {
@@ -2141,8 +2143,8 @@ impl<R: RawRwLockUpgradeFair, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
         }
 
         // SAFETY: make sure we decrement the refcount properly
-        let s = ManuallyDrop::new(s);
-        unsafe { ptr::drop_in_place(&s.rwlock) }; 
+        let mut s = ManuallyDrop::new(s);
+        unsafe { ptr::drop_in_place(&mut s.rwlock) }; 
     }
 
     /// Temporarily unlocks the `RwLock` to execute the given function.
