@@ -13,6 +13,10 @@ use core::ops::{Deref, DerefMut};
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
+#[cfg(feature = "arc_lock")]
+use core::mem::ManuallyDrop;
+#[cfg(feature = "arc_lock")]
+use core::ptr;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -295,9 +299,9 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// The lock needs to be held for the behavior of this function to be defined.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    unsafe fn guard_arc(this: &Arc<Self>) -> ArcMutexGuard<R, T> {
+    unsafe fn guard_arc(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
         ArcMutexGuard {
-            mutex: this.clone(),
+            mutex: self.clone(),
             marker: PhantomData,
         }
     }
@@ -308,10 +312,10 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn lock_arc(this: &Arc<Self>) -> ArcMutexGuard<R, T> {
-        this.raw.lock();
+    pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
+        self.raw.lock();
         // SAFETY: the locking guarantee is upheld
-        unsafe { Self::guard_arc(this) }
+        unsafe { self.guard_arc() }
     }
 
     /// Attempts to acquire a lock through an `Arc`.
@@ -320,10 +324,10 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_lock_arc(this: &Arc<Self>) -> Option<ArcMutexGuard<R, T>> {
-        if this.raw.try_lock() {
+    pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcMutexGuard<R, T>> {
+        if self.raw.try_lock() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { Self::guard_arc(this) })
+            Some(unsafe { self.guard_arc() })
         } else {
             None
         }
@@ -385,10 +389,10 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     /// `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_lock_for_arc(this: &Arc<Self>, timeout: R::Duration) -> Option<ArcMutexGuard<R, T>> {
-        if this.raw.try_lock_for(timeout) {
+    pub fn try_lock_arc_for(self: &Arc<Self>, timeout: R::Duration) -> Option<ArcMutexGuard<R, T>> {
+        if self.raw.try_lock_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { Self::guard_arc(this) })
+            Some(unsafe { self.guard_arc() })
         } else {
             None
         }
@@ -400,13 +404,13 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     /// an `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_lock_until_arc(
-        this: &Arc<Self>,
+    pub fn try_lock_arc_until(
+        self: &Arc<Self>,
         timeout: R::Instant,
     ) -> Option<ArcMutexGuard<R, T>> {
-        if this.raw.try_lock_until(timeout) {
+        if self.raw.try_lock_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { Self::guard_arc(this) })
+            Some(unsafe { self.guard_arc() })
         } else {
             None
         }
@@ -705,7 +709,10 @@ impl<R: RawMutexFair, T: ?Sized> ArcMutexGuard<R, T> {
         unsafe {
             s.mutex.raw.unlock_fair();
         }
-        mem::forget(s);
+
+        // SAFETY: make sure the Arc gets it reference decremented
+        let s = ManuallyDrop::new(s);
+        unsafe { ptr::drop_in_place(&s.rwlock) }; 
     }
 
     /// Temporarily unlocks the mutex to execute the given function.

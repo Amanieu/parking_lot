@@ -21,6 +21,10 @@ use core::{
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
+#[cfg(feature = "arc_lock")]
+use core::mem::ManuallyDrop;
+#[cfg(feature = "arc_lock")]
+use core::ptr;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -401,9 +405,9 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// The lock must be held before calling this method.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    unsafe fn guard_arc(this: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
+    unsafe fn guard_arc(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
         ArcReentrantMutexGuard {
-            remutex: this.clone(),
+            remutex: self.clone(),
             marker: PhantomData,
         }
     }
@@ -414,10 +418,10 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn lock_arc(this: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
-        this.raw.lock();
+    pub fn lock_arc(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
+        self.raw.lock();
         // SAFETY: locking guarantee is upheld
-        unsafe { Self::guard_arc(this) }
+        unsafe { self.guard_arc() }
     }
 
     /// Attempts to acquire a reentrant mutex through an `Arc`.
@@ -426,10 +430,10 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// of an `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_lock_arc(this: &Arc<Self>) -> Option<ArcReentrantMutexGuard<R, G, T>> {
-        if this.raw.try_lock() {
+    pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcReentrantMutexGuard<R, G, T>> {
+        if self.raw.try_lock() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { Self::guard_arc(this) })
+            Some(unsafe { self.guard_arc() })
         } else {
             None
         }
@@ -491,10 +495,10 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// inside of an `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_lock_for_arc(this: &Arc<Self>, timeout: R::Duration) -> Option<ArcReentrantMutexGuard<R, G, T>> {
-        if this.raw.try_lock_for(timeout) {
+    pub fn try_lock_arc_for(self: &Arc<Self>, timeout: R::Duration) -> Option<ArcReentrantMutexGuard<R, G, T>> {
+        if self.raw.try_lock_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { Self::guard_arc(this) })
+            Some(unsafe { self.guard_arc() })
         } else {
             None
         }
@@ -506,10 +510,10 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// inside of an `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_lock_until_arc(this: &Arc<Self>, timeout: R::Instant) -> Option<ArcReentrantMutexGuard<R, G, T>> {
-        if this.raw.try_lock_until(timeout) {
+    pub fn try_lock_arc_until(self: &Arc<Self>, timeout: R::Instant) -> Option<ArcReentrantMutexGuard<R, G, T>> {
+        if self.raw.try_lock_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { Self::guard_arc(this) })
+            Some(unsafe { self.guard_arc() })
         } else {
             None
         }
@@ -827,7 +831,10 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized>
         unsafe {
             s.remutex.raw.unlock_fair();
         }
-        mem::forget(s);
+
+        // SAFETY: ensure that the Arc's refcount is decremented
+        let s = ManuallyDrop::new(s);
+        unsafe { ptr::drop_in_place(&s.rwlock) };
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
