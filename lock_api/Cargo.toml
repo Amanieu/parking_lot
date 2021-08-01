@@ -20,3 +20,4 @@ serde = { version = "1.0.114", default-features = false, optional = true }
 
 [features]
 nightly = []
+arc_lock = []

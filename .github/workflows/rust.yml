@@ -17,7 +17,7 @@ jobs:
       matrix:
         os: [ubuntu, macos, windows]
         channel: [1.36.0, stable, beta, nightly]
-        feature: [serde, deadlock_detection]
+        feature: [arc_lock, serde, deadlock_detection]
         exclude: 
           - feature: deadlock_detection
             channel: '1.36.0'
@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: rustup default nightly
-      - run: cargo doc --workspace --features serde,deadlock_detection --no-deps -p parking_lot -p parking_lot_core -p lock_api
+      - run: cargo doc --workspace --features arc_lock,serde,deadlock_detection --no-deps -p parking_lot -p parking_lot_core -p lock_api
   benchmark:
     runs-on: ubuntu-latest
     steps:
