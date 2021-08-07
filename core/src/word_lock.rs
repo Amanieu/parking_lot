@@ -154,7 +154,7 @@ impl WordLock {
                 if let Err(x) = self.state.compare_exchange_weak(
                     state,
                     state.with_queue_head(thread_data),
-                    Ordering::Release,
+                    Ordering::AcqRel,
                     Ordering::Relaxed,
                 ) {
                     return x;
@@ -189,7 +189,7 @@ impl WordLock {
             match self.state.compare_exchange_weak(
                 state,
                 state | QUEUE_LOCKED_BIT,
-                Ordering::Acquire,
+                Ordering::AcqRel,
                 Ordering::Relaxed,
             ) {
                 Ok(_) => break,
@@ -230,7 +230,7 @@ impl WordLock {
                 match self.state.compare_exchange_weak(
                     state,
                     state & !QUEUE_LOCKED_BIT,
-                    Ordering::Release,
+                    Ordering::AcqRel,
                     Ordering::Relaxed,
                 ) {
                     Ok(_) => return,
@@ -249,7 +249,7 @@ impl WordLock {
                     match self.state.compare_exchange_weak(
                         state,
                         state & LOCKED_BIT,
-                        Ordering::Release,
+                        Ordering::AcqRel,
                         Ordering::Relaxed,
                     ) {
                         Ok(_) => break,
