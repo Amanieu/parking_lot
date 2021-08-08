@@ -189,7 +189,7 @@ impl WordLock {
             match self.state.compare_exchange_weak(
                 state,
                 state | QUEUE_LOCKED_BIT,
-                Ordering::AcqRel,
+                Ordering::Acquire,
                 Ordering::Relaxed,
             ) {
                 Ok(_) => break,
@@ -230,7 +230,7 @@ impl WordLock {
                 match self.state.compare_exchange_weak(
                     state,
                     state & !QUEUE_LOCKED_BIT,
-                    Ordering::AcqRel,
+                    Ordering::Release,
                     Ordering::Relaxed,
                 ) {
                     Ok(_) => return,
@@ -238,7 +238,7 @@ impl WordLock {
                 }
 
                 // Need an acquire fence before reading the new queue
-                fence(Ordering::Acquire);
+                fence_acquire(&self.state);
                 continue;
             }
 
@@ -249,7 +249,7 @@ impl WordLock {
                     match self.state.compare_exchange_weak(
                         state,
                         state & LOCKED_BIT,
-                        Ordering::AcqRel,
+                        Ordering::Release,
                         Ordering::Relaxed,
                     ) {
                         Ok(_) => break,
@@ -263,7 +263,7 @@ impl WordLock {
                         continue;
                     } else {
                         // Need an acquire fence before reading the new queue
-                        fence(Ordering::Acquire);
+                        fence_acquire(&self.state);
                         continue 'outer;
                     }
                 }
@@ -283,6 +283,17 @@ impl WordLock {
             }
             break;
         }
+    }
+}
+
+// Thread-Sanitizer only has partial fence support, so when running under it, we
+// try and avoid false positives by using a discarded acquire load instead.
+#[inline]
+fn fence_acquire(a: &AtomicUsize) {
+    if cfg!(tsan_enabled) {
+        let _ = a.load(Ordering::Acquire);
+    } else {
+        fence(Ordering::Acquire);
     }
 }
 
