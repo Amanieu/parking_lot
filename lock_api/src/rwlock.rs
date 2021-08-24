@@ -590,7 +590,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     }
 
     /// Locks this `RwLock` with read access, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `read` method; however, it requires the `RwLock` to be inside of an `Arc`
     /// and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
@@ -602,8 +602,8 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to lock this `RwLock` with read access, through an `Arc`.
-    /// 
-    /// This method is similar to the `try_read` method; however, it requires the `RwLock` to be inside of an 
+    ///
+    /// This method is similar to the `try_read` method; however, it requires the `RwLock` to be inside of an
     /// `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
@@ -617,7 +617,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     }
 
     /// Locks this `RwLock` with write access, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `write` method; however, it requires the `RwLock` to be inside of an `Arc`
     /// and the resulting write guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
@@ -629,8 +629,8 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to lock this `RwLock` with writ access, through an `Arc`.
-    /// 
-    /// This method is similar to the `try_write` method; however, it requires the `RwLock` to be inside of an 
+    ///
+    /// This method is similar to the `try_write` method; however, it requires the `RwLock` to be inside of an
     /// `Arc` and the resulting write guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
@@ -744,12 +744,15 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to acquire this `RwLock` with read access until a timeout is reached, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `try_read_for` method; however, it requires the `RwLock` to be inside of an
     /// `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_read_arc_for(self: &Arc<Self>, timeout: R::Duration) -> Option<ArcRwLockReadGuard<R, T>> {
+    pub fn try_read_arc_for(
+        self: &Arc<Self>,
+        timeout: R::Duration,
+    ) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared_for(timeout) {
             // SAFETY: locking guarantee is upheld
             Some(unsafe { self.read_guard_arc() })
@@ -759,12 +762,15 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to acquire this `RwLock` with read access until a timeout is reached, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `try_read_until` method; however, it requires the `RwLock` to be inside of
     /// an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_read_arc_until(self: &Arc<Self>, timeout: R::Instant) -> Option<ArcRwLockReadGuard<R, T>> {
+    pub fn try_read_arc_until(
+        self: &Arc<Self>,
+        timeout: R::Instant,
+    ) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared_until(timeout) {
             // SAFETY: locking guarantee is upheld
             Some(unsafe { self.read_guard_arc() })
@@ -774,12 +780,15 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to acquire this `RwLock` with write access until a timeout is reached, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `try_write_for` method; however, it requires the `RwLock` to be inside of
     /// an `Arc` and the resulting write guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_write_arc_for(self: &Arc<Self>, timeout: R::Duration) -> Option<ArcRwLockWriteGuard<R, T>> {
+    pub fn try_write_arc_for(
+        self: &Arc<Self>,
+        timeout: R::Duration,
+    ) -> Option<ArcRwLockWriteGuard<R, T>> {
         if self.raw.try_lock_exclusive_for(timeout) {
             // SAFETY: locking guarantee is upheld
             Some(unsafe { self.write_guard_arc() })
@@ -789,12 +798,15 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to acquire this `RwLock` with read access until a timeout is reached, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `try_write_until` method; however, it requires the `RwLock` to be inside of
     /// an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_write_arc_until(self: &Arc<Self>, timeout: R::Instant) -> Option<ArcRwLockWriteGuard<R, T>> {
+    pub fn try_write_arc_until(
+        self: &Arc<Self>,
+        timeout: R::Instant,
+    ) -> Option<ArcRwLockWriteGuard<R, T>> {
         if self.raw.try_lock_exclusive_until(timeout) {
             // SAFETY: locking guarantee is upheld
             Some(unsafe { self.write_guard_arc() })
@@ -848,7 +860,7 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
     }
 
     /// Locks this `RwLock` with shared read access, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `read_recursive` method; however, it requires the `RwLock` to be inside of
     /// an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
@@ -860,7 +872,7 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to lock this `RwLock` with shared read access, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `try_read_recursive` method; however, it requires the `RwLock` to be inside
     /// of an `Arc` and the resulting read guard has no lifetime requirements.   
     #[cfg(feature = "arc_lock")]
@@ -924,7 +936,10 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
     /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_read_arc_recursive_for(self: &Arc<Self>, timeout: R::Duration) -> Option<ArcRwLockReadGuard<R, T>> {
+    pub fn try_read_arc_recursive_for(
+        self: &Arc<Self>,
+        timeout: R::Duration,
+    ) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared_recursive_for(timeout) {
             // SAFETY: locking guarantee is upheld
             Some(unsafe { self.read_guard_arc() })
@@ -939,7 +954,10 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
     /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub fn try_read_arc_recursive_until(self: &Arc<Self>, timeout: R::Instant) -> Option<ArcRwLockReadGuard<R, T>> {
+    pub fn try_read_arc_recursive_until(
+        self: &Arc<Self>,
+        timeout: R::Instant,
+    ) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared_recursive_until(timeout) {
             // SAFETY: locking guarantee is upheld
             Some(unsafe { self.read_guard_arc() })
@@ -995,19 +1013,19 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     }
 
     /// # Safety
-    /// 
+    ///
     /// The lock must be held when calling this method.
     #[cfg(feature = "arc_lock")]
     #[inline]
     unsafe fn upgradable_guard_arc(self: &Arc<Self>) -> ArcRwLockUpgradableReadGuard<R, T> {
         ArcRwLockUpgradableReadGuard {
             rwlock: self.clone(),
-            marker: PhantomData 
+            marker: PhantomData,
         }
     }
 
     /// Locks this `RwLock` with upgradable read access, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `upgradable_read` method; however, it requires the `RwLock` to be
     /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
@@ -1019,7 +1037,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to lock this `RwLock` with upgradable read access, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `try_upgradable_read` method; however, it requires the `RwLock` to be
     /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
@@ -1074,7 +1092,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to lock this `RwLock` with upgradable access until a timeout is reached, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `try_upgradable_read_for` method; however, it requires the `RwLock` to be
     /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
@@ -1092,7 +1110,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to lock this `RwLock` with upgradable access until a timeout is reached, through an `Arc`.
-    /// 
+    ///
     /// This method is similar to the `try_upgradable_read_until` method; however, it requires the `RwLock` to be
     /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
@@ -1167,9 +1185,9 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     /// used as `RwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
+    pub fn map<U, F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
     where
-        F: FnOnce(&T) -> &U,
+        F: FnOnce(&'a T) -> U,
     {
         let raw = &s.rwlock.raw;
         let data = f(unsafe { &*s.rwlock.data.get() });
@@ -1191,9 +1209,9 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     /// used as `RwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
+    pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
     where
-        F: FnOnce(&T) -> Option<&U>,
+        F: FnOnce(&'a T) -> Option<U>,
     {
         let raw = &s.rwlock.raw;
         let data = match f(unsafe { &*s.rwlock.data.get() }) {
@@ -1318,9 +1336,9 @@ impl<'a, R: RawRwLock + 'a, T: fmt::Display + ?Sized + 'a> fmt::Display
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress for RwLockReadGuard<'a, R, T> {}
 
-/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`. 
-/// 
-/// This is similar to the `RwLockReadGuard` struct, except instead of using a reference to unlock the `RwLock` 
+/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`.
+///
+/// This is similar to the `RwLockReadGuard` struct, except instead of using a reference to unlock the `RwLock`
 /// it uses an `Arc<RwLock>`. This has several advantages, most notably that it has an `'static` lifetime.
 #[cfg(feature = "arc_lock")]
 #[must_use = "if unused the RwLock will immediately unlock"]
@@ -1426,9 +1444,7 @@ impl<R: RawRwLock, T: fmt::Debug + ?Sized> fmt::Debug for ArcRwLockReadGuard<R, 
 }
 
 #[cfg(feature = "arc_lock")]
-impl<R: RawRwLock, T: fmt::Display + ?Sized> fmt::Display
-    for ArcRwLockReadGuard<R, T>
-{
+impl<R: RawRwLock, T: fmt::Display + ?Sized> fmt::Display for ArcRwLockReadGuard<R, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
@@ -1457,9 +1473,9 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     /// used as `RwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
+    pub fn map<U, F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
     where
-        F: FnOnce(&mut T) -> &mut U,
+        F: FnOnce(&'a mut T) -> U,
     {
         let raw = &s.rwlock.raw;
         let data = f(unsafe { &mut *s.rwlock.data.get() });
@@ -1481,9 +1497,9 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     /// used as `RwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
+    pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
     where
-        F: FnOnce(&mut T) -> Option<&mut U>,
+        F: FnOnce(&'a mut T) -> Option<U>,
     {
         let raw = &s.rwlock.raw;
         let data = match f(unsafe { &mut *s.rwlock.data.get() }) {
@@ -1655,8 +1671,8 @@ impl<'a, R: RawRwLock + 'a, T: fmt::Display + ?Sized + 'a> fmt::Display
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress for RwLockWriteGuard<'a, R, T> {}
 
-/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`. 
-/// This is similar to the `RwLockWriteGuard` struct, except instead of using a reference to unlock the `RwLock` 
+/// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`.
+/// This is similar to the `RwLockWriteGuard` struct, except instead of using a reference to unlock the `RwLock`
 /// it uses an `Arc<RwLock>`. This has several advantages, most notably that it has an `'static` lifetime.
 #[cfg(feature = "arc_lock")]
 #[must_use = "if unused the RwLock will immediately unlock"]
@@ -1770,7 +1786,7 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockWriteGuard<R, T> {
 
     /// Temporarily yields the `RwLock` to a waiting thread if there is one.
     ///
-    /// This method is functionally equivalent to the `bump` method on [`RwLockWriteGuard`]. 
+    /// This method is functionally equivalent to the `bump` method on [`RwLockWriteGuard`].
     #[inline]
     pub fn bump(s: &mut Self) {
         // Safety: An RwLockWriteGuard always holds an exclusive lock.
@@ -1816,9 +1832,7 @@ impl<R: RawRwLock, T: fmt::Debug + ?Sized> fmt::Debug for ArcRwLockWriteGuard<R,
 }
 
 #[cfg(feature = "arc_lock")]
-impl<R: RawRwLock, T: fmt::Display + ?Sized> fmt::Display
-    for ArcRwLockWriteGuard<R, T>
-{
+impl<R: RawRwLock, T: fmt::Display + ?Sized> fmt::Display for ArcRwLockWriteGuard<R, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
@@ -2059,7 +2073,7 @@ unsafe impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> StableAddress
 
 /// An RAII rwlock guard returned by the `Arc` locking operations on `RwLock`.
 /// This is similar to the `RwLockUpgradableReadGuard` struct, except instead of using a reference to unlock the
-/// `RwLock` it uses an `Arc<RwLock>`. This has several advantages, most notably that it has an `'static` 
+/// `RwLock` it uses an `Arc<RwLock>`. This has several advantages, most notably that it has an `'static`
 /// lifetime.
 #[cfg(feature = "arc_lock")]
 #[must_use = "if unused the RwLock will immediately unlock"]
@@ -2069,7 +2083,7 @@ pub struct ArcRwLockUpgradableReadGuard<R: RawRwLockUpgrade, T: ?Sized> {
 }
 
 #[cfg(feature = "arc_lock")]
-impl<R: RawRwLockUpgrade , T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
+impl<R: RawRwLockUpgrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
     /// Returns a reference to the rwlock, contained in its original `Arc`.
     pub fn rwlock(s: &Self) -> &Arc<RwLock<R, T>> {
         &s.rwlock
@@ -2144,7 +2158,7 @@ impl<R: RawRwLockUpgradeFair, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
 
         // SAFETY: make sure we decrement the refcount properly
         let mut s = ManuallyDrop::new(s);
-        unsafe { ptr::drop_in_place(&mut s.rwlock) }; 
+        unsafe { ptr::drop_in_place(&mut s.rwlock) };
     }
 
     /// Temporarily unlocks the `RwLock` to execute the given function.
@@ -2291,7 +2305,6 @@ impl<R: RawRwLockUpgrade, T: fmt::Display + ?Sized> fmt::Display
     }
 }
 
-
 /// An RAII read lock guard returned by `RwLockReadGuard::map`, which can point to a
 /// subfield of the protected data.
 ///
@@ -2302,8 +2315,8 @@ impl<R: RawRwLockUpgrade, T: fmt::Display + ?Sized> fmt::Display
 #[must_use = "if unused the RwLock will immediately unlock"]
 pub struct MappedRwLockReadGuard<'a, R: RawRwLock, T: ?Sized> {
     raw: &'a R,
-    data: *const T,
     marker: PhantomData<&'a T>,
+    data: T,
 }
 
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync for MappedRwLockReadGuard<'a, R, T> {}
@@ -2312,7 +2325,7 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Send for MappedRwLockR
 {
 }
 
-impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
+impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockReadGuard<'a, R, T> {
     /// Make a new `MappedRwLockReadGuard` for a component of the locked data.
     ///
     /// This operation cannot fail as the `MappedRwLockReadGuard` passed
@@ -2322,13 +2335,19 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
     /// used as `MappedRwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
+    pub fn map<U, F>(mut s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
     where
-        F: FnOnce(&T) -> &U,
+        F: FnOnce(T) -> U,
     {
+        use core::ptr;
+
         let raw = s.raw;
-        let data = f(unsafe { &*s.data });
+
+        let data = unsafe { ptr::read(&mut s.data) };
+        let data = f(data);
+
         mem::forget(s);
+
         MappedRwLockReadGuard {
             raw,
             data,
@@ -2346,25 +2365,37 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
     /// used as `MappedRwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
+    pub fn try_map<U, F>(mut s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
     where
-        F: FnOnce(&T) -> Option<&U>,
+        F: FnOnce(T) -> Result<U, T>,
     {
+        use core::ptr;
+
         let raw = s.raw;
-        let data = match f(unsafe { &*s.data }) {
-            Some(data) => data,
-            None => return Err(s),
-        };
+        let data = unsafe { ptr::read(&mut s.data) };
+
+        // This relies on the fact that `Result::map` and `Result::map_err` will never panic (so long
+        // as the closures passed to them do not panic). If these closures are replaced with ones
+        // that may panic, this could lead to the mutex being unlocked twice.
+        let out = f(data)
+            .map(|data| MappedRwLockReadGuard {
+                raw,
+                data,
+                marker: PhantomData,
+            })
+            .map_err(|data| MappedRwLockReadGuard {
+                raw,
+                data,
+                marker: PhantomData,
+            });
+
         mem::forget(s);
-        Ok(MappedRwLockReadGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        })
+
+        out
     }
 }
 
-impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
+impl<'a, R: RawRwLockFair + 'a, T: 'a> MappedRwLockReadGuard<'a, R, T> {
     /// Unlocks the `RwLock` using a fair unlock protocol.
     ///
     /// By default, `RwLock` is unfair and allow the current thread to re-lock
@@ -2391,7 +2422,14 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for MappedRwLockReadGuard<'a, 
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data }
+        &self.data
+    }
+}
+
+impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> DerefMut for MappedRwLockReadGuard<'a, R, T> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.data
     }
 }
 
@@ -2437,8 +2475,8 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress
 #[must_use = "if unused the RwLock will immediately unlock"]
 pub struct MappedRwLockWriteGuard<'a, R: RawRwLock, T: ?Sized> {
     raw: &'a R,
-    data: *mut T,
     marker: PhantomData<&'a mut T>,
+    data: T,
 }
 
 unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync
@@ -2450,7 +2488,7 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Send + 'a> Send for MappedRwLockW
 {
 }
 
-impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
+impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockWriteGuard<'a, R, T> {
     /// Make a new `MappedRwLockWriteGuard` for a component of the locked data.
     ///
     /// This operation cannot fail as the `MappedRwLockWriteGuard` passed
@@ -2460,13 +2498,19 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
     /// used as `MappedRwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
+    pub fn map<U, F>(mut s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
     where
-        F: FnOnce(&mut T) -> &mut U,
+        F: FnOnce(T) -> U,
     {
+        use core::ptr;
+
         let raw = s.raw;
-        let data = f(unsafe { &mut *s.data });
+
+        let data = unsafe { ptr::read(&mut s.data) };
+        let data = f(data);
+
         mem::forget(s);
+
         MappedRwLockWriteGuard {
             raw,
             data,
@@ -2484,25 +2528,37 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
     /// used as `MappedRwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
+    pub fn try_map<U, F>(mut s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
     where
-        F: FnOnce(&mut T) -> Option<&mut U>,
+        F: FnOnce(T) -> Result<U, T>,
     {
+        use core::ptr;
+
         let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data }) {
-            Some(data) => data,
-            None => return Err(s),
-        };
+        let data = unsafe { ptr::read(&mut s.data) };
+
+        // This relies on the fact that `Result::map` and `Result::map_err` will never panic (so long
+        // as the closures passed to them do not panic). If these closures are replaced with ones
+        // that may panic, this could lead to the mutex being unlocked twice.
+        let out = f(data)
+            .map(|data| MappedRwLockWriteGuard {
+                raw,
+                data,
+                marker: PhantomData,
+            })
+            .map_err(|data| MappedRwLockWriteGuard {
+                raw,
+                data,
+                marker: PhantomData,
+            });
+
         mem::forget(s);
-        Ok(MappedRwLockWriteGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        })
+
+        out
     }
 }
 
-impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
+impl<'a, R: RawRwLockFair + 'a, T: 'a> MappedRwLockWriteGuard<'a, R, T> {
     /// Unlocks the `RwLock` using a fair unlock protocol.
     ///
     /// By default, `RwLock` is unfair and allow the current thread to re-lock
@@ -2529,14 +2585,14 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for MappedRwLockWriteGuard<'a,
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data }
+        &self.data
     }
 }
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> DerefMut for MappedRwLockWriteGuard<'a, R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data }
+        &mut self.data
     }
 }
 
