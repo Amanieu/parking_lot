@@ -509,7 +509,8 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     #[inline]
     pub fn map<U, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
     where
-        F: FnOnce(&mut T) -> U,
+        F: FnOnce(&'a mut T) -> U + 'a,
+        U: 'a,
     {
         let raw = &s.mutex.raw;
         let data = unsafe { &mut *s.mutex.data.get() };
@@ -535,7 +536,8 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     #[inline]
     pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
     where
-        F: FnOnce(&mut T) -> Option<U>,
+        F: FnOnce(&'a mut T) -> Option<U> + 'a,
+        U: 'a,
     {
         let raw = &s.mutex.raw;
         let data = unsafe { &mut *s.mutex.data.get() };
@@ -816,7 +818,8 @@ impl<'a, R: RawMutex + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
     #[inline]
     pub fn map<U, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
     where
-        F: FnOnce(T) -> U,
+        F: FnOnce(T) -> U + 'a,
+        U: 'a,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -854,7 +857,8 @@ impl<'a, R: RawMutex + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
     #[inline]
     pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
     where
-        F: FnOnce(T) -> Result<U, T>,
+        F: FnOnce(T) -> Result<U, T> + 'a,
+        U: 'a,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);

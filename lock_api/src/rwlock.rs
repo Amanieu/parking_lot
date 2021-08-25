@@ -1186,7 +1186,8 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     #[inline]
     pub fn map<U, F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
     where
-        F: FnOnce(&T) -> U,
+        F: FnOnce(&'a T) -> U + 'a,
+        U: 'a,
     {
         let raw = &s.rwlock.raw;
         let data = f(unsafe { &*s.rwlock.data.get() });
@@ -1210,7 +1211,8 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     #[inline]
     pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
     where
-        F: FnOnce(&T) -> Option<U>,
+        F: FnOnce(&'a T) -> Option<U> + 'a,
+        U: 'a,
     {
         let raw = &s.rwlock.raw;
         let data = match f(unsafe { &*s.rwlock.data.get() }) {
@@ -1474,7 +1476,8 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     #[inline]
     pub fn map<U, F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
     where
-        F: FnOnce(&mut T) -> U,
+        F: FnOnce(&mut T) -> U + 'a,
+        U: 'a,
     {
         let raw = &s.rwlock.raw;
         let data = f(unsafe { &mut *s.rwlock.data.get() });
@@ -1498,7 +1501,8 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     #[inline]
     pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
     where
-        F: FnOnce(&mut T) -> Option<U>,
+        F: FnOnce(&mut T) -> Option<U> + 'a,
+        U: 'a,
     {
         let raw = &s.rwlock.raw;
         let data = match f(unsafe { &mut *s.rwlock.data.get() }) {
@@ -2336,7 +2340,8 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockReadGuard<'a, R, T> {
     #[inline]
     pub fn map<U, F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
     where
-        F: FnOnce(T) -> U,
+        F: FnOnce(T) -> U + 'a,
+        U: 'a,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -2374,7 +2379,8 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockReadGuard<'a, R, T> {
     #[inline]
     pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
     where
-        F: FnOnce(T) -> Result<U, T>,
+        F: FnOnce(T) -> Result<U, T> + 'a,
+        U: 'a,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -2512,6 +2518,7 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockWriteGuard<'a, R, T> {
     pub fn map<U, F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
     where
         F: FnOnce(T) -> U,
+        U: 'a,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -2550,6 +2557,7 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockWriteGuard<'a, R, T> {
     pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
     where
         F: FnOnce(T) -> Result<U, T>,
+        U: 'a,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
