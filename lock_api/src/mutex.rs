@@ -10,13 +10,12 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
+use core::ptr;
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
 #[cfg(feature = "arc_lock")]
 use core::mem::ManuallyDrop;
-#[cfg(feature = "arc_lock")]
-use core::ptr;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -511,6 +510,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     pub fn map<U, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
     where
         F: FnOnce(&'a mut T) -> U,
+        U: 'a,
     {
         let raw = &s.mutex.raw;
         let data = unsafe { &mut *s.mutex.data.get() };
@@ -815,18 +815,26 @@ impl<'a, R: RawMutex + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
     /// used as `MappedMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U, F>(mut s: Self, f: F) -> MappedMutexGuard<'a, R, U>
+    pub fn map<U, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
     where
         F: FnOnce(T) -> U,
     {
-        use core::ptr;
+        let (data, raw) = {
+            let s = mem::ManuallyDrop::new(s);
+            (unsafe { ptr::read(&s.data) }, s.raw)
+        };
 
-        let raw = s.raw;
+        // `panic::catch_unwind` isn't available in `core`, so we use a dummy guard to unlock
+        // the mutex in case of unwind.
+        let lock_guard: MappedMutexGuard<'a, R, ()> = MappedMutexGuard {
+            raw,
+            data: (),
+            marker: PhantomData,
+        };
 
-        let data = unsafe { ptr::read(&mut s.data) };
         let data = f(data);
 
-        mem::forget(s);
+        mem::forget(lock_guard);
 
         MappedMutexGuard {
             raw,
@@ -845,33 +853,37 @@ impl<'a, R: RawMutex + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
     /// used as `MappedMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U, F>(mut s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
+    pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
     where
         F: FnOnce(T) -> Result<U, T>,
     {
-        use core::ptr;
+        let (data, raw) = {
+            let s = mem::ManuallyDrop::new(s);
+            (unsafe { ptr::read(&s.data) }, s.raw)
+        };
 
-        let raw = s.raw;
-        let data = unsafe { ptr::read(&mut s.data) };
+        // `panic::catch_unwind` isn't available in `core`, so we use a dummy guard to unlock
+        // the mutex in case of unwind.
+        let lock_guard: MappedMutexGuard<'a, R, ()> = MappedMutexGuard {
+            raw,
+            data: (),
+            marker: PhantomData,
+        };
 
-        // This relies on the fact that `Result::map` and `Result::map_err` will never panic (so long
-        // as the closures passed to them do not panic). If these closures are replaced with ones
-        // that may panic, this could lead to the mutex being unlocked twice.
-        let out = f(data)
-            .map(|data| MappedMutexGuard {
-                raw,
-                data,
-                marker: PhantomData,
-            })
-            .map_err(|data| MappedMutexGuard {
-                raw,
-                data,
-                marker: PhantomData,
-            });
+        let out = f(data);
 
-        mem::forget(s);
+        mem::forget(lock_guard);
 
-        out
+        out.map(|data| MappedMutexGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        })
+        .map_err(|data| MappedMutexGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        })
     }
 }
 
