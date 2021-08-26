@@ -5,12 +5,16 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use core::cell::UnsafeCell;
-use core::fmt;
-use core::marker::PhantomData;
-use core::mem;
-use core::ops::{Deref, DerefMut};
-use core::ptr;
+use core::{
+    cell::UnsafeCell,
+    fmt,
+    marker::PhantomData,
+    mem,
+    ops::{Deref, DerefMut},
+    ptr,
+};
+
+use crate::{FnOnceOptionShim, FnOnceResultShim, FnOnceShim};
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
@@ -1184,13 +1188,15 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     /// used as `RwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U, F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
+    pub fn map<F>(
+        s: Self,
+        f: F,
+    ) -> MappedRwLockReadGuard<'a, R, <F as FnOnceShim<'a, &'a T>>::Output>
     where
-        F: FnOnce(&'a T) -> U + 'a,
-        U: 'a,
+        for<'any> F: FnOnceShim<'any, &'any T>,
     {
         let raw = &s.rwlock.raw;
-        let data = f(unsafe { &*s.rwlock.data.get() });
+        let data = f.call(unsafe { &*s.rwlock.data.get() });
         mem::forget(s);
         MappedRwLockReadGuard {
             raw,
@@ -1209,17 +1215,20 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     /// used as `RwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
+    pub fn try_map<F>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedRwLockReadGuard<'a, R, <F as FnOnceOptionShim<'a, &'a T>>::Output>, Self>
     where
-        F: FnOnce(&'a T) -> Option<U> + 'a,
-        U: 'a,
+        for<'any> F: FnOnceOptionShim<'any, &'any T>,
     {
         let raw = &s.rwlock.raw;
-        let data = match f(unsafe { &*s.rwlock.data.get() }) {
+        let data = match f.call(unsafe { &*s.rwlock.data.get() }) {
             Some(data) => data,
             None => return Err(s),
         };
         mem::forget(s);
+
         Ok(MappedRwLockReadGuard {
             raw,
             data,
@@ -1474,13 +1483,15 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     /// used as `RwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U, F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
+    pub fn map<F>(
+        s: Self,
+        f: F,
+    ) -> MappedRwLockWriteGuard<'a, R, <F as FnOnceShim<'a, &'a mut T>>::Output>
     where
-        F: FnOnce(&mut T) -> U + 'a,
-        U: 'a,
+        for<'any> F: FnOnceShim<'any, &'any mut T>,
     {
         let raw = &s.rwlock.raw;
-        let data = f(unsafe { &mut *s.rwlock.data.get() });
+        let data = f.call(unsafe { &mut *s.rwlock.data.get() });
         mem::forget(s);
         MappedRwLockWriteGuard {
             raw,
@@ -1499,13 +1510,15 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     /// used as `RwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
+    pub fn try_map<F>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedRwLockWriteGuard<'a, R, <F as FnOnceOptionShim<'a, &'a mut T>>::Output>, Self>
     where
-        F: FnOnce(&mut T) -> Option<U> + 'a,
-        U: 'a,
+        for<'any> F: FnOnceOptionShim<'any, &'any mut T>,
     {
         let raw = &s.rwlock.raw;
-        let data = match f(unsafe { &mut *s.rwlock.data.get() }) {
+        let data = match f.call(unsafe { &mut *s.rwlock.data.get() }) {
             Some(data) => data,
             None => return Err(s),
         };
@@ -2338,10 +2351,9 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockReadGuard<'a, R, T> {
     /// used as `MappedRwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U, F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
+    pub fn map<F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, <F as FnOnceShim<'a, T>>::Output>
     where
-        F: FnOnce(T) -> U + 'a,
-        U: 'a,
+        for<'any> F: FnOnceShim<'any, T>,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -2356,7 +2368,7 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockReadGuard<'a, R, T> {
             marker: PhantomData,
         };
 
-        let data = f(data);
+        let data = f.call(data);
 
         mem::forget(lock_guard);
 
@@ -2377,10 +2389,15 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockReadGuard<'a, R, T> {
     /// used as `MappedRwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
+    pub fn try_map<U, F>(
+        s: Self,
+        f: F,
+    ) -> Result<
+        MappedRwLockReadGuard<'a, R, <F as FnOnceResultShim<'a, T>>::Output>,
+        MappedRwLockReadGuard<'a, R, <F as FnOnceResultShim<'a, T>>::Error>,
+    >
     where
-        F: FnOnce(T) -> Result<U, T> + 'a,
-        U: 'a,
+        for<'any> F: FnOnceResultShim<'any, T>,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -2395,7 +2412,7 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockReadGuard<'a, R, T> {
             marker: PhantomData,
         };
 
-        let out = f(data);
+        let out = f.call(data);
 
         mem::forget(lock_guard);
 
@@ -2515,10 +2532,9 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockWriteGuard<'a, R, T> {
     /// used as `MappedRwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U, F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
+    pub fn map<F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, <F as FnOnceShim<'a, T>>::Output>
     where
-        F: FnOnce(T) -> U,
-        U: 'a,
+        for<'any> F: FnOnceShim<'any, T>,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -2533,7 +2549,7 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockWriteGuard<'a, R, T> {
             marker: PhantomData,
         };
 
-        let data = f(data);
+        let data = f.call(data);
 
         mem::forget(lock_guard);
 
@@ -2554,10 +2570,15 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockWriteGuard<'a, R, T> {
     /// used as `MappedRwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
+    pub fn try_map<U, F>(
+        s: Self,
+        f: F,
+    ) -> Result<
+        MappedRwLockWriteGuard<'a, R, <F as FnOnceResultShim<'a, T>>::Output>,
+        MappedRwLockWriteGuard<'a, R, <F as FnOnceResultShim<'a, T>>::Error>,
+    >
     where
-        F: FnOnce(T) -> Result<U, T>,
-        U: 'a,
+        for<'any> F: FnOnceResultShim<'any, T>,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -2572,7 +2593,7 @@ impl<'a, R: RawRwLock + 'a, T: 'a> MappedRwLockWriteGuard<'a, R, T> {
             marker: PhantomData,
         };
 
-        let out = f(data);
+        let out = f.call(data);
 
         mem::forget(lock_guard);
 

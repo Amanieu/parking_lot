@@ -5,12 +5,16 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use core::cell::UnsafeCell;
-use core::fmt;
-use core::marker::PhantomData;
-use core::mem;
-use core::ops::{Deref, DerefMut};
-use core::ptr;
+use core::{
+    cell::UnsafeCell,
+    fmt,
+    marker::PhantomData,
+    mem,
+    ops::{Deref, DerefMut},
+    ptr,
+};
+
+use crate::{FnOnceOptionShim, FnOnceResultShim, FnOnceShim};
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
@@ -507,16 +511,18 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// used as `MutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
+    pub fn map<F>(
+        s: Self,
+        f: F,
+    ) -> MappedMutexGuard<'a, R, <F as FnOnceShim<'a, &'a mut T>>::Output>
     where
-        F: FnOnce(&'a mut T) -> U + 'a,
-        U: 'a,
+        for<'any> F: FnOnceShim<'any, &'any mut T>,
     {
         let raw = &s.mutex.raw;
         let data = unsafe { &mut *s.mutex.data.get() };
         mem::forget(s);
 
-        let data = f(data);
+        let data = f.call(data);
         MappedMutexGuard {
             raw,
             data,
@@ -534,15 +540,17 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// used as `MutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
+    pub fn try_map<F>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedMutexGuard<'a, R, <F as FnOnceOptionShim<'a, &'a mut T>>::Output>, Self>
     where
-        F: FnOnce(&'a mut T) -> Option<U> + 'a,
-        U: 'a,
+        for<'any> F: FnOnceOptionShim<'any, &'any mut T>,
     {
         let raw = &s.mutex.raw;
         let data = unsafe { &mut *s.mutex.data.get() };
 
-        let data = match f(data) {
+        let data = match f.call(data) {
             Some(data) => data,
             None => return Err(s),
         };
@@ -816,10 +824,9 @@ impl<'a, R: RawMutex + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
     /// used as `MappedMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
+    pub fn map<F>(s: Self, f: F) -> MappedMutexGuard<'a, R, <F as FnOnceShim<'a, T>>::Output>
     where
-        F: FnOnce(T) -> U + 'a,
-        U: 'a,
+        for<'any> F: FnOnceShim<'any, T>,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -834,7 +841,7 @@ impl<'a, R: RawMutex + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
             marker: PhantomData,
         };
 
-        let data = f(data);
+        let data = f.call(data);
 
         mem::forget(lock_guard);
 
@@ -855,10 +862,15 @@ impl<'a, R: RawMutex + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
     /// used as `MappedMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
+    pub fn try_map<F>(
+        s: Self,
+        f: F,
+    ) -> Result<
+        MappedMutexGuard<'a, R, <F as FnOnceResultShim<'a, T>>::Output>,
+        MappedMutexGuard<'a, R, <F as FnOnceResultShim<'a, T>>::Error>,
+    >
     where
-        F: FnOnce(T) -> Result<U, T> + 'a,
-        U: 'a,
+        for<'any> F: FnOnceResultShim<'any, T>,
     {
         let (data, raw) = {
             let s = mem::ManuallyDrop::new(s);
@@ -873,7 +885,7 @@ impl<'a, R: RawMutex + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
             marker: PhantomData,
         };
 
-        let out = f(data);
+        let out = f.call(data);
 
         mem::forget(lock_guard);
 

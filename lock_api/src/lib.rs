@@ -114,3 +114,84 @@ pub use crate::remutex::*;
 
 mod rwlock;
 pub use crate::rwlock::*;
+
+/// A "shim trait" to allow generalizing over functions which return some generic
+/// type which may borrow elements of its arguments, but without specifying that
+/// the return type is `&`, `&mut` or something else concrete. This allows using
+/// HRTB to force a caller to supply a function which works for any lifetime,
+/// and therefore avoids the caller relying on a specific lifetime for the
+/// argument, which can cause UB if the inner data lives for the static lifetime.
+///
+/// It also allows the output type to depend on the input type, which is important
+/// when using lifetimes in HRTBs but is not possible with the stable syntax for
+/// the `Fn` traits.
+pub trait FnOnceShim<'a, T: 'a> {
+    /// Equivalent to `std::ops::FnOnce::Output`.
+    type Output: 'a;
+
+    /// Equivalent to `std::ops::FnOnce::call`
+    fn call(self, input: T) -> Self::Output;
+}
+
+impl<'a, F, In, Out> FnOnceShim<'a, In> for F
+where
+    F: FnOnce(In) -> Out,
+    In: 'a,
+    Out: 'a,
+{
+    type Output = Out;
+
+    fn call(self, input: In) -> Self::Output {
+        self(input)
+    }
+}
+
+/// As `FnOnceShim`, but specialized for functions which return an `Option` (used
+/// for `try_map`).
+pub trait FnOnceOptionShim<'a, T: 'a> {
+    /// Equivalent to `std::ops::FnOnce::Output`.
+    type Output: 'a;
+
+    /// Equivalent to `std::ops::FnOnce::call`
+    fn call(self, input: T) -> Option<Self::Output>;
+}
+
+impl<'a, F, In, Out> FnOnceOptionShim<'a, In> for F
+where
+    F: FnOnce(In) -> Option<Out>,
+    In: 'a,
+    Out: 'a,
+{
+    type Output = Out;
+
+    fn call(self, input: In) -> Option<Self::Output> {
+        self(input)
+    }
+}
+
+/// As `FnOnceShim`, but specialized for functions which return an `Result` (used
+/// for `try_map`).
+pub trait FnOnceResultShim<'a, T: 'a> {
+    /// Equivalent to `std::ops::FnOnce::Output`.
+    type Output: 'a;
+    /// Equivalent to `std::ops::FnOnce::Output`.
+    type Error: 'a;
+
+    /// Equivalent to `std::ops::FnOnce::call`
+    fn call(self, input: T) -> Result<Self::Output, Self::Error>;
+}
+
+impl<'a, F, In, Out, Error> FnOnceResultShim<'a, In> for F
+where
+    F: FnOnce(In) -> Result<Out, Error>,
+    In: 'a,
+    Out: 'a,
+    Error: 'a,
+{
+    type Output = Out;
+    type Error = Error;
+
+    fn call(self, input: In) -> Result<Self::Output, Self::Error> {
+        self(input)
+    }
+}
