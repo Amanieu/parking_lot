@@ -13,13 +13,13 @@ edition = "2018"
 [dependencies]
 parking_lot_core = { path = "core", version = "0.8.0" }
 lock_api = { path = "lock_api", version = "0.4.0" }
-instant = "0.1.4"
+instant = "0.1.9"
 
 [dev-dependencies]
-rand = "0.7.3"
+rand = "0.8.3"
 
 # Used when testing out serde support.
-bincode = "1.3.0"
+bincode = "1.3.3"
 
 [features]
 default = []

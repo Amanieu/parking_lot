@@ -16,7 +16,7 @@ owning_ref = { version = "0.4.1", optional = true }
 # Optional dependency for supporting serde.  Optional crates automatically
 # create a feature with the same name as the crate, so if you need serde
 # support, just pass "--features serde" when building this crate.
-serde = { version = "1.0.114", default-features = false, optional = true }
+serde = { version = "1.0.126", default-features = false, optional = true }
 
 [features]
 nightly = []
