@@ -1,3 +1,9 @@
+## parking_lot 0.11.2, parking_lot_core 0.8.4, lock_api 0.4.5 (2021-08-28)
+
+- Fixed incorrect memory orderings on `RwLock` and `WordLock`. (#294, #292)
+- Added `Arc`-based lock guards. (#291)
+- Added workaround for TSan's lack of support for `fence`. (#292)
+
 ## lock_api 0.4.4 (2021-05-01)
 
 - Update for latest nightly. (#281)
