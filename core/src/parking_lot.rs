@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 // Don't use Instant on wasm32-unknown-unknown, it just panics.
 cfg_if::cfg_if! {
     if #[cfg(all(
-        target_arch = "wasm32",
+        target_family = "wasm",
         target_os = "unknown",
         target_vendor = "unknown"
     ))] {
