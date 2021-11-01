@@ -9,7 +9,7 @@ use core::{
     mem,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use instant::Instant;
+use std::time::Instant;
 use winapi::{
     shared::{
         basetsd::SIZE_T,

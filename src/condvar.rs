@@ -12,10 +12,9 @@ use core::{
     fmt, ptr,
     sync::atomic::{AtomicPtr, Ordering},
 };
-use instant::Instant;
 use lock_api::RawMutex as RawMutex_;
 use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// A type indicating whether a timed wait on a condition variable returned
 /// due to a time out or not.
@@ -414,11 +413,11 @@ impl fmt::Debug for Condvar {
 #[cfg(test)]
 mod tests {
     use crate::{Condvar, Mutex, MutexGuard};
-    use instant::Instant;
     use std::sync::mpsc::channel;
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+    use std::time::Instant;
 
     #[test]
     fn smoke() {

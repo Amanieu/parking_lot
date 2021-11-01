@@ -11,8 +11,8 @@ use core::{
     cell::{Cell, UnsafeCell},
     mem::MaybeUninit,
 };
-use instant::Instant;
 use libc;
+use std::time::Instant;
 use std::{thread, time::Duration};
 
 // x32 Linux uses a non-standard type for tv_nsec in timespec.
