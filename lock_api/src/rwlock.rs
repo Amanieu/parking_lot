@@ -84,6 +84,9 @@ pub unsafe trait RawRwLock {
         }
         !acquired_lock
     }
+
+    /// Check if this `RwLock` is currently exclusively locked.
+    fn is_locked_exclusive(&self) -> bool;
 }
 
 /// Additional methods for RwLocks which support fair unlocking.
@@ -500,6 +503,12 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     #[inline]
     pub fn is_locked(&self) -> bool {
         self.raw.is_locked()
+    }
+
+    /// Check if this `RwLock` is currently exclusively locked.
+    #[inline]
+    pub fn is_locked_exclusive(&self) -> bool {
+        self.raw.is_locked_exclusive()
     }
 
     /// Forcibly unlocks a read lock.
