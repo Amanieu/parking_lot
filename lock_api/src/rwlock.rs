@@ -86,7 +86,16 @@ pub unsafe trait RawRwLock {
     }
 
     /// Check if this `RwLock` is currently exclusively locked.
-    fn is_locked_exclusive(&self) -> bool;
+    fn is_locked_exclusive(&self) -> bool {
+        let acquired_lock = self.try_lock_shared();
+        if acquired_lock {
+            // Safety: A shared lock was successfully acquired above.
+            unsafe {
+                self.unlock_shared();
+            }
+        }
+        !acquired_lock
+    }
 }
 
 /// Additional methods for RwLocks which support fair unlocking.
