@@ -52,33 +52,18 @@ impl AtomicElisionExt for AtomicUsize {
 impl AtomicElisionExt for AtomicUsize {
     type IntType = usize;
 
-    #[cfg(target_pointer_width = "32")]
     #[inline]
     fn elision_compare_exchange_acquire(&self, current: usize, new: usize) -> Result<usize, usize> {
         unsafe {
             let prev: usize;
-            llvm_asm!("xacquire; lock; cmpxchgl $2, $1"
-                      : "={eax}" (prev), "+*m" (self)
-                      : "r" (new), "{eax}" (current)
-                      : "memory"
-                      : "volatile");
-            if prev == current {
-                Ok(prev)
-            } else {
-                Err(prev)
-            }
-        }
-    }
-    #[cfg(target_pointer_width = "64")]
-    #[inline]
-    fn elision_compare_exchange_acquire(&self, current: usize, new: usize) -> Result<usize, usize> {
-        unsafe {
-            let prev: usize;
-            llvm_asm!("xacquire; lock; cmpxchgq $2, $1"
-                      : "={rax}" (prev), "+*m" (self)
-                      : "r" (new), "{rax}" (current)
-                      : "memory"
-                      : "volatile");
+            asm!(
+                "xacquire",
+                "lock",
+                "cmpxchg [{}], {}",
+                in(reg) self,
+                in(reg) new,
+                inout("rax") current => prev,
+            );
             if prev == current {
                 Ok(prev)
             } else {
@@ -87,29 +72,17 @@ impl AtomicElisionExt for AtomicUsize {
         }
     }
 
-    #[cfg(target_pointer_width = "32")]
     #[inline]
     fn elision_fetch_sub_release(&self, val: usize) -> usize {
         unsafe {
             let prev: usize;
-            llvm_asm!("xrelease; lock; xaddl $2, $1"
-                      : "=r" (prev), "+*m" (self)
-                      : "0" (val.wrapping_neg())
-                      : "memory"
-                      : "volatile");
-            prev
-        }
-    }
-    #[cfg(target_pointer_width = "64")]
-    #[inline]
-    fn elision_fetch_sub_release(&self, val: usize) -> usize {
-        unsafe {
-            let prev: usize;
-            llvm_asm!("xrelease; lock; xaddq $2, $1"
-                      : "=r" (prev), "+*m" (self)
-                      : "0" (val.wrapping_neg())
-                      : "memory"
-                      : "volatile");
+            asm!(
+                "xrelease",
+                "lock",
+                "xadd [{}], {}",
+                in(reg) self,
+                inout(reg) val.wrapping_neg() => prev,
+            );
             prev
         }
     }
