@@ -56,6 +56,16 @@ impl AtomicElisionExt for AtomicUsize {
     fn elision_compare_exchange_acquire(&self, current: usize, new: usize) -> Result<usize, usize> {
         unsafe {
             let prev: usize;
+            #[cfg(target_pointer_width = "32")]
+            asm!(
+                "xacquire",
+                "lock",
+                "cmpxchg [{:e}], {:e}",
+                in(reg) self,
+                in(reg) new,
+                inout("eax") current => prev,
+            );
+            #[cfg(target_pointer_width = "64")]
             asm!(
                 "xacquire",
                 "lock",
@@ -76,6 +86,15 @@ impl AtomicElisionExt for AtomicUsize {
     fn elision_fetch_sub_release(&self, val: usize) -> usize {
         unsafe {
             let prev: usize;
+            #[cfg(target_pointer_width = "32")]
+            asm!(
+                "xrelease",
+                "lock",
+                "xadd [{:e}], {:e}",
+                in(reg) self,
+                inout(reg) val.wrapping_neg() => prev,
+            );
+            #[cfg(target_pointer_width = "64")]
             asm!(
                 "xrelease",
                 "lock",
