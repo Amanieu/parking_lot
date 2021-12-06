@@ -7,6 +7,8 @@
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::util::UncheckedOptionExt;
 use crate::word_lock::WordLock;
+#[cfg(feature = "global_allocator_compat")]
+use core::sync::atomic::AtomicBool;
 use core::{
     cell::{Cell, UnsafeCell},
     ptr,
@@ -177,7 +179,27 @@ impl ThreadData {
         // Keep track of the total number of live ThreadData objects and resize
         // the hash table accordingly.
         let num_threads = NUM_THREADS.fetch_add(1, Ordering::Relaxed) + 1;
-        grow_hashtable(num_threads);
+
+        // `grow_hashtable` below performs global allocation. If the global
+        // allocator uses parking_lot locks, it'll attempt to acquire a lock,
+        // which will re-enter this `new` function. When the
+        // "global_allocator_compat" feature is enabled, detect this case
+        // and skip growing the hash table until the inner call returns,
+        // letting the outer call perform the grow.
+        #[cfg(feature = "global_allocator_compat")]
+        let grow = {
+            thread_local!(static ACTIVE: AtomicBool = AtomicBool::new(false));
+            !ACTIVE
+                .try_with(|active| active.swap(true, Ordering::Relaxed))
+                .unwrap_or(true)
+        };
+
+        #[cfg(not(feature = "global_allocator_compat"))]
+        let grow = true;
+
+        if grow {
+            grow_hashtable(num_threads);
+        }
 
         ThreadData {
             parker: ThreadParker::new(),
@@ -211,6 +233,15 @@ impl Drop for ThreadData {
     fn drop(&mut self) {
         NUM_THREADS.fetch_sub(1, Ordering::Relaxed);
     }
+}
+
+/// Initialize internal library state.
+///
+/// For compatibility with `#[global_allocator]` implementations, this must
+/// be called before any synchronization functions are called.
+#[cfg(feature = "global_allocator_compat")]
+pub fn init() {
+    let _ = get_hashtable();
 }
 
 /// Returns a reference to the latest hash table, creating one if it doesn't exist yet.
@@ -263,13 +294,19 @@ fn create_hashtable() -> &'static HashTable {
 // created, which only happens once per thread.
 fn grow_hashtable(num_threads: usize) {
     // Lock all buckets in the existing table and get a reference to it
-    let old_table = loop {
+    let (old_table, mut new_table) = loop {
         let table = get_hashtable();
 
         // Check if we need to resize the existing table
         if table.entries.len() >= LOAD_FACTOR * num_threads {
             return;
         }
+
+        // For feature = "global_allocator_compat", create the new table here,
+        // before we lock all the buckets, in case the allocator needs to
+        // acquire a lock.
+        #[cfg(feature = "global_allocator_compat")]
+        let new_table = HashTable::new(num_threads, table);
 
         // Lock all buckets in the old table
         for bucket in &table.entries[..] {
@@ -280,7 +317,13 @@ fn grow_hashtable(num_threads: usize) {
         // have grown the hash table between us reading HASHTABLE and locking
         // the buckets.
         if HASHTABLE.load(Ordering::Relaxed) == table as *const _ as *mut _ {
-            break table;
+            // For not(feature = "global_allocator_compat"), create the new
+            // table here, after we lock all the buckets, to minimize temporary
+            // allocations.
+            #[cfg(not(feature = "global_allocator_compat"))]
+            let new_table = HashTable::new(num_threads, table);
+
+            break (table, new_table);
         }
 
         // Unlock buckets and try again
@@ -289,9 +332,6 @@ fn grow_hashtable(num_threads: usize) {
             unsafe { bucket.mutex.unlock() };
         }
     };
-
-    // Create the new table
-    let mut new_table = HashTable::new(num_threads, old_table);
 
     // Move the entries from the old table to the new one
     for bucket in &old_table.entries[..] {
