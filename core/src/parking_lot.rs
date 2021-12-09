@@ -241,7 +241,7 @@ impl Drop for ThreadData {
 /// be called before any synchronization functions are called.
 #[cfg(feature = "global_allocator_compat")]
 pub fn init() {
-    let _ = get_hashtable();
+    create_hashtable();
 }
 
 /// Returns a reference to the latest hash table, creating one if it doesn't exist yet.
