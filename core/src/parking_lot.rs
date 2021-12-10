@@ -188,10 +188,8 @@ impl ThreadData {
         // letting the outer call perform the grow.
         #[cfg(feature = "global_allocator_compat")]
         let grow = {
-            thread_local!(static ACTIVE: AtomicBool = AtomicBool::new(false));
-            !ACTIVE
-                .try_with(|active| active.swap(true, Ordering::Relaxed))
-                .unwrap_or(true)
+            thread_local!(static ACTIVE: Cell<bool> = Cell::new(false));
+            !ACTIVE.try_with(|active| active.swap(true)).unwrap_or(true)
         };
 
         #[cfg(not(feature = "global_allocator_compat"))]
