@@ -11,7 +11,7 @@ use lock_api;
 /// A mutual exclusion primitive useful for protecting shared data
 ///
 /// This mutex will block threads waiting for the lock to become available. The
-/// mutex can also be statically initialized or created via a `new`
+/// mutex can be statically initialized or created by the `new`
 /// constructor. Each mutex has a type parameter which represents the data that
 /// it is protecting. The data can only be accessed through the RAII guards
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
