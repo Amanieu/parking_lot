@@ -23,8 +23,12 @@ libc = "0.2.95"
 redox_syscall = "0.2.8"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.9", features = ["winnt", "ntstatus", "minwindef",
-    "winerror", "winbase", "errhandlingapi", "handleapi"] }
+windows-sys = { version = "0.29", features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemServices",
+    "Win32_System_WindowsProgramming",
+] }
 
 [features]
 nightly = []
