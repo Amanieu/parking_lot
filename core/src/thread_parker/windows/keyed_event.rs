@@ -6,24 +6,18 @@
 // copied, modified, or distributed except according to those terms.
 
 use core::{
+    ffi,
     mem::{self, MaybeUninit},
     ptr,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
-use winapi::{
-    shared::{
-        minwindef::{TRUE, ULONG},
-        ntdef::NTSTATUS,
-        ntstatus::{STATUS_SUCCESS, STATUS_TIMEOUT},
-    },
-    um::{
-        handleapi::CloseHandle,
-        libloaderapi::{GetModuleHandleA, GetProcAddress},
-        winnt::{
-            ACCESS_MASK, BOOLEAN, GENERIC_READ, GENERIC_WRITE, HANDLE, LARGE_INTEGER, LPCSTR,
-            PHANDLE, PLARGE_INTEGER, PVOID,
-        },
+
+use windows_sys::Win32::{
+    Foundation::{CloseHandle, BOOLEAN, HANDLE, NTSTATUS, STATUS_SUCCESS, STATUS_TIMEOUT},
+    System::{
+        LibraryLoader::{GetModuleHandleA, GetProcAddress},
+        SystemServices::{GENERIC_READ, GENERIC_WRITE},
     },
 };
 
@@ -36,58 +30,49 @@ pub struct KeyedEvent {
     handle: HANDLE,
     NtReleaseKeyedEvent: extern "system" fn(
         EventHandle: HANDLE,
-        Key: PVOID,
+        Key: *mut ffi::c_void,
         Alertable: BOOLEAN,
-        Timeout: PLARGE_INTEGER,
+        Timeout: *mut i64,
     ) -> NTSTATUS,
     NtWaitForKeyedEvent: extern "system" fn(
         EventHandle: HANDLE,
-        Key: PVOID,
+        Key: *mut ffi::c_void,
         Alertable: BOOLEAN,
-        Timeout: PLARGE_INTEGER,
+        Timeout: *mut i64,
     ) -> NTSTATUS,
 }
 
 impl KeyedEvent {
     #[inline]
-    unsafe fn wait_for(&self, key: PVOID, timeout: PLARGE_INTEGER) -> NTSTATUS {
-        (self.NtWaitForKeyedEvent)(self.handle, key, 0, timeout)
+    unsafe fn wait_for(&self, key: *mut ffi::c_void, timeout: *mut i64) -> NTSTATUS {
+        (self.NtWaitForKeyedEvent)(self.handle, key, false.into(), timeout)
     }
 
     #[inline]
-    unsafe fn release(&self, key: PVOID) -> NTSTATUS {
-        (self.NtReleaseKeyedEvent)(self.handle, key, 0, ptr::null_mut())
+    unsafe fn release(&self, key: *mut ffi::c_void) -> NTSTATUS {
+        (self.NtReleaseKeyedEvent)(self.handle, key, false.into(), ptr::null_mut())
     }
 
     #[allow(non_snake_case)]
     pub fn create() -> Option<KeyedEvent> {
         unsafe {
-            let ntdll = GetModuleHandleA(b"ntdll.dll\0".as_ptr() as LPCSTR);
-            if ntdll.is_null() {
+            let ntdll = GetModuleHandleA(b"ntdll.dll\0".as_ptr() as *mut u8);
+            if ntdll == 0 {
                 return None;
             }
 
             let NtCreateKeyedEvent =
-                GetProcAddress(ntdll, b"NtCreateKeyedEvent\0".as_ptr() as LPCSTR);
-            if NtCreateKeyedEvent.is_null() {
-                return None;
-            }
+                GetProcAddress(ntdll, b"NtCreateKeyedEvent\0".as_ptr() as *mut u8)?;
             let NtReleaseKeyedEvent =
-                GetProcAddress(ntdll, b"NtReleaseKeyedEvent\0".as_ptr() as LPCSTR);
-            if NtReleaseKeyedEvent.is_null() {
-                return None;
-            }
+                GetProcAddress(ntdll, b"NtReleaseKeyedEvent\0".as_ptr() as *mut u8)?;
             let NtWaitForKeyedEvent =
-                GetProcAddress(ntdll, b"NtWaitForKeyedEvent\0".as_ptr() as LPCSTR);
-            if NtWaitForKeyedEvent.is_null() {
-                return None;
-            }
+                GetProcAddress(ntdll, b"NtWaitForKeyedEvent\0".as_ptr() as *mut u8)?;
 
             let NtCreateKeyedEvent: extern "system" fn(
-                KeyedEventHandle: PHANDLE,
-                DesiredAccess: ACCESS_MASK,
-                ObjectAttributes: PVOID,
-                Flags: ULONG,
+                KeyedEventHandle: *mut HANDLE,
+                DesiredAccess: u32,
+                ObjectAttributes: *mut ffi::c_void,
+                Flags: u32,
             ) -> NTSTATUS = mem::transmute(NtCreateKeyedEvent);
             let mut handle = MaybeUninit::uninit();
             let status = NtCreateKeyedEvent(
@@ -120,7 +105,7 @@ impl KeyedEvent {
 
     #[inline]
     pub unsafe fn park(&'static self, key: &AtomicUsize) {
-        let status = self.wait_for(key as *const _ as PVOID, ptr::null_mut());
+        let status = self.wait_for(key as *const _ as *mut ffi::c_void, ptr::null_mut());
         debug_assert_eq!(status, STATUS_SUCCESS);
     }
 
@@ -140,14 +125,13 @@ impl KeyedEvent {
 
         // NT uses a timeout in units of 100ns. We use a negative value to
         // indicate a relative timeout based on a monotonic clock.
-        let mut nt_timeout: LARGE_INTEGER = mem::zeroed();
         let diff = timeout - now;
         let value = (diff.as_secs() as i64)
             .checked_mul(-10000000)
             .and_then(|x| x.checked_sub((diff.subsec_nanos() as i64 + 99) / 100));
 
-        match value {
-            Some(x) => *nt_timeout.QuadPart_mut() = x,
+        let mut nt_timeout = match value {
+            Some(x) => x,
             None => {
                 // Timeout overflowed, just sleep indefinitely
                 self.park(key);
@@ -155,7 +139,7 @@ impl KeyedEvent {
             }
         };
 
-        let status = self.wait_for(key as *const _ as PVOID, &mut nt_timeout);
+        let status = self.wait_for(key as *const _ as *mut ffi::c_void, &mut nt_timeout);
         if status == STATUS_SUCCESS {
             return true;
         }
@@ -192,7 +176,7 @@ impl Drop for KeyedEvent {
     fn drop(&mut self) {
         unsafe {
             let ok = CloseHandle(self.handle);
-            debug_assert_eq!(ok, TRUE);
+            debug_assert_eq!(ok, true.into());
         }
     }
 }
@@ -211,7 +195,7 @@ impl UnparkHandle {
     #[inline]
     pub unsafe fn unpark(self) {
         if !self.key.is_null() {
-            let status = self.keyed_event.release(self.key as PVOID);
+            let status = self.keyed_event.release(self.key as *mut ffi::c_void);
             debug_assert_eq!(status, STATUS_SUCCESS);
         }
     }
