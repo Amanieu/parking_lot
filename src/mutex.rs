@@ -109,6 +109,87 @@ pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawMutex, T>;
 /// thread.
 pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawMutex, T>;
 
+#[cfg(doctest)]
+mod doctests {
+    //! ```rust,no_run
+    //! use parking_lot::{Mutex, MutexGuard};
+    //!
+    //! let m = Mutex::new((0, 0));
+    //! let guard = MutexGuard::map(
+    //!     m.lock(),
+    //!     { |inner| &mut inner.0 }
+    //!         as fn(&mut (usize, usize)) -> &mut usize
+    //! );
+    //! ```
+    //!
+    //! ```rust,no_run
+    //! use parking_lot::{Mutex, MutexGuard};
+    //!
+    //! struct MutWrapper<'a, T>(&'a mut T);
+    //!
+    //! let m = Mutex::new((0, 0));
+    //! let guard = MutexGuard::map(
+    //!     m.lock(),
+    //!     { |inner| MutWrapper(&mut inner.0) }
+    //!         as fn(&mut (usize, usize)) -> MutWrapper<'_, usize>
+    //! );
+    //! ```
+    //!
+    //! ```rust,compile_fail
+    //! use parking_lot::{lock_api::RawMutex, MappedMutexGuard, Mutex, MutexGuard};
+    //!
+    //! const FOO: usize = 0;
+    //!
+    //! static OUTER: Mutex<&usize> = Mutex::const_new(RawMutex::INIT, &FOO);
+    //! static M: Mutex<usize> = Mutex::const_new(RawMutex::INIT, 0);
+    //!
+    //! let guard = MappedMutexGuard::map(
+    //!     MutexGuard::map(M.lock(), { |inner| inner } as fn(&mut usize) -> &mut usize),
+    //!     |inner: &mut _| {
+    //!         let inner = &*inner;
+    //!         *OUTER.lock() = inner;
+    //!     },
+    //! );
+    //! drop(guard);
+    //!
+    //! let outer: &usize = &*OUTER.lock();
+    //!
+    //! assert_eq!(*outer, 0);
+    //!
+    //! *M.lock() = 1;
+    //!
+    //! assert_eq!(*outer, 1);
+    //! ```
+    //!
+    //! ```rust,compile_fail
+    //! use parking_lot::{lock_api::RawMutex, MappedMutexGuard, Mutex, MutexGuard};
+    //!
+    //! const FOO: usize = 0;
+    //!
+    //! static OUTER: Mutex<&usize> = Mutex::const_new(RawMutex::INIT, &FOO);
+    //! static M: Mutex<usize> = Mutex::const_new(RawMutex::INIT, 0);
+    //!
+    //! struct MutWrapper<'a, T>(&'a mut T);
+    //!
+    //! let guard = MappedMutexGuard::map(
+    //!     MutexGuard::map(M.lock(), { |inner| MutWrapper(inner) } as fn(&mut usize) -> MutWrapper<'_, usize>),
+    //!     |inner: MutWrapper<'_, _>| {
+    //!         let inner = &*inner.0;
+    //!         *OUTER.lock() = inner;
+    //!     },
+    //! );
+    //! drop(guard);
+    //!
+    //! let outer: &usize = &*OUTER.lock();
+    //!
+    //! assert_eq!(*outer, 0);
+    //!
+    //! *M.lock() = 1;
+    //!
+    //! assert_eq!(*outer, 1);
+    //! ```
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{Condvar, Mutex};

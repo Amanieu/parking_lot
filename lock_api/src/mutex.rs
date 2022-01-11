@@ -5,18 +5,21 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use core::cell::UnsafeCell;
-use core::fmt;
-use core::marker::PhantomData;
-use core::mem;
-use core::ops::{Deref, DerefMut};
+use core::{
+    cell::UnsafeCell,
+    fmt,
+    marker::PhantomData,
+    mem,
+    ops::{Deref, DerefMut},
+    ptr,
+};
+
+use crate::{FnOnceOptionShim, FnOnceResultShim, FnOnceShim};
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
 #[cfg(feature = "arc_lock")]
 use core::mem::ManuallyDrop;
-#[cfg(feature = "arc_lock")]
-use core::ptr;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;
@@ -508,13 +511,18 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// used as `MutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
+    pub fn map<F>(
+        s: Self,
+        f: F,
+    ) -> MappedMutexGuard<'a, R, <F as FnOnceShim<'a, &'a mut T>>::Output>
     where
-        F: FnOnce(&mut T) -> &mut U,
+        for<'any> F: FnOnceShim<'any, &'any mut T>,
     {
         let raw = &s.mutex.raw;
-        let data = f(unsafe { &mut *s.mutex.data.get() });
+        let data = unsafe { &mut *s.mutex.data.get() };
         mem::forget(s);
+
+        let data = f.call(data);
         MappedMutexGuard {
             raw,
             data,
@@ -532,16 +540,25 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// used as `MutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
+    pub fn try_map<F>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedMutexGuard<'a, R, <F as FnOnceOptionShim<'a, &'a mut T>>::Output>, Self>
     where
-        F: FnOnce(&mut T) -> Option<&mut U>,
+        for<'any> F: FnOnceOptionShim<'any, &'any mut T>,
     {
         let raw = &s.mutex.raw;
-        let data = match f(unsafe { &mut *s.mutex.data.get() }) {
+        let data = unsafe { &mut *s.mutex.data.get() };
+
+        let data = match f.call(data) {
             Some(data) => data,
             None => return Err(s),
         };
+
+        // We use `mem::forget` instead of `ManuallyDrop` because we want to drop `self` if
+        // `f` panicks. This is safe, as `self` must outlive the `&'a mut T` reference.
         mem::forget(s);
+
         Ok(MappedMutexGuard {
             raw,
             data,
@@ -780,10 +797,12 @@ impl<R: RawMutex, T: ?Sized> Drop for ArcMutexGuard<R, T> {
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
 #[must_use = "if unused the Mutex will immediately unlock"]
-pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized> {
+pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized + 'a> {
     raw: &'a R,
-    data: *mut T,
-    marker: PhantomData<&'a mut T>,
+    // We use `&'a mut` to make this type invariant over `'a`
+    marker: PhantomData<&'a mut ()>,
+    // `data` at the end so we can cast `MappedMutexGuard<'_, _, [T; N]>` to `MappedMutexGuard<'_, _, [T]>`.
+    data: T,
 }
 
 unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync
@@ -795,7 +814,7 @@ unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + Send + 'a> Send for MappedMutexGua
 {
 }
 
-impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
+impl<'a, R: RawMutex + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
     /// Makes a new `MappedMutexGuard` for a component of the locked data.
     ///
     /// This operation cannot fail as the `MappedMutexGuard` passed
@@ -805,13 +824,27 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     /// used as `MappedMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
+    pub fn map<F>(s: Self, f: F) -> MappedMutexGuard<'a, R, <F as FnOnceShim<'a, T>>::Output>
     where
-        F: FnOnce(&mut T) -> &mut U,
+        for<'any> F: FnOnceShim<'any, T>,
     {
-        let raw = s.raw;
-        let data = f(unsafe { &mut *s.data });
-        mem::forget(s);
+        let (data, raw) = {
+            let s = mem::ManuallyDrop::new(s);
+            (unsafe { ptr::read(&s.data) }, s.raw)
+        };
+
+        // `panic::catch_unwind` isn't available in `core`, so we use a dummy guard to unlock
+        // the mutex in case of unwind.
+        let lock_guard: MappedMutexGuard<'a, R, ()> = MappedMutexGuard {
+            raw,
+            data: (),
+            marker: PhantomData,
+        };
+
+        let data = f.call(data);
+
+        mem::forget(lock_guard);
+
         MappedMutexGuard {
             raw,
             data,
@@ -829,17 +862,39 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     /// used as `MappedMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
+    pub fn try_map<F>(
+        s: Self,
+        f: F,
+    ) -> Result<
+        MappedMutexGuard<'a, R, <F as FnOnceResultShim<'a, T>>::Output>,
+        MappedMutexGuard<'a, R, <F as FnOnceResultShim<'a, T>>::Error>,
+    >
     where
-        F: FnOnce(&mut T) -> Option<&mut U>,
+        for<'any> F: FnOnceResultShim<'any, T>,
     {
-        let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data }) {
-            Some(data) => data,
-            None => return Err(s),
+        let (data, raw) = {
+            let s = mem::ManuallyDrop::new(s);
+            (unsafe { ptr::read(&s.data) }, s.raw)
         };
-        mem::forget(s);
-        Ok(MappedMutexGuard {
+
+        // `panic::catch_unwind` isn't available in `core`, so we use a dummy guard to unlock
+        // the mutex in case of unwind.
+        let lock_guard: MappedMutexGuard<'a, R, ()> = MappedMutexGuard {
+            raw,
+            data: (),
+            marker: PhantomData,
+        };
+
+        let out = f.call(data);
+
+        mem::forget(lock_guard);
+
+        out.map(|data| MappedMutexGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        })
+        .map_err(|data| MappedMutexGuard {
             raw,
             data,
             marker: PhantomData,
@@ -847,7 +902,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     }
 }
 
-impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
+impl<'a, R: RawMutexFair + 'a, T: 'a> MappedMutexGuard<'a, R, T> {
     /// Unlocks the mutex using a fair unlock protocol.
     ///
     /// By default, mutexes are unfair and allow the current thread to re-lock
@@ -872,16 +927,17 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Deref for MappedMutexGuard<'a, R, T> {
     type Target = T;
+
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data }
+        &self.data
     }
 }
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> DerefMut for MappedMutexGuard<'a, R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data }
+        &mut self.data
     }
 }
 
@@ -895,19 +951,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MappedMutexGuard<'a, R, T> {
     }
 }
 
-impl<'a, R: RawMutex + 'a, T: fmt::Debug + ?Sized + 'a> fmt::Debug for MappedMutexGuard<'a, R, T> {
+impl<'a, R: RawMutex + 'a, T: fmt::Debug + 'a> fmt::Debug for MappedMutexGuard<'a, R, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&**self, f)
     }
 }
 
-impl<'a, R: RawMutex + 'a, T: fmt::Display + ?Sized + 'a> fmt::Display
-    for MappedMutexGuard<'a, R, T>
-{
+impl<'a, R: RawMutex + 'a, T: fmt::Display + 'a> fmt::Display for MappedMutexGuard<'a, R, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
-
-#[cfg(feature = "owning_ref")]
-unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MappedMutexGuard<'a, R, T> {}

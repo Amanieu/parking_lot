@@ -135,6 +135,39 @@ mod tests {
     use std::thread;
     use std::time::Duration;
 
+    #[cfg(doctest)]
+    mod doctests {
+        //! ```rust,no_run
+        //! use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+        //!
+        //! let m = RwLock::new((0, 0));
+        //!
+        //! let guard = RwLockReadGuard::map(m.read(), |inner| &inner.0);
+        //! ```
+        //!
+        //! ```rust,no_run
+        //! use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+        //!
+        //! let m = RwLock::new((0, 0));
+        //!
+        //! let guard = RwLockWriteGuard::map(m.write(), |inner| &mut inner.0);
+        //! ```
+        //!
+        //! ```rust,compile_fail
+        //! use std::sync::Mutex;
+        //! use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard, RawRwLock};
+        //!
+        //! let mut outer = &0;
+        //! static M: RwLock<i32> = RwLock::const_new(RawRwLock::INIT, 0);
+        //!
+        //! let guard = RwLockReadGuard::map(M.read(), |inner: &'static i32| {
+        //!     outer = inner;
+        //! });
+        //! drop(guard);
+        //! *outer = 1;
+        //! ```
+    }
+
     #[cfg(feature = "serde")]
     use bincode::{deserialize, serialize};
 
