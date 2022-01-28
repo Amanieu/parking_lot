@@ -2,11 +2,11 @@ name: Rust
 
 on:
   push:
-    branches-ignore:
-      - trying.tmp
-      - staging.tmp
+    branches:
+      - trying
+      - staging
   pull_request:
-    
+
 env:
   RUST_TEST_THREADS: 1
 
@@ -16,11 +16,11 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu, macos, windows]
-        channel: [1.41.0, stable, beta, nightly]
+        channel: [1.49.0, stable, beta, nightly]
         feature: [arc_lock, serde, deadlock_detection]
         exclude: 
           - feature: deadlock_detection
-            channel: '1.41.0'
+            channel: '1.49.0'
         include:
           - channel: nightly
             feature: nightly
