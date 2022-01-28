@@ -1,6 +1,6 @@
 [package]
 name = "parking_lot"
-version = "0.11.2"
+version = "0.12.0"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 description = "More compact and efficient implementations of the standard synchronization primitives."
 license = "Apache-2.0/MIT"
@@ -11,8 +11,8 @@ categories = ["concurrency"]
 edition = "2018"
 
 [dependencies]
-parking_lot_core = { path = "core", version = "0.8.4" }
-lock_api = { path = "lock_api", version = "0.4.5" }
+parking_lot_core = { path = "core", version = "0.9.0" }
+lock_api = { path = "lock_api", version = "0.4.6" }
 
 [dev-dependencies]
 rand = "0.8.3"

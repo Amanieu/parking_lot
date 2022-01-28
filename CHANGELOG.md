@@ -1,3 +1,13 @@
+## parking_lot 0.12.0, parking_lot_core 0.9.0, lock_api 0.4.6 (2022-01-28)
+
+- The MSRV is bumped to 1.49.0.
+- Disabled eventual fairness on wasm32-unknown-unknown. (#302)
+- Added a rwlock method to report if lock is held exclusively. (#303)
+- Use new `asm!` macro. (#304)
+- Use windows-rs instead of winapi for faster builds. (#311)
+- Moved hardware lock elision support to a separate Cargo feature. (#313)
+- Removed used of deprecated `spin_loop_hint`. (#314)
+
 ## parking_lot 0.11.2, parking_lot_core 0.8.4, lock_api 0.4.5 (2021-08-28)
 
 - Fixed incorrect memory orderings on `RwLock` and `WordLock`. (#294, #292)
