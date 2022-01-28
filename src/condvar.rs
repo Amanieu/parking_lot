@@ -380,12 +380,6 @@ impl Condvar {
     ///
     /// Like `wait`, the lock specified will be re-acquired when this function
     /// returns, regardless of whether the timeout elapsed or not.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the given `timeout` is so large that it can't be added to the current time.
-    /// This panic is not possible if the crate is built with the `nightly` feature, then a too
-    /// large `timeout` becomes equivalent to just calling `wait`.
     #[inline]
     pub fn wait_for<T: ?Sized>(
         &self,
@@ -556,14 +550,7 @@ mod tests {
             let _g = m2.lock();
             c2.notify_one();
         });
-        // Non-nightly panics on too large timeouts. Nightly treats it as indefinite wait.
-        let very_long_timeout = if cfg!(feature = "nightly") {
-            Duration::from_secs(u64::max_value())
-        } else {
-            Duration::from_millis(u32::max_value() as u64)
-        };
-
-        let timeout_res = c.wait_for(&mut g, very_long_timeout);
+        let timeout_res = c.wait_for(&mut g, Duration::from_secs(u64::max_value()));
         assert!(!timeout_res.timed_out());
 
         drop(g);
