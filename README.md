@@ -50,6 +50,7 @@ in the Rust standard library:
    library versions of those types.
 7. `RwLock` takes advantage of hardware lock elision on processors that
    support it, which can lead to huge performance wins with many readers.
+   This must be enabled with the `hardware-lock-elision` feature.
 8. `RwLock` uses a task-fair locking policy, which avoids reader and writer
    starvation, whereas the standard library version makes no guarantees.
 9. `Condvar` is guaranteed not to produce spurious wakeups. A thread will
@@ -93,8 +94,6 @@ There are a few restrictions when using this library on stable Rust:
 - You will have to use the `const_*` functions (e.g. `const_mutex(val)`) to
   statically initialize the locking primitives. Using e.g. `Mutex::new(val)`
   does not work on stable Rust yet.
-- `RwLock` will not be able to take advantage of hardware lock elision for
-  readers, which improves performance when there are multiple readers.
 - The `wasm32-unknown-unknown` target is only supported on nightly and requires
   `-C target-feature=+atomics` in `RUSTFLAGS`.
 
@@ -125,6 +124,10 @@ To allow sending `MutexGuard`s and `RwLock*Guard`s to other threads, enable the
 
 Note that the `deadlock_detection` and `send_guard` features are incompatible
 and cannot be used together.
+
+Hardware lock elision support for x86 can be enabled with the
+`hardware-lock-elision` feature. This requires Rust 1.59 due to the use of
+inline assembly.
 
 The core parking lot API is provided by the `parking_lot_core` crate. It is
 separate from the synchronization primitives in the `parking_lot` crate so that

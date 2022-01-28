@@ -28,6 +28,7 @@ nightly = ["parking_lot_core/nightly", "lock_api/nightly"]
 deadlock_detection = ["parking_lot_core/deadlock_detection"]
 serde = ["lock_api/serde"]
 send_guard = []
+hardware-lock-elision = []
 
 [workspace]
 exclude = ["benchmark"]
