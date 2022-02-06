@@ -36,14 +36,14 @@ impl WaitAddress {
             // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
             // located in kernel32.dll, but they are lying...
             let synch_dll =
-                GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr() as *mut u8);
+                GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr());
             if synch_dll == 0 {
                 return None;
             }
 
-            let WaitOnAddress = GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr() as *mut u8)?;
+            let WaitOnAddress = GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr())?;
             let WakeByAddressSingle =
-                GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr() as *mut u8)?;
+                GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr())?;
 
             Some(WaitAddress {
                 WaitOnAddress: mem::transmute(WaitOnAddress),

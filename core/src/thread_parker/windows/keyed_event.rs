@@ -56,17 +56,17 @@ impl KeyedEvent {
     #[allow(non_snake_case)]
     pub fn create() -> Option<KeyedEvent> {
         unsafe {
-            let ntdll = GetModuleHandleA(b"ntdll.dll\0".as_ptr() as *mut u8);
+            let ntdll = GetModuleHandleA(b"ntdll.dll\0".as_ptr());
             if ntdll == 0 {
                 return None;
             }
 
             let NtCreateKeyedEvent =
-                GetProcAddress(ntdll, b"NtCreateKeyedEvent\0".as_ptr() as *mut u8)?;
+                GetProcAddress(ntdll, b"NtCreateKeyedEvent\0".as_ptr())?;
             let NtReleaseKeyedEvent =
-                GetProcAddress(ntdll, b"NtReleaseKeyedEvent\0".as_ptr() as *mut u8)?;
+                GetProcAddress(ntdll, b"NtReleaseKeyedEvent\0".as_ptr())?;
             let NtWaitForKeyedEvent =
-                GetProcAddress(ntdll, b"NtWaitForKeyedEvent\0".as_ptr() as *mut u8)?;
+                GetProcAddress(ntdll, b"NtWaitForKeyedEvent\0".as_ptr())?;
 
             let NtCreateKeyedEvent: extern "system" fn(
                 KeyedEventHandle: *mut HANDLE,
