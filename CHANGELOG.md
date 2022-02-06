@@ -1,3 +1,7 @@
+## parking_lot_core 0.9.1 (2022-02-06)
+
+- Bump windows-sys dependency to 0.32. (#316)
+
 ## parking_lot 0.12.0, parking_lot_core 0.9.0, lock_api 0.4.6 (2022-01-28)
 
 - The MSRV is bumped to 1.49.0.
