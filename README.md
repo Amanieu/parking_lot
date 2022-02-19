@@ -95,9 +95,12 @@ There are a few restrictions when using this library on stable Rust:
   statically initialize the locking primitives. Using e.g. `Mutex::new(val)`
   does not work on stable Rust yet.
 - The `wasm32-unknown-unknown` target is only fully supported on nightly with
-  `-C target-feature=+atomics` in `RUSTFLAGS`.
-  parking_lot will work mostly fine on stable, the only problem is it will
+  `-C target-feature=+atomics` in `RUSTFLAGS` and `-Z build-std` passed to cargo.
+  parking_lot will work mostly fine on stable, the only difference is it will
   panic instead of block forever if you hit a deadlock.
+  Just make sure not to enable `-C target-feature=+atomics` on stable as that
+  will allow wasm to run with multiple threads which will completely break
+  parking_lot's concurrency guarantees.
 
 To enable nightly-only functionality, you need to enable the `nightly` feature
 in Cargo (see below).
