@@ -94,8 +94,10 @@ There are a few restrictions when using this library on stable Rust:
 - You will have to use the `const_*` functions (e.g. `const_mutex(val)`) to
   statically initialize the locking primitives. Using e.g. `Mutex::new(val)`
   does not work on stable Rust yet.
-- The `wasm32-unknown-unknown` target is only supported on nightly and requires
+- The `wasm32-unknown-unknown` target is only fully supported on nightly with
   `-C target-feature=+atomics` in `RUSTFLAGS`.
+  parking_lot will work mostly fine on stable, the only problem is it will
+  panic instead of block forever if you hit a deadlock.
 
 To enable nightly-only functionality, you need to enable the `nightly` feature
 in Cargo (see below).
