@@ -1,7 +1,7 @@
 parking_lot
 ============
 
-![Rust](https://github.com/Amanieu/parking_lot/workflows/Rust/badge.svg)
+[![Rust](https://github.com/Amanieu/parking_lot/workflows/Rust/badge.svg)](https://github.com/Amanieu/parking_lot/actions)
 [![Crates.io](https://img.shields.io/crates/v/parking_lot.svg)](https://crates.io/crates/parking_lot)
 
 [Documentation (synchronization primitives)](https://docs.rs/parking_lot/)
@@ -83,7 +83,7 @@ functionality is offloaded to the *parking lot*. The idea behind this is
 based on the Webkit [`WTF::ParkingLot`](https://webkit.org/blog/6161/locking-in-webkit/)
 class, which essentially consists of a hash table mapping of lock addresses
 to queues of parked (sleeping) threads. The Webkit parking lot was itself
-inspired by Linux [futexes](http://man7.org/linux/man-pages/man2/futex.2.html),
+inspired by Linux [futexes](https://man7.org/linux/man-pages/man2/futex.2.html),
 but it is more powerful since it allows invoking callbacks while holding a queue
 lock.
 
@@ -106,14 +106,14 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-parking_lot = "0.11"
+parking_lot = "0.12"
 ```
 
 To enable nightly-only features, add this to your `Cargo.toml` instead:
 
 ```toml
 [dependencies]
-parking_lot = { version = "0.11", features = ["nightly"] }
+parking_lot = { version = "0.12", features = ["nightly"] }
 ```
 
 The experimental deadlock detector can be enabled with the
@@ -142,8 +142,8 @@ considered a breaking change and will require a major version bump.
 
 Licensed under either of
 
- * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+ * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or https://www.apache.org/licenses/LICENSE-2.0)
+ * MIT license ([LICENSE-MIT](LICENSE-MIT) or https://opensource.org/licenses/MIT)
 
 at your option.
 
