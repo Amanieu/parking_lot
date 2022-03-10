@@ -12,7 +12,7 @@ edition = "2018"
 [dependencies]
 cfg-if = "1.0.0"
 smallvec = "1.6.1"
-petgraph = { version = "0.5.1", optional = true }
+petgraph = { version = "0.6.0", optional = true }
 thread-id = { version = "4.0.0", optional = true }
 backtrace = { version = "0.3.60", optional = true }
 
@@ -23,7 +23,7 @@ libc = "0.2.95"
 redox_syscall = "0.2.8"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.32", features = [
+windows-sys = { version = "0.33.0", features = [
     "Win32_Foundation",
     "Win32_System_LibraryLoader",
     "Win32_System_SystemServices",
