@@ -53,7 +53,7 @@ impl WaitTimeoutResult {
 ///   woken up.
 /// - Only requires 1 word of space, whereas the standard library boxes the
 ///   `Condvar` due to platform limitations.
-/// - Can be statically constructed (requires the `const_fn` nightly feature).
+/// - Can be statically constructed.
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
 ///

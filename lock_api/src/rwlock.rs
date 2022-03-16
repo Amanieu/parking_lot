@@ -366,7 +366,7 @@ unsafe impl<R: RawRwLock + Sync, T: ?Sized + Send + Sync> Sync for RwLock<R, T> 
 
 impl<R: RawRwLock, T> RwLock<R, T> {
     /// Creates a new instance of an `RwLock<T>` which is unlocked.
-    #[cfg(feature = "nightly")]
+    #[cfg(has_const_fn_trait_bound)]
     #[inline]
     pub const fn new(val: T) -> RwLock<R, T> {
         RwLock {
@@ -376,7 +376,7 @@ impl<R: RawRwLock, T> RwLock<R, T> {
     }
 
     /// Creates a new instance of an `RwLock<T>` which is unlocked.
-    #[cfg(not(feature = "nightly"))]
+    #[cfg(not(has_const_fn_trait_bound))]
     #[inline]
     pub fn new(val: T) -> RwLock<R, T> {
         RwLock {
@@ -892,7 +892,7 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
     /// Attempts to lock this `RwLock` with shared read access, through an `Arc`.
     ///
     /// This method is similar to the `try_read_recursive` method; however, it requires the `RwLock` to be inside
-    /// of an `Arc` and the resulting read guard has no lifetime requirements.   
+    /// of an `Arc` and the resulting read guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
     pub fn try_read_recursive_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<R, T>> {
