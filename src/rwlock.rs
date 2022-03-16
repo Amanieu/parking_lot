@@ -55,7 +55,7 @@ use lock_api;
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 word of space, whereas the standard library boxes the
 ///   `RwLock` due to platform limitations.
-/// - Can be statically constructed (requires the `const_fn` nightly feature).
+/// - Can be statically constructed.
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
 /// - Efficient handling of micro-contention using adaptive spinning.
