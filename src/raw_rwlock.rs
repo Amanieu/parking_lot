@@ -140,13 +140,13 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
 
     #[inline]
     fn is_locked(&self) -> bool {
-        let state = self.state.load(Ordering::Relaxed);
+        let state = self.state.load(Ordering::Acquire);
         state & (WRITER_BIT | READERS_MASK) != 0
     }
 
     #[inline]
     fn is_locked_exclusive(&self) -> bool {
-        let state = self.state.load(Ordering::Relaxed);
+        let state = self.state.load(Ordering::Acquire);
         state & (WRITER_BIT) != 0
     }
 }
