@@ -565,6 +565,17 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         defer!(s.mutex.raw.lock());
         f()
     }
+
+    /// Leaks the mutex guard and returns a mutable reference to the data
+    /// protected by the mutex.
+    ///
+    /// This will leave the `Mutex` in a locked state.
+    #[inline]
+    pub fn leak(s: Self) -> &'a mut T {
+        let r = unsafe { &mut *s.mutex.data.get() };
+        mem::forget(s);
+        r
+    }
 }
 
 impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
