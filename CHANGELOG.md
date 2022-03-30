@@ -1,5 +1,6 @@
-## parking_lot_core 0.9.2 (2022-03-25)
+## parking_lot_core 0.9.2, lock_api 0.4.7 (2022-03-25)
 
+- Enable const new() on lock types on stable. (#325)
 - Bump windows-sys dependency to 0.34. (#331)
 - Bump petgraph dependency to 0.6. (#326)
 - Don't use pthread attributes on the espidf platform. (#319)
