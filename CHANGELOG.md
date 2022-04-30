@@ -1,3 +1,7 @@
+## parking_lot_core 0.9.3 (2022-04-30)
+
+- Bump windows-sys dependency to 0.36. (#339)
+
 ## parking_lot_core 0.9.2, lock_api 0.4.7 (2022-03-25)
 
 - Enable const new() on lock types on stable. (#325)
