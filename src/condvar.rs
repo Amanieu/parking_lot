@@ -136,11 +136,10 @@ impl Condvar {
 
     #[cold]
     fn notify_one_slow(&self, mutex: *mut RawMutex) -> bool {
-        unsafe {
-            // Unpark one thread and requeue the rest onto the mutex
-            let from = self as *const _ as usize;
-            let to = mutex as usize;
-            let validate = || {
+        // Unpark one thread and requeue the rest onto the mutex
+        let from = self as *const _ as usize;
+        let to = mutex as usize;
+            let validate = unsafe { || {
                 // Make sure that our atomic state still points to the same
                 // mutex. If not then it means that all threads on the current
                 // mutex were woken up and a new waiting thread switched to a
@@ -161,7 +160,7 @@ impl Condvar {
                 } else {
                     RequeueOp::UnparkOne
                 }
-            };
+            } };
             let callback = |_op, result: UnparkResult| {
                 // Clear our state if there are no more waiting threads
                 if !result.have_more_threads {
@@ -169,10 +168,9 @@ impl Condvar {
                 }
                 TOKEN_NORMAL
             };
-            let res = parking_lot_core::unpark_requeue(from, to, validate, callback);
+            let res = unsafe { parking_lot_core::unpark_requeue(from, to, validate, callback) };
 
             res.unparked_threads + res.requeued_threads != 0
-        }
     }
 
     /// Wakes up all blocked threads on this condvar.
@@ -197,11 +195,10 @@ impl Condvar {
 
     #[cold]
     fn notify_all_slow(&self, mutex: *mut RawMutex) -> usize {
-        unsafe {
             // Unpark one thread and requeue the rest onto the mutex
             let from = self as *const _ as usize;
             let to = mutex as usize;
-            let validate = || {
+            let validate = unsafe { || {
                 // Make sure that our atomic state still points to the same
                 // mutex. If not then it means that all threads on the current
                 // mutex were woken up and a new waiting thread switched to a
@@ -226,19 +223,18 @@ impl Condvar {
                 } else {
                     RequeueOp::UnparkOneRequeueRest
                 }
-            };
+            } };
             let callback = |op, result: UnparkResult| {
                 // If we requeued threads to the mutex, mark it as having
                 // parked threads. The RequeueAll case is already handled above.
                 if op == RequeueOp::UnparkOneRequeueRest && result.requeued_threads != 0 {
-                    (*mutex).mark_parked();
+                    unsafe { (*mutex).mark_parked() };
                 }
                 TOKEN_NORMAL
             };
-            let res = parking_lot_core::unpark_requeue(from, to, validate, callback);
+            let res = unsafe { parking_lot_core::unpark_requeue(from, to, validate, callback) };
 
             res.unparked_threads + res.requeued_threads
-        }
     }
 
     /// Blocks the current thread until this condition variable receives a
@@ -297,7 +293,6 @@ impl Condvar {
     // This is a non-generic function to reduce the monomorphization cost of
     // using `wait_until`.
     fn wait_until_internal(&self, mutex: &RawMutex, timeout: Option<Instant>) -> WaitTimeoutResult {
-        unsafe {
             let result;
             let mut bad_mutex = false;
             let mut requeued = false;
@@ -317,10 +312,10 @@ impl Condvar {
                     }
                     true
                 };
-                let before_sleep = || {
+                let before_sleep = unsafe { || {
                     // Unlock the mutex before sleeping...
                     mutex.unlock();
-                };
+                } };
                 let timed_out = |k, was_last_thread| {
                     // If we were requeued to a mutex, then we did not time out.
                     // We'll just park ourselves on the mutex again when we try
@@ -334,14 +329,14 @@ impl Condvar {
                         self.state.store(ptr::null_mut(), Ordering::Relaxed);
                     }
                 };
-                result = parking_lot_core::park(
+                result = unsafe { parking_lot_core::park(
                     addr,
                     validate,
                     before_sleep,
                     timed_out,
                     DEFAULT_PARK_TOKEN,
                     timeout,
-                );
+                ) };
             }
 
             // Panic if we tried to use multiple mutexes with a Condvar. Note
@@ -353,13 +348,12 @@ impl Condvar {
 
             // ... and re-lock it once we are done sleeping
             if result == ParkResult::Unparked(TOKEN_HANDOFF) {
-                deadlock::acquire_resource(mutex as *const _ as usize);
+                unsafe { deadlock::acquire_resource(mutex as *const _ as usize) };
             } else {
                 mutex.lock();
             }
 
             WaitTimeoutResult(!(result.is_unparked() || requeued))
-        }
     }
 
     /// Waits on this condition variable for a notification, timing out after a
