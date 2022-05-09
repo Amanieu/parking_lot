@@ -139,7 +139,7 @@ impl Condvar {
         // Unpark one thread and requeue the rest onto the mutex
         let from = self as *const _ as usize;
         let to = mutex as usize;
-            let validate = unsafe { || {
+            let validate = || {
                 // Make sure that our atomic state still points to the same
                 // mutex. If not then it means that all threads on the current
                 // mutex were woken up and a new waiting thread switched to a
@@ -155,12 +155,12 @@ impl Condvar {
                 // locking the queue. There is the possibility of a race if the
                 // mutex gets locked after we check, but that doesn't matter in
                 // this case.
-                if (*mutex).mark_parked_if_locked() {
+                if unsafe { (*mutex).mark_parked_if_locked() } {
                     RequeueOp::RequeueOne
                 } else {
                     RequeueOp::UnparkOne
                 }
-            } };
+            };
             let callback = |_op, result: UnparkResult| {
                 // Clear our state if there are no more waiting threads
                 if !result.have_more_threads {
@@ -198,7 +198,7 @@ impl Condvar {
             // Unpark one thread and requeue the rest onto the mutex
             let from = self as *const _ as usize;
             let to = mutex as usize;
-            let validate = unsafe { || {
+            let validate = || {
                 // Make sure that our atomic state still points to the same
                 // mutex. If not then it means that all threads on the current
                 // mutex were woken up and a new waiting thread switched to a
@@ -218,12 +218,12 @@ impl Condvar {
                 // locking the queue. There is the possibility of a race if the
                 // mutex gets locked after we check, but that doesn't matter in
                 // this case.
-                if (*mutex).mark_parked_if_locked() {
+                if unsafe { (*mutex).mark_parked_if_locked() } {
                     RequeueOp::RequeueAll
                 } else {
                     RequeueOp::UnparkOneRequeueRest
                 }
-            } };
+            };
             let callback = |op, result: UnparkResult| {
                 // If we requeued threads to the mutex, mark it as having
                 // parked threads. The RequeueAll case is already handled above.
