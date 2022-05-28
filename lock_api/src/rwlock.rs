@@ -1218,13 +1218,13 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     }
 
     /// Attempts to make  a new `MappedRwLockReadGuard` for a component of the
-    /// locked data. The original guard is return if the closure returns `None`.
+    /// locked data. Returns the original guard if the closure returns `None`.
     ///
     /// This operation cannot fail as the `RwLockReadGuard` passed
     /// in already locked the data.
     ///
     /// This is an associated function that needs to be
-    /// used as `RwLockReadGuard::map(...)`. A method would interfere with methods of
+    /// used as `RwLockReadGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
