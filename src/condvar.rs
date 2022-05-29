@@ -411,7 +411,7 @@ impl Condvar {
         let mut timeout_result = WaitTimeoutResult(false);
 
         while !timeout_result.timed_out() && condition(mutex_guard.deref_mut()) {
-            result.0 += 1;
+            result.0 = result.0.saturating_add(1);
             timeout_result =
                 self.wait_until_internal(unsafe { MutexGuard::mutex(mutex_guard).raw() }, timeout);
         }
