@@ -988,8 +988,8 @@ impl RawRwLock {
                 if let Err(x) = self.state.compare_exchange_weak(
                     state,
                     state | WRITER_PARKED_BIT,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
+                    Ordering::Acquire,
+                    Ordering::Acquire,
                 ) {
                     state = x;
                     continue;
