@@ -1,6 +1,6 @@
 [package]
 name = "parking_lot"
-version = "0.12.0"
+version = "0.12.1"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 description = "More compact and efficient implementations of the standard synchronization primitives."
 license = "MIT OR Apache-2.0"

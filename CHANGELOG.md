@@ -1,3 +1,8 @@
+## parking_lot 0.12.1 (2022-05-31)
+
+- Fixed incorrect memory ordering in `RwLock`. (#344)
+- Added `Condvar::wait_while` convenience methods (#343)
+
 ## parking_lot_core 0.9.3 (2022-04-30)
 
 - Bump windows-sys dependency to 0.36. (#339)
