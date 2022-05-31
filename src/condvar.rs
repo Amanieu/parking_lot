@@ -30,17 +30,6 @@ impl WaitTimeoutResult {
     }
 }
 
-/// A type indicating how many times a thread was blocked during wait_while.
-#[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub struct WaitWhileResult(u32);
-
-impl WaitWhileResult {
-    #[inline]
-    pub fn num_iters(self) -> u32 {
-        self.0
-    }
-}
-
 /// A Condition Variable
 ///
 /// Condition variables represent the ability to block a thread such that it
@@ -402,21 +391,19 @@ impl Condvar {
         mutex_guard: &mut MutexGuard<'_, T>,
         mut condition: F,
         timeout: Option<Instant>,
-    ) -> (WaitWhileResult, WaitTimeoutResult)
+    ) -> WaitTimeoutResult
     where
         T: ?Sized,
         F: FnMut(&mut T) -> bool,
     {
-        let mut result = WaitWhileResult(0);
-        let mut timeout_result = WaitTimeoutResult(false);
+        let mut result = WaitTimeoutResult(false);
 
-        while !timeout_result.timed_out() && condition(mutex_guard.deref_mut()) {
-            result.0 = result.0.saturating_add(1);
-            timeout_result =
+        while !result.timed_out() && condition(mutex_guard.deref_mut()) {
+            result =
                 self.wait_until_internal(unsafe { MutexGuard::mutex(mutex_guard).raw() }, timeout);
         }
 
-        (result, timeout_result)
+        result
     }
     /// Blocks the current thread until this condition variable receives a
     /// notification. If the provided condition evaluates to `false`, then the
@@ -439,13 +426,12 @@ impl Condvar {
         &self,
         mutex_guard: &mut MutexGuard<'_, T>,
         condition: F,
-    ) -> WaitWhileResult
+    ) -> WaitTimeoutResult
     where
         T: ?Sized,
         F: FnMut(&mut T) -> bool,
     {
         self.wait_while_until_internal(mutex_guard, condition, None)
-            .0
     }
 
     /// Waits on this condition variable for a notification, timing out after
@@ -481,7 +467,7 @@ impl Condvar {
         mutex_guard: &mut MutexGuard<'_, T>,
         condition: F,
         timeout: Instant,
-    ) -> (WaitWhileResult, WaitTimeoutResult)
+    ) -> WaitTimeoutResult
     where
         T: ?Sized,
         F: FnMut(&mut T) -> bool,
@@ -516,7 +502,7 @@ impl Condvar {
         mutex_guard: &mut MutexGuard<'_, T>,
         condition: F,
         timeout: Duration,
-    ) -> (WaitWhileResult, WaitTimeoutResult)
+    ) -> WaitTimeoutResult
     where
         F: FnMut(&mut T) -> bool,
     {
@@ -754,16 +740,20 @@ mod tests {
 
     #[test]
     fn wait_while_until_internal_does_not_wait_if_initially_false() {
-        let mutex = Arc::new(Mutex::new(()));
+        let mutex = Arc::new(Mutex::new(0));
         let cv = Arc::new(Condvar::new());
 
+        let condition = |counter: &mut u32| {
+            *counter += 1;
+            false
+        };
+
         let mut mutex_guard = mutex.lock();
+        let timeout_result = cv
+            .wait_while_until_internal(&mut mutex_guard, condition, None);
 
-        let result = cv
-            .wait_while_until_internal(&mut mutex_guard, |_| false, None)
-            .0;
-
-        assert!(result.num_iters() == 0);
+        assert!(!timeout_result.timed_out());
+        assert!(*mutex_guard == 1);
     }
 
     #[test]
@@ -771,21 +761,23 @@ mod tests {
         let mutex = Arc::new(Mutex::new(0));
         let cv = Arc::new(Condvar::new());
 
+        let num_iters = u32::MAX;
         let condition = |counter: &mut u32| {
             *counter += 1;
             true
         };
 
         let mut mutex_guard = mutex.lock();
-        let timeout = Some(Instant::now() + Duration::from_millis(50));
-        let handle = spawn_wait_while_notifier(mutex.clone(), cv.clone(), u32::MAX, timeout);
+        let timeout = Some(Instant::now() + Duration::from_millis(500));
+        let handle = spawn_wait_while_notifier(mutex.clone(), cv.clone(), num_iters, timeout);
 
-        let (result, timeout_result) =
+        let timeout_result =
             cv.wait_while_until_internal(&mut mutex_guard, condition, timeout);
 
         assert!(timeout_result.timed_out());
-        assert!(result.num_iters() > 0);
-        assert!(result.num_iters() < u32::MAX);
+        // thread should be blocked + woken up multiple times
+        assert!(*mutex_guard > 2);
+        assert!(*mutex_guard < num_iters);
 
         // prevent deadlock with notifier
         drop(mutex_guard);
@@ -807,17 +799,16 @@ mod tests {
         let mut mutex_guard = mutex.lock();
         let handle = spawn_wait_while_notifier(mutex.clone(), cv.clone(), num_iters, None);
 
-        let (result, timeout_result) =
+        let timeout_result =
             cv.wait_while_until_internal(&mut mutex_guard, condition, None);
 
         assert!(!timeout_result.timed_out());
-        assert!(result.num_iters() == num_iters);
         assert!(*mutex_guard == num_iters + 1);
 
-        let result = cv.wait_while(&mut mutex_guard, condition);
+        let timeout_result = cv.wait_while(&mut mutex_guard, condition);
         handle.join().unwrap();
 
-        assert!(result.num_iters() == 0);
+        assert!(!timeout_result.timed_out());
         assert!(*mutex_guard == num_iters + 2);
     }
 
