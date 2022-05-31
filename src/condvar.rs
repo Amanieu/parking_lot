@@ -757,7 +757,7 @@ mod tests {
         let mutex = Arc::new(Mutex::new(0));
         let cv = Arc::new(Condvar::new());
 
-        let num_iters = u32::MAX;
+        let num_iters = 3;
         let condition = |counter: &mut u32| {
             *counter += 1;
             true
@@ -771,9 +771,7 @@ mod tests {
             cv.wait_while_until_internal(&mut mutex_guard, condition, timeout);
 
         assert!(timeout_result.timed_out());
-        // thread should be blocked + woken up multiple times
-        assert!(*mutex_guard > 2);
-        assert!(*mutex_guard < num_iters);
+        assert!(*mutex_guard == num_iters + 1);
 
         // prevent deadlock with notifier
         drop(mutex_guard);
