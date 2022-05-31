@@ -422,16 +422,12 @@ impl Condvar {
     /// This function will panic if another thread is waiting on the `Condvar`
     /// with a different `Mutex` object.
     #[inline]
-    pub fn wait_while<T, F>(
-        &self,
-        mutex_guard: &mut MutexGuard<'_, T>,
-        condition: F,
-    ) -> WaitTimeoutResult
+    pub fn wait_while<T, F>(&self, mutex_guard: &mut MutexGuard<'_, T>, condition: F)
     where
         T: ?Sized,
         F: FnMut(&mut T) -> bool,
     {
-        self.wait_while_until_internal(mutex_guard, condition, None)
+        self.wait_while_until_internal(mutex_guard, condition, None);
     }
 
     /// Waits on this condition variable for a notification, timing out after
@@ -805,7 +801,7 @@ mod tests {
         assert!(!timeout_result.timed_out());
         assert!(*mutex_guard == num_iters + 1);
 
-        let timeout_result = cv.wait_while(&mut mutex_guard, condition);
+        let timeout_result = cv.wait_while_until_internal(&mut mutex_guard, condition, None);
         handle.join().unwrap();
 
         assert!(!timeout_result.timed_out());
