@@ -17,11 +17,11 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu, macos, windows]
-        channel: [1.49.0, stable, beta, nightly]
+        channel: [1.59.0, stable, beta, nightly]
         feature: [arc_lock, serde, deadlock_detection]
         exclude:
           - feature: deadlock_detection
-            channel: '1.49.0'
+            channel: '1.59.0'
         include:
           - channel: nightly
             feature: nightly

@@ -128,8 +128,7 @@ Note that the `deadlock_detection` and `send_guard` features are incompatible
 and cannot be used together.
 
 Hardware lock elision support for x86 can be enabled with the
-`hardware-lock-elision` feature. This requires Rust 1.59 due to the use of
-inline assembly.
+`hardware-lock-elision` feature, which uses inline assembly.
 
 The core parking lot API is provided by the `parking_lot_core` crate. It is
 separate from the synchronization primitives in the `parking_lot` crate so that
@@ -137,7 +136,7 @@ changes to the core API do not cause breaking changes for users of `parking_lot`
 
 ## Minimum Rust version
 
-The current minimum required Rust version is 1.49. Any change to this is
+The current minimum required Rust version is 1.59. Any change to this is
 considered a breaking change and will require a major version bump.
 
 ## License
