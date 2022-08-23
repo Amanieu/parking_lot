@@ -681,16 +681,14 @@ unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct ArcMutexGuard<R: RawMutex, T: ?Sized> {
     mutex: Arc<Mutex<R, T>>,
-    // n.b. notgull: add a ptr here to prevent the MutexGuard
-    // from being Sync unless it is Sync itself.
-    marker: PhantomData<(R::GuardMarker, *const ())>,
+    marker: PhantomData<*const ()>,
 }
 
-unsafe impl<R: RawMutex, T: Send + Sync + ?Sized> Send for ArcMutexGuard<R, T> where
+unsafe impl<R: RawMutex + Send + Sync, T: Send + Sync + ?Sized> Send for ArcMutexGuard<R, T> where
     R::GuardMarker: Send
 {
 }
-unsafe impl<R: RawMutex, T: Send + Sync + ?Sized> Sync for ArcMutexGuard<R, T> where
+unsafe impl<R: RawMutex + Sync, T: Sync + ?Sized> Sync for ArcMutexGuard<R, T> where
     R::GuardMarker: Sync
 {
 }
