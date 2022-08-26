@@ -684,10 +684,12 @@ pub struct ArcMutexGuard<R: RawMutex, T: ?Sized> {
     marker: PhantomData<*const ()>,
 }
 
-unsafe impl<R: RawMutex + Send + Sync, T: Send + Sync + ?Sized> Send for ArcMutexGuard<R, T> where
+#[cfg(feature = "arc_lock")]
+unsafe impl<R: RawMutex + Send + Sync, T: Send + ?Sized> Send for ArcMutexGuard<R, T> where
     R::GuardMarker: Send
 {
 }
+#[cfg(feature = "arc_lock")]
 unsafe impl<R: RawMutex + Sync, T: Sync + ?Sized> Sync for ArcMutexGuard<R, T> where
     R::GuardMarker: Sync
 {
