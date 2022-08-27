@@ -681,7 +681,18 @@ unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct ArcMutexGuard<R: RawMutex, T: ?Sized> {
     mutex: Arc<Mutex<R, T>>,
-    marker: PhantomData<R::GuardMarker>,
+    marker: PhantomData<*const ()>,
+}
+
+#[cfg(feature = "arc_lock")]
+unsafe impl<R: RawMutex + Send + Sync, T: Send + ?Sized> Send for ArcMutexGuard<R, T> where
+    R::GuardMarker: Send
+{
+}
+#[cfg(feature = "arc_lock")]
+unsafe impl<R: RawMutex + Sync, T: Sync + ?Sized> Sync for ArcMutexGuard<R, T> where
+    R::GuardMarker: Sync
+{
 }
 
 #[cfg(feature = "arc_lock")]
