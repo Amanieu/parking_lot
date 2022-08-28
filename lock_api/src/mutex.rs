@@ -692,6 +692,18 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
         &self.mutex
     }
 
+    /// Unlocks the mutex and returns the `Arc` that was held by the [`ArcMutexGuard`].
+    #[inline]
+    pub fn into_arc(self) -> Arc<Mutex<R, T>> {
+        // Safety: Skip our Drop impl and manually unlock the mutex.
+        let arc = unsafe { ptr::read(&self.mutex) };
+        mem::forget(self);
+        unsafe {
+            arc.raw.unlock();
+        }
+        arc
+    }
+
     /// Temporarily unlocks the mutex to execute the given function.
     ///
     /// This is safe because `&mut` guarantees that there exist no other
