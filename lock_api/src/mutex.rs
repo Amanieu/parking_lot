@@ -699,16 +699,16 @@ unsafe impl<R: RawMutex + Sync, T: Sync + ?Sized> Sync for ArcMutexGuard<R, T> w
 impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     /// Returns a reference to the `Mutex` this is guarding, contained in its `Arc`.
     #[inline]
-    pub fn mutex(&self) -> &Arc<Mutex<R, T>> {
-        &self.mutex
+    pub fn mutex(s: &Self) -> &Arc<Mutex<R, T>> {
+        &s.mutex
     }
 
     /// Unlocks the mutex and returns the `Arc` that was held by the [`ArcMutexGuard`].
     #[inline]
-    pub fn into_arc(self) -> Arc<Mutex<R, T>> {
+    pub fn into_arc(s: Self) -> Arc<Mutex<R, T>> {
         // Safety: Skip our Drop impl and manually unlock the mutex.
-        let arc = unsafe { ptr::read(&self.mutex) };
-        mem::forget(self);
+        let arc = unsafe { ptr::read(&s.mutex) };
+        mem::forget(s);
         unsafe {
             arc.raw.unlock();
         }
