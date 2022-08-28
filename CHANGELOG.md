@@ -1,3 +1,8 @@
+## lock_api 0.4.8 (2022-08-28)
+
+- Fixed unsound `Sync`/`Send` impls for `ArcMutexGuard`. (#349)
+- Added `ArcMutexGuard::into_arc`. (#350) 
+
 ## parking_lot 0.12.1 (2022-05-31)
 
 - Fixed incorrect memory ordering in `RwLock`. (#344)
