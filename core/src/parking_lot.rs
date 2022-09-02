@@ -724,6 +724,10 @@ pub unsafe fn park(
 ///
 /// The `callback` function is called while the queue is locked and must not
 /// panic or call into any function in `parking_lot`.
+///
+/// The `parking_lot` functions are not re-entrant and calling this method
+/// from the context of an asynchronous signal handler may result in undefined
+/// behavior, including corruption of internal state and/or deadlocks.
 #[inline]
 pub unsafe fn unpark_one(
     key: usize,
@@ -801,6 +805,10 @@ pub unsafe fn unpark_one(
 /// You should only call this function with an address that you control, since
 /// you could otherwise interfere with the operation of other synchronization
 /// primitives.
+///
+/// The `parking_lot` functions are not re-entrant and calling this method
+/// from the context of an asynchronous signal handler may result in undefined
+/// behavior, including corruption of internal state and/or deadlocks.
 #[inline]
 pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
     // Lock the bucket for the given key
