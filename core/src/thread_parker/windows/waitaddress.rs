@@ -32,22 +32,21 @@ pub struct WaitAddress {
 impl WaitAddress {
     #[allow(non_snake_case)]
     pub fn create() -> Option<WaitAddress> {
-            // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
-            // located in kernel32.dll, but they are lying...
-            let synch_dll =
-                unsafe { GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr()) };
-            if synch_dll == 0 {
-                return None;
-            }
+        // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
+        // located in kernel32.dll, but they are lying...
+        let synch_dll = unsafe { GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr()) };
+        if synch_dll == 0 {
+            return None;
+        }
 
-            let WaitOnAddress = unsafe { GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr())? };
-            let WakeByAddressSingle =
-                unsafe { GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr())? };
+        let WaitOnAddress = unsafe { GetProcAddress(synch_dll, b"WaitOnAddress\0".as_ptr())? };
+        let WakeByAddressSingle =
+            unsafe { GetProcAddress(synch_dll, b"WakeByAddressSingle\0".as_ptr())? };
 
-            Some(WaitAddress {
-                WaitOnAddress: unsafe { mem::transmute(WaitOnAddress) },
-                WakeByAddressSingle: unsafe { mem::transmute(WakeByAddressSingle) },
-            })
+        Some(WaitAddress {
+            WaitOnAddress: unsafe { mem::transmute(WaitOnAddress) },
+            WakeByAddressSingle: unsafe { mem::transmute(WakeByAddressSingle) },
+        })
     }
 
     #[inline]
