@@ -127,12 +127,22 @@ impl super::ThreadParkerT for ThreadParker {
 
 impl ThreadParker {
     /// Initializes the condvar to use CLOCK_MONOTONIC instead of CLOCK_REALTIME.
-    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "android", target_os = "espidf"))]
+    #[cfg(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android",
+        target_os = "espidf"
+    ))]
     #[inline]
     unsafe fn init(&self) {}
 
     /// Initializes the condvar to use CLOCK_MONOTONIC instead of CLOCK_REALTIME.
-    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android", target_os = "espidf")))]
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android",
+        target_os = "espidf"
+    )))]
     #[inline]
     unsafe fn init(&self) {
         let mut attr = MaybeUninit::<libc::pthread_condattr_t>::uninit();
