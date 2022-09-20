@@ -1,7 +1,11 @@
+## lock_api 0.4.9 (2022-09-20)
+
+- Fixed `ReentrantMutexGuard::try_map` signature (#355)
+
 ## lock_api 0.4.8 (2022-08-28)
 
 - Fixed unsound `Sync`/`Send` impls for `ArcMutexGuard`. (#349)
-- Added `ArcMutexGuard::into_arc`. (#350) 
+- Added `ArcMutexGuard::into_arc`. (#350)
 
 ## parking_lot 0.12.1 (2022-05-31)
 
