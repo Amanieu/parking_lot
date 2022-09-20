@@ -654,10 +654,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         f: F,
     ) -> Result<MappedReentrantMutexGuard<'a, R, G, U>, Self>
     where
-        F: FnOnce(&mut T) -> Option<&mut U>,
+        F: FnOnce(&T) -> Option<&U>,
     {
         let raw = &s.remutex.raw;
-        let data = match f(unsafe { &mut *s.remutex.data.get() }) {
+        let data = match f(unsafe { &*s.remutex.data.get() }) {
             Some(data) => data,
             None => return Err(s),
         };
