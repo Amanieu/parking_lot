@@ -1512,7 +1512,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     /// in already locked the data.
     ///
     /// This is an associated function that needs to be
-    /// used as `RwLockWriteGuard::map(...)`. A method would interfere with methods of
+    /// used as `RwLockWriteGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
@@ -2374,7 +2374,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
     /// in already locked the data.
     ///
     /// This is an associated function that needs to be
-    /// used as `MappedRwLockReadGuard::map(...)`. A method would interfere with methods of
+    /// used as `MappedRwLockReadGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
@@ -2512,7 +2512,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
     /// in already locked the data.
     ///
     /// This is an associated function that needs to be
-    /// used as `MappedRwLockWriteGuard::map(...)`. A method would interfere with methods of
+    /// used as `MappedRwLockWriteGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>

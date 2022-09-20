@@ -646,7 +646,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     /// in already locked the mutex.
     ///
     /// This is an associated function that needs to be
-    /// used as `ReentrantMutexGuard::map(...)`. A method would interfere with methods of
+    /// used as `ReentrantMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(
@@ -942,7 +942,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// in already locked the mutex.
     ///
     /// This is an associated function that needs to be
-    /// used as `MappedReentrantMutexGuard::map(...)`. A method would interfere with methods of
+    /// used as `MappedReentrantMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
     pub fn try_map<U: ?Sized, F>(
