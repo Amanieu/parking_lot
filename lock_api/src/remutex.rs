@@ -16,6 +16,7 @@ use core::{
     mem,
     num::NonZeroUsize,
     ops::Deref,
+    pin::Pin,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -315,6 +316,20 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
         unsafe { self.guard() }
     }
 
+    /// Acquires a pinned mutex and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`lock()`] function, but takes a `Pin<&ReentrantMutex>`
+    /// and returns a `Pin<ReentrantMutexGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn lock_pinned(self: Pin<&Self>) -> Pin<ReentrantMutexGuard<'_, R, G, T>> {
+        let guard = self.get_ref().lock();
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { Pin::new_unchecked(guard) }
+    }
+
     /// Attempts to acquire this lock.
     ///
     /// If the lock could not be acquired at this time, then `None` is returned.
@@ -330,6 +345,20 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
         } else {
             None
         }
+    }
+
+    /// Attempts to acquire a pinned mutex and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_lock()`] function, but takes a `Pin<&ReentrantMutex>`
+    /// and returns a `Pin<ReentrantMutexGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_lock_pinned(self: Pin<&Self>) -> Option<Pin<ReentrantMutexGuard<'_, R, G, T>>> {
+        let guard = self.get_ref().try_lock();
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { guard.map(|guard| Pin::new_unchecked(guard))}
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -424,6 +453,24 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
         unsafe { self.guard_arc() }
     }
 
+    /// Acquires a pinned `Arc` mutex and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `ReentrantMutex::lock_arc`, but takes a
+    /// `Pin<Arc<Self>>` instead of an `Arc<Self>`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn lock_arc_pinned(self: Pin<Arc<Self>>) -> Pin<ArcReentrantMutexGuard<R, G, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.lock_arc();
+            Pin::new_unchecked(guard)
+        }
+    }
+
     /// Attempts to acquire a reentrant mutex through an `Arc`.
     ///
     /// This method is similar to the `try_lock` method; however, it requires the `ReentrantMutex` to be inside
@@ -436,6 +483,24 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
             Some(unsafe { self.guard_arc() })
         } else {
             None
+        }
+    }
+
+    /// Attempts to acquire a pinned `Arc` mutex and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `ReentrantMutex::try_lock_arc`, but takes a
+    /// `Pin<Arc<Self>>` instead of an `Arc<Self>`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_lock_arc_pinned(self: Pin<Arc<Self>>) -> Option<Pin<ArcReentrantMutexGuard<R, G, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_lock_arc()?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 }
@@ -474,6 +539,21 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
         }
     }
 
+    /// Attempts to acquire a pinned mutex for a timeout and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `ReentrantMutex::try_lock_for`, but takes a
+    /// `Pin<&ReentrantMutex>` instead of an `&ReentrantMutex`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[inline]
+    pub fn try_lock_for_pinned(self: Pin<&Self>, timeout: R::Duration) -> Option<Pin<ReentrantMutexGuard<'_, R, G, T>>> {
+        let guard = self.get_ref().try_lock_for(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
+    }
+
     /// Attempts to acquire this lock until a timeout is reached.
     ///
     /// If the lock could not be acquired before the timeout expired, then
@@ -487,6 +567,21 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
         } else {
             None
         }
+    }
+
+    /// Attempts to acquire a pinned mutex for a timeout and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `ReentrantMutex::try_lock_for`, but takes a
+    /// `Pin<&ReentrantMutex>` instead of an `&ReentrantMutex`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[inline]
+    pub fn try_lock_until_pinned(self: Pin<&Self>, timeout: R::Instant) -> Option<Pin<ReentrantMutexGuard<'_, R, G, T>>> {
+        let guard = self.get_ref().try_lock_until(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
     }
 
     /// Attempts to acquire this lock until a timeout is reached, through an `Arc`.
@@ -507,6 +602,24 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
         }
     }
 
+    /// Attempts to acquire a pinned `Arc` mutex on a timeout and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `ReentrantMutex::try_lock_arc`, but takes a
+    /// `Pin<Arc<Self>>` instead of an `Arc<Self>`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_lock_arc_for_pinned(self: Pin<Arc<Self>>, timeout: R::Duration) -> Option<Pin<ArcReentrantMutexGuard<R, G, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_lock_arc_for(timeout)?;
+            Some(Pin::new_unchecked(guard))
+        }
+    }
+
     /// Attempts to acquire this lock until a timeout is reached, through an `Arc`.
     ///
     /// This method is similar to the `try_lock_until` method; however, it requires the `ReentrantMutex` to be
@@ -522,6 +635,24 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
             Some(unsafe { self.guard_arc() })
         } else {
             None
+        }
+    }
+
+    /// Attempts to acquire a pinned `Arc` mutex on a timeout and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `ReentrantMutex::try_lock_arc`, but takes a
+    /// `Pin<Arc<Self>>` instead of an `Arc<Self>`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_lock_arc_until_pinned(self: Pin<Arc<Self>>, timeout: R::Instant) -> Option<Pin<ArcReentrantMutexGuard<R, G, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_lock_arc_until(timeout)?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 }

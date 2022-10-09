@@ -10,6 +10,7 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
@@ -216,6 +217,20 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
         unsafe { self.guard() }
     }
 
+    /// Acquires a pinned mutex and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`lock()`] function, but takes a `Pin<&Mutex>`
+    /// and returns a `Pin<MutexGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn lock_pinned(self: Pin<&Self>) -> Pin<MutexGuard<'_, R, T>> {
+        let guard = self.get_ref().lock();
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { Pin::new_unchecked(guard) }
+    }
+
     /// Attempts to acquire this lock.
     ///
     /// If the lock could not be acquired at this time, then `None` is returned.
@@ -231,6 +246,20 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
         } else {
             None
         }
+    }
+
+    /// Attempts to acquire a pinned mutex and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_lock()`] function, but takes a `Pin<&Mutex>`
+    /// and returns a `Pin<MutexGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_lock_pinned(self: Pin<&Self>) -> Option<Pin<MutexGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_lock();
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { guard.map(|guard| Pin::new_unchecked(guard))}
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -332,6 +361,42 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
             None
         }
     }
+
+    /// Acquires a pinned `Arc` mutex and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `Mutex::lock_arc`, but takes a
+    /// `Pin<Arc<Self>>` instead of an `Arc<Self>`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn lock_arc_pinned(self: Pin<Arc<Self>>) -> Pin<ArcMutexGuard<R, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.lock_arc();
+            Pin::new_unchecked(guard)
+        }
+    }
+
+    /// Attempts to acquire a pinned `Arc` mutex and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `Mutex::try_lock_arc`, but takes a
+    /// `Pin<Arc<Self>>` instead of an `Arc<Self>`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_lock_arc_pinned(self: Pin<Arc<Self>>) -> Option<Pin<ArcMutexGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_lock_arc()?;
+            Some(Pin::new_unchecked(guard))
+        }
+    }
 }
 
 impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
@@ -368,6 +433,21 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
         }
     }
 
+    /// Attempts to acquire a pinned mutex for a timeout and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `Mutex::try_lock_for`, but takes a
+    /// `Pin<&Mutex>` instead of an `&Mutex`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[inline]
+    pub fn try_lock_for_pinned(self: Pin<&Self>, timeout: R::Duration) -> Option<Pin<MutexGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_lock_for(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
+    }
+
     /// Attempts to acquire this lock until a timeout is reached.
     ///
     /// If the lock could not be acquired before the timeout expired, then
@@ -383,6 +463,21 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
         }
     }
 
+    /// Attempts to acquire a pinned mutex for a timeout and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `Mutex::try_lock_for`, but takes a
+    /// `Pin<&Mutex>` instead of an `&Mutex`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[inline]
+    pub fn try_lock_until_pinned(self: Pin<&Self>, timeout: R::Instant) -> Option<Pin<MutexGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_lock_until(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
+    }
+
     /// Attempts to acquire this lock through an `Arc` until a timeout is reached.
     ///
     /// This method is similar to the `try_lock_for` method; however, it requires the `Mutex` to be inside of an
@@ -395,6 +490,24 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
             Some(unsafe { self.guard_arc() })
         } else {
             None
+        }
+    }
+
+    /// Attempts to acquire a pinned `Arc` mutex on a timeout and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `Mutex::try_lock_arc`, but takes a
+    /// `Pin<Arc<Self>>` instead of an `Arc<Self>`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_lock_arc_for_pinned(self: Pin<Arc<Self>>, timeout: R::Duration) -> Option<Pin<ArcMutexGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_lock_arc_for(timeout)?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 
@@ -413,6 +526,25 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
             Some(unsafe { self.guard_arc() })
         } else {
             None
+        }
+    }
+
+
+    /// Attempts to acquire a pinned `Arc` mutex on a timeout and returns a pinned guard.
+    /// 
+    /// This functions is equivalent to `Mutex::try_lock_arc`, but takes a
+    /// `Pin<Arc<Self>>` instead of an `Arc<Self>`. This can be useful if you
+    /// want to use the mutex in a context where the data it protects is pinned,
+    /// such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_lock_arc_until_pinned(self: Pin<Arc<Self>>, timeout: R::Instant) -> Option<Pin<ArcMutexGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_lock_arc_until(timeout)?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 }

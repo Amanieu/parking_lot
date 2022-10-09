@@ -10,6 +10,7 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
+use core::pin::Pin;
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
@@ -450,6 +451,20 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         unsafe { self.read_guard() }
     }
 
+    /// Locks a pinned `RwLock` with shared read access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`read()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn read_pinned(self: Pin<&Self>) -> Pin<RwLockReadGuard<'_, R, T>> {
+        let guard = self.get_ref().read();
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { Pin::new_unchecked(guard) }
+    }
+
     /// Attempts to acquire this `RwLock` with shared read access.
     ///
     /// If the access could not be granted at this time, then `None` is returned.
@@ -467,6 +482,20 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock a pinned `RwLock` with shared read access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_read_pinned(self: Pin<&Self>) -> Option<Pin<RwLockReadGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_read()?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
+    }
+
     /// Locks this `RwLock` with exclusive write access, blocking the current
     /// thread until it can be acquired.
     ///
@@ -480,6 +509,20 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         self.raw.lock_exclusive();
         // SAFETY: The lock is held, as required.
         unsafe { self.write_guard() }
+    }
+
+    /// Locks a pinned `RwLock` with exclusive write access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`write()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockWriteGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn write_pinned(self: Pin<&Self>) -> Pin<RwLockWriteGuard<'_, R, T>> {
+        let guard = self.get_ref().write();
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { Pin::new_unchecked(guard) }
     }
 
     /// Attempts to lock this `RwLock` with exclusive write access.
@@ -497,6 +540,20 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         } else {
             None
         }
+    }
+
+    /// Attempts to lock a pinned `RwLock` with exclusive write access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`write()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockWriteGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_write_pinned(self: Pin<&Self>) -> Option<Pin<RwLockWriteGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_write()?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
     }
 
     /// Returns a mutable reference to the underlying data.
@@ -619,6 +676,22 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         unsafe { self.read_guard_arc() }
     }
 
+    /// Locks a pinned `Arc<RwLock>` with shared read access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`read_arc()`] function, but takes a `Pin<Arc<RwLock>>`
+    /// and returns a `Pin<ArcRwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn read_arc_pinned(self: Pin<Arc<Self>>) -> Pin<ArcRwLockReadGuard<R, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            Pin::new_unchecked(this.read_arc())
+        }
+    }
+
     /// Attempts to lock this `RwLock` with read access, through an `Arc`.
     ///
     /// This method is similar to the `try_read` method; however, it requires the `RwLock` to be inside of an
@@ -634,6 +707,23 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock a pinned `Arc<RwLock>` with shared read access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_arc()`] function, but takes a `Pin<Arc<RwLock>>`
+    /// and returns a `Pin<ArcRwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_read_arc_pinned(self: Pin<Arc<Self>>) -> Option<Pin<ArcRwLockReadGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_read_arc()?;
+            Some(Pin::new_unchecked(guard))
+        }
+    }
+
     /// Locks this `RwLock` with write access, through an `Arc`.
     ///
     /// This method is similar to the `write` method; however, it requires the `RwLock` to be inside of an `Arc`
@@ -644,6 +734,22 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         self.raw.lock_exclusive();
         // SAFETY: locking guarantee is upheld
         unsafe { self.write_guard_arc() }
+    }
+
+    /// Locks a pinned `Arc<RwLock>` with exclusive write access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`write_arc()`] function, but takes a `Pin<Arc<RwLock>>`
+    /// and returns a `Pin<ArcRwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn write_arc_pinned(self: Pin<Arc<Self>>) -> Pin<ArcRwLockWriteGuard<R, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            Pin::new_unchecked(this.write_arc())
+        }
     }
 
     /// Attempts to lock this `RwLock` with writ access, through an `Arc`.
@@ -658,6 +764,23 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
             Some(unsafe { self.write_guard_arc() })
         } else {
             None
+        }
+    } 
+
+    /// Attempts to lock a pinned `Arc<RwLock>` with exclusive write access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_write_arc()`] function, but takes a `Pin<Arc<RwLock>>`
+    /// and returns a `Pin<ArcRwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_write_arc_pinned(self: Pin<Arc<Self>>) -> Option<Pin<ArcRwLockWriteGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_write_arc()?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 }
@@ -713,6 +836,21 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock a pinned `RwLock` for a timeout with shared read access and returns 
+    /// a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_for()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_read_for_pinned(self: Pin<&Self>, timeout: R::Duration) -> Option<Pin<RwLockReadGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_read_for(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
+    }
+
     /// Attempts to acquire this `RwLock` with shared read access until a timeout
     /// is reached.
     ///
@@ -727,6 +865,21 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
         } else {
             None
         }
+    }
+
+    /// Attempts to lock a pinned `RwLock` for a timeout with shared read access and returns 
+    /// a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_until()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_read_until_pinned(self: Pin<&Self>, timeout: R::Duration) -> Option<Pin<RwLockReadGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_read_for(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
     }
 
     /// Attempts to acquire this `RwLock` with exclusive write access until a
@@ -745,6 +898,21 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock a pinned `RwLock` for a timeout with exclusive write access and returns 
+    /// a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_write_for()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockWriteGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_write_for_pinned(self: Pin<&Self>, timeout: R::Duration) -> Option<Pin<RwLockWriteGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_write_for(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
+    }
+
     /// Attempts to acquire this `RwLock` with exclusive write access until a
     /// timeout is reached.
     ///
@@ -759,6 +927,21 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
         } else {
             None
         }
+    }
+
+    /// Attempts to lock a pinned `RwLock` for a timeout with exclusive write access and returns 
+    /// a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_write_for()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockWriteGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_write_until_pinned(self: Pin<&Self>, timeout: R::Instant) -> Option<Pin<RwLockWriteGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_write_until(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
     }
 
     /// Attempts to acquire this `RwLock` with read access until a timeout is reached, through an `Arc`.
@@ -776,6 +959,24 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
             Some(unsafe { self.read_guard_arc() })
         } else {
             None
+        }
+    }
+
+    /// Attempts to lock a pinned `RwLock` for a timeout with shared read access and returns 
+    /// a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_arc_for()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_read_arc_for_pinned(self: Pin<Arc<Self>>, timeout: R::Duration) -> Option<Pin<ArcRwLockReadGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_read_arc_for(timeout)?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 
@@ -797,6 +998,24 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock a pinned `RwLock` for a timeout with shared read access and returns 
+    /// a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_arc_until()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_read_arc_until_pinned(self: Pin<Arc<Self>>, timeout: R::Instant) -> Option<Pin<ArcRwLockReadGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_read_arc_until(timeout)?;
+            Some(Pin::new_unchecked(guard))
+        }
+    }
+
     /// Attempts to acquire this `RwLock` with write access until a timeout is reached, through an `Arc`.
     ///
     /// This method is similar to the `try_write_for` method; however, it requires the `RwLock` to be inside of
@@ -815,6 +1034,24 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock a pinned `RwLock` for a timeout with exclusive write access and returns 
+    /// a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_write_arc_for()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockWriteGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_write_arc_for_pinned(self: Pin<Arc<Self>>, timeout: R::Duration) -> Option<Pin<ArcRwLockWriteGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_write_arc_for(timeout)?;
+            Some(Pin::new_unchecked(guard))
+        }
+    }
+
     /// Attempts to acquire this `RwLock` with read access until a timeout is reached, through an `Arc`.
     ///
     /// This method is similar to the `try_write_until` method; however, it requires the `RwLock` to be inside of
@@ -830,6 +1067,24 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
             Some(unsafe { self.write_guard_arc() })
         } else {
             None
+        }
+    }
+
+    /// Attempts to lock a pinned `RwLock` for a timeout with exclusive writeaccess and returns 
+    /// a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_write_arc_until()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockWriteGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_write_arc_until_pinned(self: Pin<Arc<Self>>, timeout: R::Instant) -> Option<Pin<ArcRwLockWriteGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_write_arc_until(timeout)?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 }
@@ -857,6 +1112,20 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
         unsafe { self.read_guard() }
     }
 
+    /// Locks a pinned `RwLock` recursively and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`read_recursive()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn read_recursive_pinned(self: Pin<&Self>) -> Pin<RwLockReadGuard<'_, R, T>> {
+        let guard = self.get_ref().read_recursive();
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { Pin::new_unchecked(guard) }
+    }
+
     /// Attempts to acquire this `RwLock` with shared read access.
     ///
     /// If the access could not be granted at this time, then `None` is returned.
@@ -877,6 +1146,20 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock a pinned `RwLock` recursively and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_recursive()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_read_recursive_pinned(self: Pin<&Self>) -> Option<Pin<RwLockReadGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_read_recursive()?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
+    }
+
     /// Locks this `RwLock` with shared read access, through an `Arc`.
     ///
     /// This method is similar to the `read_recursive` method; however, it requires the `RwLock` to be inside of
@@ -887,6 +1170,23 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
         self.raw.lock_shared_recursive();
         // SAFETY: locking guarantee is upheld
         unsafe { self.read_guard_arc() }
+    }
+
+    /// Locks a pinned `Arc<RwLock>` recursively and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`read_arc_recursive()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<ArcRwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn read_arc_recursive_pinned(self: Pin<&Arc<Self>>) -> Pin<ArcRwLockReadGuard<R, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.read_arc_recursive();
+            Pin::new_unchecked(guard)
+        }
     }
 
     /// Attempts to lock this `RwLock` with shared read access, through an `Arc`.
@@ -901,6 +1201,23 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
             Some(unsafe { self.read_guard_arc() })
         } else {
             None
+        }
+    }
+
+    /// Attempts to lock a pinned `Arc<RwLock>` recursively and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_arc_recursive()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<ArcRwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_read_arc_recursive_pinned(self: Pin<&Arc<Self>>) -> Option<Pin<ArcRwLockReadGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe {
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_read_recursive_arc()?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 }
@@ -929,6 +1246,20 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock a pinned `RwLock` recursively with a timeout and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_recursive_for()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_read_recursive_for_pinned(self: Pin<&Self>, timeout: R::Duration) -> Option<Pin<RwLockReadGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_read_recursive_for(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
+    }
+
     /// Attempts to acquire this `RwLock` with shared read access until a timeout
     /// is reached.
     ///
@@ -946,6 +1277,20 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
         } else {
             None
         }
+    }
+
+    /// Attempts to lock a pinned `RwLock` recursively with a timeout and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_recursive_until()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_read_recursive_until_pinned(self: Pin<&Self>, timeout: R::Instant) -> Option<Pin<RwLockReadGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_read_recursive_until(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
     }
 
     /// Attempts to lock this `RwLock` with read access until a timeout is reached, through an `Arc`.
@@ -966,6 +1311,23 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock a pinned `RwLock` recursively with a timeout and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_arc_recursive_for()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<ArcRwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_read_arc_recursive_for_pinned(self: Pin<&Arc<Self>>, timeout: R::Duration) -> Option<Pin<ArcRwLockReadGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_read_arc_recursive_for(timeout)?;
+            Some(Pin::new_unchecked(guard))
+        }
+    }
+
     /// Attempts to lock this `RwLock` with read access until a timeout is reached, through an `Arc`.
     ///
     /// This method is similar to the `try_read_recursive_until` method; however, it requires the `RwLock` to be
@@ -981,6 +1343,23 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
             Some(unsafe { self.read_guard_arc() })
         } else {
             None
+        }
+    }
+
+    /// Attempts to lock a pinned `RwLock` recursively with a timeout and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_read_arc_recursive_until()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<ArcRwLockReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_read_arc_recursive_until_pinned(self: Pin<&Arc<Self>>, timeout: R::Instant) -> Option<Pin<ArcRwLockReadGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_read_arc_recursive_until(timeout)?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 }
@@ -1013,6 +1392,20 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
         unsafe { self.upgradable_guard() }
     }
 
+    /// Locks this `RwLock` with upgradable read access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`upgradable_read()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockUpgradableReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn upgradable_read_pinned(self: Pin<&Self>) -> Pin<RwLockUpgradableReadGuard<'_, R, T>> {
+        let guard = self.get_ref().upgradable_read();
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { Pin::new_unchecked(guard) }
+    }
+
     /// Attempts to acquire this `RwLock` with upgradable read access.
     ///
     /// If the access could not be granted at this time, then `None` is returned.
@@ -1028,6 +1421,20 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
         } else {
             None
         }
+    }
+
+    /// Attempts to acquire a pinned `RwLock` with upgradable read access and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_upgradable_read()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockUpgradableReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_upgradable_read_pinned(self: Pin<&Self>) -> Option<Pin<RwLockUpgradableReadGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_upgradable_read()?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
     }
 
     /// # Safety
@@ -1054,6 +1461,23 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
         unsafe { self.upgradable_guard_arc() }
     }
 
+    /// Locks this `RwLock` with upgradable read access, through an `Arc`, and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`upgradable_read_arc()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<ArcRwLockUpgradableReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn upgradable_read_arc_pinned(self: Pin<&Arc<Self>>) -> Pin<ArcRwLockUpgradableReadGuard<R, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.upgradable_read_arc();
+            Pin::new_unchecked(guard)
+        }
+    }
+
     /// Attempts to lock this `RwLock` with upgradable read access, through an `Arc`.
     ///
     /// This method is similar to the `try_upgradable_read` method; however, it requires the `RwLock` to be
@@ -1066,6 +1490,23 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
             Some(unsafe { self.upgradable_guard_arc() })
         } else {
             None
+        }
+    }
+
+    /// Attempts to lock this `RwLock` with upgradable read access, through an `Arc`, and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_upgradable_read_arc()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<ArcRwLockUpgradableReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_upgradable_read_arc_pinned(self: Pin<&Arc<Self>>) -> Option<Pin<ArcRwLockUpgradableReadGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_upgradable_read_arc()?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 }
@@ -1091,6 +1532,24 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     }
 
     /// Attempts to acquire this `RwLock` with upgradable read access until a timeout
+    /// is reached and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_upgradable_read_for()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockUpgradableReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_upgradable_read_for_pinned(
+        self: Pin<&Self>,
+        timeout: R::Duration,
+    ) -> Option<Pin<RwLockUpgradableReadGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_upgradable_read_for(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
+    }
+
+    /// Attempts to acquire this `RwLock` with upgradable read access until a timeout
     /// is reached.
     ///
     /// If the access could not be granted before the timeout expires, then
@@ -1107,6 +1566,24 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
         } else {
             None
         }
+    }
+
+    /// Attempts to acquire this `RwLock` with upgradable read access until a timeout
+    /// is reached and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_upgradable_read_until()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<RwLockUpgradableReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[inline]
+    pub fn try_upgradable_read_until_pinned(
+        self: Pin<&Self>,
+        timeout: R::Instant,
+    ) -> Option<Pin<RwLockUpgradableReadGuard<'_, R, T>>> {
+        let guard = self.get_ref().try_upgradable_read_until(timeout)?;
+
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        Some(unsafe { Pin::new_unchecked(guard) })
     }
 
     /// Attempts to lock this `RwLock` with upgradable access until a timeout is reached, through an `Arc`.
@@ -1127,6 +1604,26 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
         }
     }
 
+    /// Attempts to lock this `RwLock` with upgradable access until a timeout is reached, through an `Arc`, and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_upgradable_read_arc_for()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<ArcRwLockUpgradableReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_upgradable_read_arc_for_pinned(
+        self: Pin<&Arc<Self>>,
+        timeout: R::Duration,
+    ) -> Option<Pin<ArcRwLockUpgradableReadGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_upgradable_read_arc_for(timeout)?;
+            Some(Pin::new_unchecked(guard))
+        }
+    }
+
     /// Attempts to lock this `RwLock` with upgradable access until a timeout is reached, through an `Arc`.
     ///
     /// This method is similar to the `try_upgradable_read_until` method; however, it requires the `RwLock` to be
@@ -1142,6 +1639,26 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
             Some(unsafe { self.upgradable_guard_arc() })
         } else {
             None
+        }
+    }
+
+    /// Attempts to lock this `RwLock` with upgradable access until a timeout is reached, through an `Arc`, and returns a pinned guard.
+    /// 
+    /// This function is equivalent to the [`try_upgradable_read_arc_until()`] function, but takes a `Pin<&RwLock>`
+    /// and returns a `Pin<ArcRwLockUpgradableReadGuard>`. This can be useful if you want to use
+    /// the mutex in a context where the data it protects is pinned, such as a future.
+    #[cfg(feature = "arc_lock")]
+    #[inline]
+    pub fn try_upgradable_read_arc_until_pinned(
+        self: Pin<&Arc<Self>>,
+        timeout: R::Instant,
+    ) -> Option<Pin<ArcRwLockUpgradableReadGuard<R, T>>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the mutex is pinned.
+        // We never move ourselves out of the guard.
+        unsafe { 
+            let this = Pin::into_inner_unchecked(self);
+            let guard = this.try_upgradable_read_arc_until(timeout)?;
+            Some(Pin::new_unchecked(guard))
         }
     }
 }
@@ -1569,6 +2086,15 @@ impl<'a, R: RawRwLockDowngrade + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> 
             marker: PhantomData,
         }
     }
+
+    /// Atomically downgrades a write lock into a pinned read lock without allowing any
+    /// writers to take exclusive access of the lock in the meantime.
+    pub fn downgrade_pinned(s: Pin<Self>) -> Pin<RwLockReadGuard<'a, R, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the guard is pinned.
+        unsafe { 
+            Pin::new_unchecked(Self::downgrade(Pin::into_inner_unchecked(s)))
+        }
+    }
 }
 
 impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
@@ -1588,6 +2114,14 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a,
         RwLockUpgradableReadGuard {
             rwlock,
             marker: PhantomData,
+        }
+    }
+
+    /// Atomically downgrades to an upgradable read lock and pins it.
+    pub fn downgrade_to_upgradable_pinned(s: Pin<Self>) -> Pin<RwLockUpgradableReadGuard<'a, R, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned because the guard is pinned.
+        unsafe { 
+            Pin::new_unchecked(Self::downgrade_to_upgradable(Pin::into_inner_unchecked(s)))
         }
     }
 }
@@ -1744,6 +2278,14 @@ impl<R: RawRwLockDowngrade, T: ?Sized> ArcRwLockWriteGuard<R, T> {
             marker: PhantomData,
         }
     }
+
+    /// Atomically downgrades to a write lock and pins it.
+    pub fn downgrade_pinned(s: Pin<Self>) -> Pin<ArcRwLockReadGuard<R, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned.
+        unsafe {
+            Pin::new_unchecked(Self::downgrade(Pin::into_inner_unchecked(s)))
+        }
+    }
 }
 
 #[cfg(feature = "arc_lock")]
@@ -1765,6 +2307,14 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockWriteGuard<R, T> {
         ArcRwLockUpgradableReadGuard {
             rwlock,
             marker: PhantomData,
+        }
+    }
+
+    /// Atomically downgrades to an upgradable read lock and pins it.
+    pub fn downgrade_to_upgradable_pinned(s: Pin<Self>) -> Pin<ArcRwLockUpgradableReadGuard<R, T>> {
+        // SAFETY: The inner value is guaranteed to be pinned.
+        unsafe {
+            Pin::new_unchecked(Self::downgrade_to_upgradable(Pin::into_inner_unchecked(s)))
         }
     }
 }
@@ -1923,6 +2473,25 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
             Err(s)
         }
     }
+
+    /// Atomically upgrades to a write lock and pins it.
+    pub fn upgrade_pinned(s: Pin<Self>) -> Pin<RwLockWriteGuard<'a, R, T>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            Pin::new_unchecked(Self::upgrade(Pin::into_inner_unchecked(s))) 
+        }
+    }
+
+    /// Tries to atomically upgrade to a write lock and pins it.
+    pub fn try_upgrade_pinned(s: Pin<Self>) -> Result<Pin<RwLockWriteGuard<'a, R, T>>, Pin<Self>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            match Self::try_upgrade(Pin::into_inner_unchecked(s)) {
+                Ok(guard) => Ok(Pin::new_unchecked(guard)),
+                Err(guard) => Err(Pin::new_unchecked(guard)),
+            }
+        }
+    }
 }
 
 impl<'a, R: RawRwLockUpgradeFair + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a, R, T> {
@@ -2000,6 +2569,14 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
             marker: PhantomData,
         }
     }
+
+    /// Atomically downgrades an upgradable read lock lock into a shared read lock and pins it.
+    pub fn downgrade_pinned(s: Pin<Self>) -> Pin<RwLockReadGuard<'a, R, T>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            Pin::new_unchecked(Self::downgrade(Pin::into_inner_unchecked(s))) 
+        }
+    }
 }
 
 impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a, R, T> {
@@ -2026,6 +2603,22 @@ impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuar
     }
 
     /// Tries to atomically upgrade an upgradable read lock into a exclusive
+    /// write lock, until a timeout is reached, and pins it.
+    #[inline]
+    pub fn try_upgrade_for_pinned(
+        s: Pin<Self>,
+        timeout: R::Duration,
+    ) -> Result<Pin<RwLockWriteGuard<'a, R, T>>, Pin<Self>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            match Self::try_upgrade_for(Pin::into_inner_unchecked(s), timeout) {
+                Ok(guard) => Ok(Pin::new_unchecked(guard)),
+                Err(guard) => Err(Pin::new_unchecked(guard)),
+            }
+        }
+    }
+
+    /// Tries to atomically upgrade an upgradable read lock into a exclusive
     /// write lock, until a timeout is reached.
     ///
     /// If the access could not be granted before the timeout expires, then
@@ -2045,6 +2638,22 @@ impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuar
             })
         } else {
             Err(s)
+        }
+    }
+
+    /// Tries to atomically upgrade an upgradable read lock into a exclusive
+    /// write lock, until a timeout is reached, and pins it.
+    #[inline]
+    pub fn try_upgrade_until_pinned(
+        s: Pin<Self>,
+        timeout: R::Instant,
+    ) -> Result<Pin<RwLockWriteGuard<'a, R, T>>, Pin<Self>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            match Self::try_upgrade_until(Pin::into_inner_unchecked(s), timeout) {
+                Ok(guard) => Ok(Pin::new_unchecked(guard)),
+                Err(guard) => Err(Pin::new_unchecked(guard)),
+            }
         }
     }
 }
@@ -2142,6 +2751,15 @@ impl<R: RawRwLockUpgrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
         }
     }
 
+    /// Atomically upgrades an upgradable read lock lock into a exclusive write lock,
+    /// and pins it.
+    pub fn upgrade_pinned(s: Pin<Self>) -> Pin<ArcRwLockWriteGuard<R, T>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            Pin::new_unchecked(Self::upgrade(Pin::into_inner_unchecked(s)))
+        }
+    }
+
     /// Tries to atomically upgrade an upgradable read lock into a exclusive write lock.
     ///
     /// If the access could not be granted at this time, then the current guard is returned.
@@ -2158,6 +2776,18 @@ impl<R: RawRwLockUpgrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
             })
         } else {
             Err(s)
+        }
+    }
+
+    /// Tries to atomically upgrade an upgradable read lock into a exclusive write lock,
+    /// and pins it.
+    pub fn try_upgrade_pinned(s: Pin<Self>) -> Result<Pin<ArcRwLockWriteGuard<R, T>>, Pin<Self>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            match Self::try_upgrade(Pin::into_inner_unchecked(s)) {
+                Ok(guard) => Ok(Pin::new_unchecked(guard)),
+                Err(guard) => Err(Pin::new_unchecked(guard)),
+            }
         }
     }
 }
@@ -2231,6 +2861,15 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T>
             marker: PhantomData,
         }
     }
+
+    /// Atomically downgrades an upgradable read lock lock into a shared read lock
+    /// and pins it.
+    pub fn downgrade_pinned(s: Pin<Self>) -> Pin<ArcRwLockReadGuard<R, T>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            Pin::new_unchecked(Self::downgrade(Pin::into_inner_unchecked(s)))
+        }
+    }
 }
 
 #[cfg(feature = "arc_lock")]
@@ -2260,6 +2899,21 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
     }
 
     /// Tries to atomically upgrade an upgradable read lock into a exclusive
+    /// write lock, until a timeout is reached, and pins it.
+    pub fn try_upgrade_for_pinned(
+        s: Pin<Self>,
+        timeout: R::Duration,
+    ) -> Result<Pin<ArcRwLockWriteGuard<R, T>>, Pin<Self>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            match Self::try_upgrade_for(Pin::into_inner_unchecked(s), timeout) {
+                Ok(guard) => Ok(Pin::new_unchecked(guard)),
+                Err(guard) => Err(Pin::new_unchecked(guard)),
+            }
+        }
+    }
+
+    /// Tries to atomically upgrade an upgradable read lock into a exclusive
     /// write lock, until a timeout is reached.
     ///
     /// If the access could not be granted before the timeout expires, then
@@ -2281,6 +2935,21 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
             })
         } else {
             Err(s)
+        }
+    }
+
+    /// Tries to atomically upgrade an upgradable read lock into a exclusive
+    /// write lock, until a timeout is reached, and pins it.
+    pub fn try_upgrade_until_pinned(
+        s: Pin<Self>,
+        timeout: R::Instant,
+    ) -> Result<Pin<ArcRwLockWriteGuard<R, T>>, Pin<Self>> {
+        // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
+        unsafe {
+            match Self::try_upgrade_until(Pin::into_inner_unchecked(s), timeout) {
+                Ok(guard) => Ok(Pin::new_unchecked(guard)),
+                Err(guard) => Err(Pin::new_unchecked(guard)),
+            }
         }
     }
 }
