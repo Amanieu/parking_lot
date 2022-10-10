@@ -188,6 +188,41 @@ impl<R, T> Mutex<R, T> {
     }
 }
 
+impl_lock! {
+    impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
+        /// Acquires a mutex, blocking the current thread until it is able to do so.
+        ///
+        /// This function will block the local thread until it is available to acquire
+        /// the mutex. Upon returning, the thread is the only thread with the mutex
+        /// held. An RAII guard is returned to allow scoped unlock of the lock. When
+        /// the guard goes out of scope, the mutex will be unlocked.
+        ///
+        /// Attempts to lock a mutex in the thread which already holds the lock will
+        /// result in a deadlock.
+        #[inline]
+        pub fn lock(&self) -> MutexGuard<'_, R, T> {
+            lock: self.raw.lock();
+            // SAFETY: The lock is held, as required.
+            guard: |_| unsafe { self.guard() };
+            guard_arc: |_| unsafe { self.guard_arc() };
+        } => lock_arc -> ArcMutexGuard<R, T>;
+
+        /// Attempts to acquire this lock.
+        ///
+        /// If the lock could not be acquired at this time, then `None` is returned.
+        /// Otherwise, an RAII guard is returned. The lock will be unlocked when the
+        /// guard is dropped.
+        ///
+        /// This function does not block.
+        #[inline]
+        pub fn try_lock(&self) -> Option<MutexGuard<'_, R, T>> {
+            lock: self.raw.try_lock();
+            guard: |locked| if locked { Some(unsafe { self.guard() }) } else { None };
+            guard_arc: |locked| if locked { Some(unsafe { self.guard_arc() }) } else { None };
+        } => try_lock_arc -> Option<ArcMutexGuard<R, T>>;
+    }
+}
+
 impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// # Safety
     ///
@@ -200,38 +235,6 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
         }
     }
 
-    /// Acquires a mutex, blocking the current thread until it is able to do so.
-    ///
-    /// This function will block the local thread until it is available to acquire
-    /// the mutex. Upon returning, the thread is the only thread with the mutex
-    /// held. An RAII guard is returned to allow scoped unlock of the lock. When
-    /// the guard goes out of scope, the mutex will be unlocked.
-    ///
-    /// Attempts to lock a mutex in the thread which already holds the lock will
-    /// result in a deadlock.
-    #[inline]
-    pub fn lock(&self) -> MutexGuard<'_, R, T> {
-        self.raw.lock();
-        // SAFETY: The lock is held, as required.
-        unsafe { self.guard() }
-    }
-
-    /// Attempts to acquire this lock.
-    ///
-    /// If the lock could not be acquired at this time, then `None` is returned.
-    /// Otherwise, an RAII guard is returned. The lock will be unlocked when the
-    /// guard is dropped.
-    ///
-    /// This function does not block.
-    #[inline]
-    pub fn try_lock(&self) -> Option<MutexGuard<'_, R, T>> {
-        if self.raw.try_lock() {
-            // SAFETY: The lock is held, as required.
-            Some(unsafe { self.guard() })
-        } else {
-            None
-        }
-    }
 
     /// Returns a mutable reference to the underlying data.
     ///
@@ -305,33 +308,6 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
             marker: PhantomData,
         }
     }
-
-    /// Acquires a lock through an `Arc`.
-    ///
-    /// This method is similar to the `lock` method; however, it requires the `Mutex` to be inside of an `Arc`
-    /// and the resulting mutex guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
-        self.raw.lock();
-        // SAFETY: the locking guarantee is upheld
-        unsafe { self.guard_arc() }
-    }
-
-    /// Attempts to acquire a lock through an `Arc`.
-    ///
-    /// This method is similar to the `try_lock` method; however, it requires the `Mutex` to be inside of an
-    /// `Arc` and the resulting mutex guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcMutexGuard<R, T>> {
-        if self.raw.try_lock() {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.guard_arc() })
-        } else {
-            None
-        }
-    }
 }
 
 impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
@@ -352,68 +328,33 @@ impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
     }
 }
 
-impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
-    /// Attempts to acquire this lock until a timeout is reached.
-    ///
-    /// If the lock could not be acquired before the timeout expired, then
-    /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
-    /// be unlocked when the guard is dropped.
-    #[inline]
-    pub fn try_lock_for(&self, timeout: R::Duration) -> Option<MutexGuard<'_, R, T>> {
-        if self.raw.try_lock_for(timeout) {
+impl_lock! {
+    impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
+        /// Attempts to acquire this lock until a timeout is reached.
+        ///
+        /// If the lock could not be acquired before the timeout expired, then
+        /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
+        /// be unlocked when the guard is dropped.
+        #[inline]
+        pub fn try_lock_for(&self, timeout: R::Duration) -> Option<MutexGuard<'_, R, T>> {
+            lock: self.raw.try_lock_for(timeout);
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.guard() })
-        } else {
-            None
-        }
-    }
+            guard: |lock| if lock { Some(unsafe { self.guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.guard_arc() }) } else { None };
+        } => try_lock_arc_for -> Option<ArcMutexGuard<R, T>>;
 
-    /// Attempts to acquire this lock until a timeout is reached.
-    ///
-    /// If the lock could not be acquired before the timeout expired, then
-    /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
-    /// be unlocked when the guard is dropped.
-    #[inline]
-    pub fn try_lock_until(&self, timeout: R::Instant) -> Option<MutexGuard<'_, R, T>> {
-        if self.raw.try_lock_until(timeout) {
+        /// Attempts to acquire this lock until a timeout is reached.
+        ///
+        /// If the lock could not be acquired before the timeout expired, then
+        /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
+        /// be unlocked when the guard is dropped.
+        #[inline]
+        pub fn try_lock_until(&self, timeout: R::Instant) -> Option<MutexGuard<'_, R, T>> {
+            lock: self.raw.try_lock_until(timeout);
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.guard() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to acquire this lock through an `Arc` until a timeout is reached.
-    ///
-    /// This method is similar to the `try_lock_for` method; however, it requires the `Mutex` to be inside of an
-    /// `Arc` and the resulting mutex guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_lock_arc_for(self: &Arc<Self>, timeout: R::Duration) -> Option<ArcMutexGuard<R, T>> {
-        if self.raw.try_lock_for(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.guard_arc() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to acquire this lock through an `Arc` until a timeout is reached.
-    ///
-    /// This method is similar to the `try_lock_until` method; however, it requires the `Mutex` to be inside of
-    /// an `Arc` and the resulting mutex guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_lock_arc_until(
-        self: &Arc<Self>,
-        timeout: R::Instant,
-    ) -> Option<ArcMutexGuard<R, T>> {
-        if self.raw.try_lock_until(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.guard_arc() })
-        } else {
-            None
-        }
+            guard: |lock| if lock { Some(unsafe { self.guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.guard_arc() }) } else { None };
+        } => try_lock_arc_until -> Option<ArcMutexGuard<R, T>>;
     }
 }
 

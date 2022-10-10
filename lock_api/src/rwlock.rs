@@ -408,6 +408,76 @@ impl<R, T> RwLock<R, T> {
     }
 }
 
+impl_lock! {
+    impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
+        /// Locks this `RwLock` with shared read access, blocking the current thread
+        /// until it can be acquired.
+        ///
+        /// The calling thread will be blocked until there are no more writers which
+        /// hold the lock. There may be other readers currently inside the lock when
+        /// this method returns.
+        ///
+        /// Note that attempts to recursively acquire a read lock on a `RwLock` when
+        /// the current thread already holds one may result in a deadlock.
+        ///
+        /// Returns an RAII guard which will release this thread's shared access
+        /// once it is dropped.
+        #[inline]
+        pub fn read(&self) -> RwLockReadGuard<'_, R, T> {
+            lock: self.raw.lock_shared();
+            // SAFETY: The lock is held, as required.
+            guard: |_| unsafe { self.read_guard() };
+            guard_arc: |_| unsafe { self.read_guard_arc() };
+        } => read_arc -> ArcRwLockReadGuard<R, T>;
+
+        /// Attempts to acquire this `RwLock` with shared read access.
+        ///
+        /// If the access could not be granted at this time, then `None` is returned.
+        /// Otherwise, an RAII guard is returned which will release the shared access
+        /// when it is dropped.
+        ///
+        /// This function does not block.
+        #[inline]
+        pub fn try_read(&self) -> Option<RwLockReadGuard<'_, R, T>> {
+            lock: self.raw.try_lock_shared();
+            // SAFETY: The lock is held, as required.
+            guard: |lock| if lock { Some(unsafe { self.read_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.read_guard_arc() }) } else { None };
+        } => try_read_arc -> Option<ArcRwLockReadGuard<R, T>>;
+
+        /// Locks this `RwLock` with exclusive write access, blocking the current
+        /// thread until it can be acquired.
+        ///
+        /// This function will not return while other writers or other readers
+        /// currently have access to the lock.
+        ///
+        /// Returns an RAII guard which will drop the write access of this `RwLock`
+        /// when dropped.
+        #[inline]
+        pub fn write(&self) -> RwLockWriteGuard<'_, R, T> {
+            lock: self.raw.lock_exclusive();
+            // SAFETY: The lock is held, as required.
+            guard: |_| unsafe { self.write_guard() };
+            guard_arc: |_| unsafe { self.write_guard_arc() };
+        } => write_arc -> ArcRwLockWriteGuard<R, T>;
+
+        /// Attempts to lock this `RwLock` with exclusive write access.
+        ///
+        /// If the lock could not be acquired at this time, then `None` is returned.
+        /// Otherwise, an RAII guard is returned which will release the lock when
+        /// it is dropped.
+        ///
+        /// This function does not block.
+        #[inline]
+        pub fn try_write(&self) -> Option<RwLockWriteGuard<'_, R, T>> {
+            lock: self.raw.try_lock_exclusive();
+            // SAFETY: The lock is held, as required.
+            guard: |lock| if lock { Some(unsafe { self.write_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.write_guard_arc() }) } else { None };
+        } => try_write_arc -> Option<ArcRwLockWriteGuard<R, T>>;
+    }
+}
+
 impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// # Safety
     ///
@@ -428,74 +498,6 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         RwLockWriteGuard {
             rwlock: self,
             marker: PhantomData,
-        }
-    }
-
-    /// Locks this `RwLock` with shared read access, blocking the current thread
-    /// until it can be acquired.
-    ///
-    /// The calling thread will be blocked until there are no more writers which
-    /// hold the lock. There may be other readers currently inside the lock when
-    /// this method returns.
-    ///
-    /// Note that attempts to recursively acquire a read lock on a `RwLock` when
-    /// the current thread already holds one may result in a deadlock.
-    ///
-    /// Returns an RAII guard which will release this thread's shared access
-    /// once it is dropped.
-    #[inline]
-    pub fn read(&self) -> RwLockReadGuard<'_, R, T> {
-        self.raw.lock_shared();
-        // SAFETY: The lock is held, as required.
-        unsafe { self.read_guard() }
-    }
-
-    /// Attempts to acquire this `RwLock` with shared read access.
-    ///
-    /// If the access could not be granted at this time, then `None` is returned.
-    /// Otherwise, an RAII guard is returned which will release the shared access
-    /// when it is dropped.
-    ///
-    /// This function does not block.
-    #[inline]
-    pub fn try_read(&self) -> Option<RwLockReadGuard<'_, R, T>> {
-        if self.raw.try_lock_shared() {
-            // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
-        } else {
-            None
-        }
-    }
-
-    /// Locks this `RwLock` with exclusive write access, blocking the current
-    /// thread until it can be acquired.
-    ///
-    /// This function will not return while other writers or other readers
-    /// currently have access to the lock.
-    ///
-    /// Returns an RAII guard which will drop the write access of this `RwLock`
-    /// when dropped.
-    #[inline]
-    pub fn write(&self) -> RwLockWriteGuard<'_, R, T> {
-        self.raw.lock_exclusive();
-        // SAFETY: The lock is held, as required.
-        unsafe { self.write_guard() }
-    }
-
-    /// Attempts to lock this `RwLock` with exclusive write access.
-    ///
-    /// If the lock could not be acquired at this time, then `None` is returned.
-    /// Otherwise, an RAII guard is returned which will release the lock when
-    /// it is dropped.
-    ///
-    /// This function does not block.
-    #[inline]
-    pub fn try_write(&self) -> Option<RwLockWriteGuard<'_, R, T>> {
-        if self.raw.try_lock_exclusive() {
-            // SAFETY: The lock is held, as required.
-            Some(unsafe { self.write_guard() })
-        } else {
-            None
         }
     }
 
@@ -606,60 +608,6 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
             marker: PhantomData,
         }
     }
-
-    /// Locks this `RwLock` with read access, through an `Arc`.
-    ///
-    /// This method is similar to the `read` method; however, it requires the `RwLock` to be inside of an `Arc`
-    /// and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn read_arc(self: &Arc<Self>) -> ArcRwLockReadGuard<R, T> {
-        self.raw.lock_shared();
-        // SAFETY: locking guarantee is upheld
-        unsafe { self.read_guard_arc() }
-    }
-
-    /// Attempts to lock this `RwLock` with read access, through an `Arc`.
-    ///
-    /// This method is similar to the `try_read` method; however, it requires the `RwLock` to be inside of an
-    /// `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_read_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<R, T>> {
-        if self.raw.try_lock_shared() {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
-        } else {
-            None
-        }
-    }
-
-    /// Locks this `RwLock` with write access, through an `Arc`.
-    ///
-    /// This method is similar to the `write` method; however, it requires the `RwLock` to be inside of an `Arc`
-    /// and the resulting write guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn write_arc(self: &Arc<Self>) -> ArcRwLockWriteGuard<R, T> {
-        self.raw.lock_exclusive();
-        // SAFETY: locking guarantee is upheld
-        unsafe { self.write_guard_arc() }
-    }
-
-    /// Attempts to lock this `RwLock` with writ access, through an `Arc`.
-    ///
-    /// This method is similar to the `try_write` method; however, it requires the `RwLock` to be inside of an
-    /// `Arc` and the resulting write guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_write_arc(self: &Arc<Self>) -> Option<ArcRwLockWriteGuard<R, T>> {
-        if self.raw.try_lock_exclusive() {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.write_guard_arc() })
-        } else {
-            None
-        }
-    }
 }
 
 impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
@@ -696,292 +644,150 @@ impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
     }
 }
 
-impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
-    /// Attempts to acquire this `RwLock` with shared read access until a timeout
-    /// is reached.
-    ///
-    /// If the access could not be granted before the timeout expires, then
-    /// `None` is returned. Otherwise, an RAII guard is returned which will
-    /// release the shared access when it is dropped.
-    #[inline]
-    pub fn try_read_for(&self, timeout: R::Duration) -> Option<RwLockReadGuard<'_, R, T>> {
-        if self.raw.try_lock_shared_for(timeout) {
+impl_lock! {
+    impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
+        /// Attempts to acquire this `RwLock` with shared read access until a timeout
+        /// is reached.
+        ///
+        /// If the access could not be granted before the timeout expires, then
+        /// `None` is returned. Otherwise, an RAII guard is returned which will
+        /// release the shared access when it is dropped.
+        #[inline]
+        pub fn try_read_for(&self, timeout: R::Duration) -> Option<RwLockReadGuard<'_, R, T>> {
+            lock: self.raw.try_lock_shared_for(timeout);
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
-        } else {
-            None
-        }
-    }
+            guard: |lock| if lock { Some(unsafe { self.read_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.read_guard_arc() }) } else { None };
+        } => try_read_arc_for -> Option<ArcRwLockReadGuard<R, T>>;
 
-    /// Attempts to acquire this `RwLock` with shared read access until a timeout
-    /// is reached.
-    ///
-    /// If the access could not be granted before the timeout expires, then
-    /// `None` is returned. Otherwise, an RAII guard is returned which will
-    /// release the shared access when it is dropped.
-    #[inline]
-    pub fn try_read_until(&self, timeout: R::Instant) -> Option<RwLockReadGuard<'_, R, T>> {
-        if self.raw.try_lock_shared_until(timeout) {
+        /// Attempts to acquire this `RwLock` with shared read access until a timeout
+        /// is reached.
+        ///
+        /// If the access could not be granted before the timeout expires, then
+        /// `None` is returned. Otherwise, an RAII guard is returned which will
+        /// release the shared access when it is dropped.
+        #[inline]
+        pub fn try_read_until(&self, timeout: R::Instant) -> Option<RwLockReadGuard<'_, R, T>> {
+            lock: self.raw.try_lock_shared_until(timeout);
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
-        } else {
-            None
-        }
-    }
+            guard: |lock| if lock { Some(unsafe { self.read_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.read_guard_arc() }) } else { None };
+        } => try_read_arc_until -> Option<ArcRwLockReadGuard<R, T>>;
 
-    /// Attempts to acquire this `RwLock` with exclusive write access until a
-    /// timeout is reached.
-    ///
-    /// If the access could not be granted before the timeout expires, then
-    /// `None` is returned. Otherwise, an RAII guard is returned which will
-    /// release the exclusive access when it is dropped.
-    #[inline]
-    pub fn try_write_for(&self, timeout: R::Duration) -> Option<RwLockWriteGuard<'_, R, T>> {
-        if self.raw.try_lock_exclusive_for(timeout) {
+        /// Attempts to acquire this `RwLock` with exclusive write access until a
+        /// timeout is reached.
+        ///
+        /// If the access could not be granted before the timeout expires, then
+        /// `None` is returned. Otherwise, an RAII guard is returned which will
+        /// release the exclusive access when it is dropped.
+        #[inline]
+        pub fn try_write_for(&self, timeout: R::Duration) -> Option<RwLockWriteGuard<'_, R, T>> {
+            lock: self.raw.try_lock_exclusive_for(timeout);
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.write_guard() })
-        } else {
-            None
-        }
-    }
+            guard: |lock| if lock { Some(unsafe { self.write_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.write_guard_arc() }) } else { None };
+        } => try_write_arc_for -> Option<ArcRwLockWriteGuard<R, T>>;
 
-    /// Attempts to acquire this `RwLock` with exclusive write access until a
-    /// timeout is reached.
-    ///
-    /// If the access could not be granted before the timeout expires, then
-    /// `None` is returned. Otherwise, an RAII guard is returned which will
-    /// release the exclusive access when it is dropped.
-    #[inline]
-    pub fn try_write_until(&self, timeout: R::Instant) -> Option<RwLockWriteGuard<'_, R, T>> {
-        if self.raw.try_lock_exclusive_until(timeout) {
+        /// Attempts to acquire this `RwLock` with exclusive write access until a
+        /// timeout is reached.
+        ///
+        /// If the access could not be granted before the timeout expires, then
+        /// `None` is returned. Otherwise, an RAII guard is returned which will
+        /// release the exclusive access when it is dropped.
+        #[inline]
+        pub fn try_write_until(&self, timeout: R::Instant) -> Option<RwLockWriteGuard<'_, R, T>> {
+            lock: self.raw.try_lock_exclusive_until(timeout);
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.write_guard() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to acquire this `RwLock` with read access until a timeout is reached, through an `Arc`.
-    ///
-    /// This method is similar to the `try_read_for` method; however, it requires the `RwLock` to be inside of an
-    /// `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_read_arc_for(
-        self: &Arc<Self>,
-        timeout: R::Duration,
-    ) -> Option<ArcRwLockReadGuard<R, T>> {
-        if self.raw.try_lock_shared_for(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to acquire this `RwLock` with read access until a timeout is reached, through an `Arc`.
-    ///
-    /// This method is similar to the `try_read_until` method; however, it requires the `RwLock` to be inside of
-    /// an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_read_arc_until(
-        self: &Arc<Self>,
-        timeout: R::Instant,
-    ) -> Option<ArcRwLockReadGuard<R, T>> {
-        if self.raw.try_lock_shared_until(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to acquire this `RwLock` with write access until a timeout is reached, through an `Arc`.
-    ///
-    /// This method is similar to the `try_write_for` method; however, it requires the `RwLock` to be inside of
-    /// an `Arc` and the resulting write guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_write_arc_for(
-        self: &Arc<Self>,
-        timeout: R::Duration,
-    ) -> Option<ArcRwLockWriteGuard<R, T>> {
-        if self.raw.try_lock_exclusive_for(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.write_guard_arc() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to acquire this `RwLock` with read access until a timeout is reached, through an `Arc`.
-    ///
-    /// This method is similar to the `try_write_until` method; however, it requires the `RwLock` to be inside of
-    /// an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_write_arc_until(
-        self: &Arc<Self>,
-        timeout: R::Instant,
-    ) -> Option<ArcRwLockWriteGuard<R, T>> {
-        if self.raw.try_lock_exclusive_until(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.write_guard_arc() })
-        } else {
-            None
-        }
+            guard: |lock| if lock { Some(unsafe { self.write_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.write_guard_arc() }) } else { None };
+        } => try_write_arc_until -> Option<ArcRwLockWriteGuard<R, T>>;
     }
 }
 
-impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
-    /// Locks this `RwLock` with shared read access, blocking the current thread
-    /// until it can be acquired.
-    ///
-    /// The calling thread will be blocked until there are no more writers which
-    /// hold the lock. There may be other readers currently inside the lock when
-    /// this method returns.
-    ///
-    /// Unlike `read`, this method is guaranteed to succeed without blocking if
-    /// another read lock is held at the time of the call. This allows a thread
-    /// to recursively lock a `RwLock`. However using this method can cause
-    /// writers to starve since readers no longer block if a writer is waiting
-    /// for the lock.
-    ///
-    /// Returns an RAII guard which will release this thread's shared access
-    /// once it is dropped.
-    #[inline]
-    pub fn read_recursive(&self) -> RwLockReadGuard<'_, R, T> {
-        self.raw.lock_shared_recursive();
-        // SAFETY: The lock is held, as required.
-        unsafe { self.read_guard() }
-    }
-
-    /// Attempts to acquire this `RwLock` with shared read access.
-    ///
-    /// If the access could not be granted at this time, then `None` is returned.
-    /// Otherwise, an RAII guard is returned which will release the shared access
-    /// when it is dropped.
-    ///
-    /// This method is guaranteed to succeed if another read lock is held at the
-    /// time of the call. See the documentation for `read_recursive` for details.
-    ///
-    /// This function does not block.
-    #[inline]
-    pub fn try_read_recursive(&self) -> Option<RwLockReadGuard<'_, R, T>> {
-        if self.raw.try_lock_shared_recursive() {
+impl_lock! {
+    impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
+        /// Locks this `RwLock` with shared read access, blocking the current thread
+        /// until it can be acquired.
+        ///
+        /// The calling thread will be blocked until there are no more writers which
+        /// hold the lock. There may be other readers currently inside the lock when
+        /// this method returns.
+        ///
+        /// Unlike `read`, this method is guaranteed to succeed without blocking if
+        /// another read lock is held at the time of the call. This allows a thread
+        /// to recursively lock a `RwLock`. However using this method can cause
+        /// writers to starve since readers no longer block if a writer is waiting
+        /// for the lock.
+        ///
+        /// Returns an RAII guard which will release this thread's shared access
+        /// once it is dropped.
+        #[inline]
+        pub fn read_recursive(&self) -> RwLockReadGuard<'_, R, T> {
+            lock: self.raw.lock_shared_recursive();
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
-        } else {
-            None
-        }
-    }
+            guard: |_| unsafe { self.read_guard() };
+            guard_arc: |_| unsafe { self.read_guard_arc() };
+        } => read_arc_recursive -> ArcRwLockReadGuard<R, T>;
 
-    /// Locks this `RwLock` with shared read access, through an `Arc`.
-    ///
-    /// This method is similar to the `read_recursive` method; however, it requires the `RwLock` to be inside of
-    /// an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn read_arc_recursive(self: &Arc<Self>) -> ArcRwLockReadGuard<R, T> {
-        self.raw.lock_shared_recursive();
-        // SAFETY: locking guarantee is upheld
-        unsafe { self.read_guard_arc() }
-    }
-
-    /// Attempts to lock this `RwLock` with shared read access, through an `Arc`.
-    ///
-    /// This method is similar to the `try_read_recursive` method; however, it requires the `RwLock` to be inside
-    /// of an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_read_recursive_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<R, T>> {
-        if self.raw.try_lock_shared_recursive() {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
-        } else {
-            None
-        }
+        /// Attempts to acquire this `RwLock` with shared read access.
+        ///
+        /// If the access could not be granted at this time, then `None` is returned.
+        /// Otherwise, an RAII guard is returned which will release the shared access
+        /// when it is dropped.
+        ///
+        /// This method is guaranteed to succeed if another read lock is held at the
+        /// time of the call. See the documentation for `read_recursive` for details.
+        ///
+        /// This function does not block.
+        #[inline]
+        pub fn try_read_recursive(&self) -> Option<RwLockReadGuard<'_, R, T>> {
+            lock: self.raw.try_lock_shared_recursive();
+                // SAFETY: The lock is held, as required.
+            guard: |lock| if lock { Some(unsafe { self.read_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.read_guard_arc() }) } else { None }; 
+        } => try_read_recursive_arc -> Option<ArcRwLockReadGuard<R, T>>;
     }
 }
 
-impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
-    /// Attempts to acquire this `RwLock` with shared read access until a timeout
-    /// is reached.
-    ///
-    /// If the access could not be granted before the timeout expires, then
-    /// `None` is returned. Otherwise, an RAII guard is returned which will
-    /// release the shared access when it is dropped.
-    ///
-    /// This method is guaranteed to succeed without blocking if another read
-    /// lock is held at the time of the call. See the documentation for
-    /// `read_recursive` for details.
-    #[inline]
-    pub fn try_read_recursive_for(
-        &self,
-        timeout: R::Duration,
-    ) -> Option<RwLockReadGuard<'_, R, T>> {
-        if self.raw.try_lock_shared_recursive_for(timeout) {
+impl_lock! {
+    impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
+        /// Attempts to acquire this `RwLock` with shared read access until a timeout
+        /// is reached.
+        ///
+        /// If the access could not be granted before the timeout expires, then
+        /// `None` is returned. Otherwise, an RAII guard is returned which will
+        /// release the shared access when it is dropped.
+        ///
+        /// This method is guaranteed to succeed without blocking if another read
+        /// lock is held at the time of the call. See the documentation for
+        /// `read_recursive` for details.
+        #[inline]
+        pub fn try_read_recursive_for(
+            &self,
+            timeout: R::Duration,
+        ) -> Option<RwLockReadGuard<'_, R, T>> {
+            lock: self.raw.try_lock_shared_recursive_for(timeout);
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
-        } else {
-            None
-        }
-    }
+            guard: |lock| if lock { Some(unsafe { self.read_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.read_guard_arc() }) } else { None }; 
+        } => try_read_arc_recursive_for -> Option<ArcRwLockReadGuard<R, T>>;
 
-    /// Attempts to acquire this `RwLock` with shared read access until a timeout
-    /// is reached.
-    ///
-    /// If the access could not be granted before the timeout expires, then
-    /// `None` is returned. Otherwise, an RAII guard is returned which will
-    /// release the shared access when it is dropped.
-    #[inline]
-    pub fn try_read_recursive_until(
-        &self,
-        timeout: R::Instant,
-    ) -> Option<RwLockReadGuard<'_, R, T>> {
-        if self.raw.try_lock_shared_recursive_until(timeout) {
+        /// Attempts to acquire this `RwLock` with shared read access until a timeout
+        /// is reached.
+        ///
+        /// If the access could not be granted before the timeout expires, then
+        /// `None` is returned. Otherwise, an RAII guard is returned which will
+        /// release the shared access when it is dropped.
+        #[inline]
+        pub fn try_read_recursive_until(
+            &self,
+            timeout: R::Instant,
+        ) -> Option<RwLockReadGuard<'_, R, T>> {
+            lock: self.raw.try_lock_shared_recursive_until(timeout);
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to lock this `RwLock` with read access until a timeout is reached, through an `Arc`.
-    ///
-    /// This method is similar to the `try_read_recursive_for` method; however, it requires the `RwLock` to be
-    /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_read_arc_recursive_for(
-        self: &Arc<Self>,
-        timeout: R::Duration,
-    ) -> Option<ArcRwLockReadGuard<R, T>> {
-        if self.raw.try_lock_shared_recursive_for(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to lock this `RwLock` with read access until a timeout is reached, through an `Arc`.
-    ///
-    /// This method is similar to the `try_read_recursive_until` method; however, it requires the `RwLock` to be
-    /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_read_arc_recursive_until(
-        self: &Arc<Self>,
-        timeout: R::Instant,
-    ) -> Option<ArcRwLockReadGuard<R, T>> {
-        if self.raw.try_lock_shared_recursive_until(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
-        } else {
-            None
-        }
+            guard: |lock| if lock { Some(unsafe { self.read_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.read_guard_arc() }) } else { None }; 
+        } => try_read_arc_recursive_until -> Option<ArcRwLockReadGuard<R, T>>;
     }
 }
 
@@ -997,38 +803,6 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
         }
     }
 
-    /// Locks this `RwLock` with upgradable read access, blocking the current thread
-    /// until it can be acquired.
-    ///
-    /// The calling thread will be blocked until there are no more writers or other
-    /// upgradable reads which hold the lock. There may be other readers currently
-    /// inside the lock when this method returns.
-    ///
-    /// Returns an RAII guard which will release this thread's shared access
-    /// once it is dropped.
-    #[inline]
-    pub fn upgradable_read(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
-        self.raw.lock_upgradable();
-        // SAFETY: The lock is held, as required.
-        unsafe { self.upgradable_guard() }
-    }
-
-    /// Attempts to acquire this `RwLock` with upgradable read access.
-    ///
-    /// If the access could not be granted at this time, then `None` is returned.
-    /// Otherwise, an RAII guard is returned which will release the shared access
-    /// when it is dropped.
-    ///
-    /// This function does not block.
-    #[inline]
-    pub fn try_upgradable_read(&self) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
-        if self.raw.try_lock_upgradable() {
-            // SAFETY: The lock is held, as required.
-            Some(unsafe { self.upgradable_guard() })
-        } else {
-            None
-        }
-    }
 
     /// # Safety
     ///
@@ -1041,35 +815,45 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
             marker: PhantomData,
         }
     }
+}
 
-    /// Locks this `RwLock` with upgradable read access, through an `Arc`.
-    ///
-    /// This method is similar to the `upgradable_read` method; however, it requires the `RwLock` to be
-    /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn upgradable_read_arc(self: &Arc<Self>) -> ArcRwLockUpgradableReadGuard<R, T> {
-        self.raw.lock_upgradable();
-        // SAFETY: locking guarantee is upheld
-        unsafe { self.upgradable_guard_arc() }
-    }
+impl_lock! {
+    impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
+        /// Locks this `RwLock` with upgradable read access, blocking the current thread
+        /// until it can be acquired.
+        ///
+        /// The calling thread will be blocked until there are no more writers or other
+        /// upgradable reads which hold the lock. There may be other readers currently
+        /// inside the lock when this method returns.
+        ///
+        /// Returns an RAII guard which will release this thread's shared access
+        /// once it is dropped.
+        #[inline]
+        pub fn upgradable_read(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
+            lock: self.raw.lock_upgradable();
+            // SAFETY: The lock is held, as required.
+            guard: |_| unsafe { self.upgradable_guard() };
+            guard_arc: |_| unsafe { self.upgradable_guard_arc() };
+        } => upgradable_read_arc -> ArcRwLockUpgradableReadGuard<R, T>;
 
-    /// Attempts to lock this `RwLock` with upgradable read access, through an `Arc`.
-    ///
-    /// This method is similar to the `try_upgradable_read` method; however, it requires the `RwLock` to be
-    /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_upgradable_read_arc(self: &Arc<Self>) -> Option<ArcRwLockUpgradableReadGuard<R, T>> {
-        if self.raw.try_lock_upgradable() {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.upgradable_guard_arc() })
-        } else {
-            None
-        }
+        /// Attempts to acquire this `RwLock` with upgradable read access.
+        ///
+        /// If the access could not be granted at this time, then `None` is returned.
+        /// Otherwise, an RAII guard is returned which will release the shared access
+        /// when it is dropped.
+        ///
+        /// This function does not block.
+        #[inline]
+        pub fn try_upgradable_read(&self) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
+            lock: self.raw.try_lock_upgradable();
+            // SAFETY: The lock is held, as required.
+            guard: |lock| if lock { Some(unsafe { self.upgradable_guard() }) } else { None };
+            guard_arc: |lock| if lock { Some(unsafe { self.upgradable_guard_arc() }) } else { None };
+        } => try_upgradable_read_arc -> Option<ArcRwLockUpgradableReadGuard<R, T>>;
     }
 }
 
+impl_lock! {
 impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     /// Attempts to acquire this `RwLock` with upgradable read access until a timeout
     /// is reached.
@@ -1082,13 +866,11 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
         &self,
         timeout: R::Duration,
     ) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
-        if self.raw.try_lock_upgradable_for(timeout) {
-            // SAFETY: The lock is held, as required.
-            Some(unsafe { self.upgradable_guard() })
-        } else {
-            None
-        }
-    }
+        lock: self.raw.try_lock_upgradable_for(timeout);
+        // SAFETY: The lock is held, as required.
+        guard: |lock| if lock { Some(unsafe { self.upgradable_guard() }) } else { None };
+        guard_arc: |lock| if lock { Some(unsafe { self.upgradable_guard_arc() }) } else { None };
+    } => try_upgradable_read_arc_for -> Option<ArcRwLockUpgradableReadGuard<R, T>>;
 
     /// Attempts to acquire this `RwLock` with upgradable read access until a timeout
     /// is reached.
@@ -1101,49 +883,12 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
         &self,
         timeout: R::Instant,
     ) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
-        if self.raw.try_lock_upgradable_until(timeout) {
-            // SAFETY: The lock is held, as required.
-            Some(unsafe { self.upgradable_guard() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to lock this `RwLock` with upgradable access until a timeout is reached, through an `Arc`.
-    ///
-    /// This method is similar to the `try_upgradable_read_for` method; however, it requires the `RwLock` to be
-    /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_upgradable_read_arc_for(
-        self: &Arc<Self>,
-        timeout: R::Duration,
-    ) -> Option<ArcRwLockUpgradableReadGuard<R, T>> {
-        if self.raw.try_lock_upgradable_for(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.upgradable_guard_arc() })
-        } else {
-            None
-        }
-    }
-
-    /// Attempts to lock this `RwLock` with upgradable access until a timeout is reached, through an `Arc`.
-    ///
-    /// This method is similar to the `try_upgradable_read_until` method; however, it requires the `RwLock` to be
-    /// inside of an `Arc` and the resulting read guard has no lifetime requirements.
-    #[cfg(feature = "arc_lock")]
-    #[inline]
-    pub fn try_upgradable_read_arc_until(
-        self: &Arc<Self>,
-        timeout: R::Instant,
-    ) -> Option<ArcRwLockUpgradableReadGuard<R, T>> {
-        if self.raw.try_lock_upgradable_until(timeout) {
-            // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.upgradable_guard_arc() })
-        } else {
-            None
-        }
-    }
+        lock: self.raw.try_lock_upgradable_until(timeout);
+        // SAFETY: The lock is held, as required.
+        guard: |lock| if lock { Some(unsafe { self.upgradable_guard() }) } else { None };
+        guard_arc: |lock| if lock { Some(unsafe { self.upgradable_guard_arc() }) } else { None };
+    } => try_upgradable_read_arc_until -> Option<ArcRwLockUpgradableReadGuard<R, T>>;
+}
 }
 
 impl<R: RawRwLock, T: ?Sized + Default> Default for RwLock<R, T> {

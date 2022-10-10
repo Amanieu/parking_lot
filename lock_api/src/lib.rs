@@ -103,6 +103,65 @@ pub struct GuardNoSend(*mut ());
 
 unsafe impl Sync for GuardNoSend {}
 
+/// Simple macro to reduce code deduplication between locking variants.
+macro_rules! impl_lock {
+    (
+        // Impl block
+        impl
+        // Custom-grafted generics
+        <
+            $lname: ident: $lbound: ident, 
+            $([Gen] $gname: ident: $gbound: ident,)? 
+            $tname: ident: ?Sized
+        >
+        // Lock type
+        $ty: ty {
+
+        // Methods
+        $(
+            $(#[$attr: meta])*
+            $vis: vis fn $name: ident
+            (&$this: ident $(,)? $($arg: ident: $argty: ty),* $(,)?) -> $ret: ty {
+            lock: $lock: expr;
+            guard: $guard: expr;
+            guard_arc: $guard_arc: expr;
+            } => $arc_name: ident -> $arc_ret: ty;
+        )*
+
+        }
+    ) => {
+        impl<
+            $lname: $lbound,
+            $($gname: $gbound,)?
+            $tname: ?Sized
+        > $ty {
+
+            $(
+                $(#[$attr])*
+                #[allow(clippy::redundant_closure_call)]
+                $vis fn $name
+                (&$this, $($arg: $argty),*) -> $ret {
+                    let lock = $lock;
+                    ($guard)(lock)
+                }
+
+                $(#[$attr])*
+                #[doc = ""]
+                #[doc = "This method requires the lock to be wrapped in an `Arc`, but returns"]
+                #[doc = "a guard which does not have any lifetime requirements."]
+                #[cfg(feature = "arc_lock")]
+                #[allow(clippy::redundant_closure_call)]
+                $vis fn $arc_name
+                ($this: alloc::sync::Arc<Self>, $($arg: $argty),*) -> $arc_ret {
+                    let lock = $lock;
+                    ($guard_arc)(lock)
+                }
+            )*
+
+        }
+    }
+}
+
 mod mutex;
 pub use crate::mutex::*;
 
