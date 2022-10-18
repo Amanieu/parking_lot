@@ -1,3 +1,7 @@
+## parking_lot_core 0.9.4 (2022-10-18)
+
+- Bump windows-sys dependency to 0.42. (#356)
+
 ## lock_api 0.4.9 (2022-09-20)
 
 - Fixed `ReentrantMutexGuard::try_map` signature (#355)
