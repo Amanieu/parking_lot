@@ -1,3 +1,7 @@
+## parking_lot_core 0.9.5 (2022-11-29)
+
+- Update use of `libc::timespec` to prepare for future libc version (#363)
+
 ## parking_lot_core 0.9.4 (2022-10-18)
 
 - Bump windows-sys dependency to 0.42. (#356)
