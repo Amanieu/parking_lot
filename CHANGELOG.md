@@ -1,3 +1,7 @@
+## parking_lot_core 0.9.6 (2023-01-11)
+
+- Add support for watchOS. (#367)
+
 ## parking_lot_core 0.9.5 (2022-11-29)
 
 - Update use of `libc::timespec` to prepare for future libc version (#363)
