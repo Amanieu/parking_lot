@@ -1,3 +1,7 @@
+## parking_lot_core 0.9.7 (2023-02-01)
+
+- Update windows-sys dependency to 0.45. (#368)
+
 ## parking_lot_core 0.9.6 (2023-01-11)
 
 - Add support for watchOS. (#367)
