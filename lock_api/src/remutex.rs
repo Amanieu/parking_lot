@@ -599,6 +599,7 @@ where
 ///
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` implementation.
+#[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct ReentrantMutexGuard<'a, R: RawMutex, G: GetThreadId, T: ?Sized> {
     remutex: &'a ReentrantMutex<R, G, T>,
@@ -794,6 +795,7 @@ unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAdd
 /// `Mutex` it uses an `Arc<ReentrantMutex>`. This has several advantages, most notably that it has an `'static`
 /// lifetime.
 #[cfg(feature = "arc_lock")]
+#[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct ArcReentrantMutexGuard<R: RawMutex, G: GetThreadId, T: ?Sized> {
     remutex: Arc<ReentrantMutex<R, G, T>>,
@@ -897,6 +899,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> Drop for ArcReentrantMutexGuard<R, 
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
+#[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct MappedReentrantMutexGuard<'a, R: RawMutex, G: GetThreadId, T: ?Sized> {
     raw: &'a RawReentrantMutex<R, G>,
