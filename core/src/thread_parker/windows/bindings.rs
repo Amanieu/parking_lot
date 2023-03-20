@@ -7,8 +7,8 @@ pub const INFINITE: u32 = 4294967295;
 pub const ERROR_TIMEOUT: u32 = 1460;
 pub const GENERIC_READ: u32 = 2147483648;
 pub const GENERIC_WRITE: u32 = 1073741824;
-pub const STATUS_SUCCESS: i32 = 0 as _;
-pub const STATUS_TIMEOUT: i32 = 258 as _;
+pub const STATUS_SUCCESS: i32 = 0;
+pub const STATUS_TIMEOUT: i32 = 258;
 
 pub type HANDLE = isize;
 pub type HINSTANCE = isize;
