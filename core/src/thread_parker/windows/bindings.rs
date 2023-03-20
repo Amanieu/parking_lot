@@ -34,4 +34,3 @@ extern "system" {
 
     pub fn Sleep(dwMilliseconds: u32);
 }
-
