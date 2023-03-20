@@ -1,0 +1,32 @@
+pub const INFINITE: u32 = 4294967295;
+pub const ERROR_TIMEOUT: u32 = 1460;
+pub const GENERIC_READ: u32 = 2147483648;
+pub const GENERIC_WRITE: u32 = 1073741824;
+pub const STATUS_SUCCESS: i32 = 0 as _;
+pub const STATUS_TIMEOUT: i32 = 258 as _;
+
+pub type HANDLE = isize;
+pub type HINSTANCE = isize;
+pub type BOOL = i32;
+pub type BOOLEAN = u8;
+pub type NTSTATUS = i32;
+pub type FARPROC = Option<unsafe extern "system" fn() -> isize>;
+pub type WaitOnAddress = unsafe extern "system" fn(
+    Address: *const std::ffi::c_void,
+    CompareAddress: *const std::ffi::c_void,
+    AddressSize: usize,
+    dwMilliseconds: u32,
+) -> BOOL;
+pub type WakeByAddressSingle = unsafe extern "system" fn(Address: *const std::ffi::c_void);
+
+#[link(name = "kernel32")]
+extern "system" {
+    pub fn GetLastError() -> u32;
+    pub fn CloseHandle(hObject: HANDLE) -> BOOL;
+
+    pub fn GetModuleHandleA(lpModuleName: *const u8) -> HINSTANCE;
+    pub fn GetProcAddress(hModule: HINSTANCE, lpProcName: *const u8) -> FARPROC;
+
+    pub fn Sleep(dwMilliseconds: u32);
+}
+

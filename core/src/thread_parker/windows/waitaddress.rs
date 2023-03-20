@@ -10,30 +10,17 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 use std::{ffi, time::Instant};
-use windows_sys::Win32::{
-    Foundation::{GetLastError, BOOL, ERROR_TIMEOUT},
-    System::{
-        LibraryLoader::{GetModuleHandleA, GetProcAddress},
-        WindowsProgramming::INFINITE,
-    },
-};
+use super::bindings::*;
 
 #[allow(non_snake_case)]
 pub struct WaitAddress {
-    WaitOnAddress: extern "system" fn(
-        Address: *mut ffi::c_void,
-        CompareAddress: *mut ffi::c_void,
-        AddressSize: usize,
-        dwMilliseconds: u32,
-    ) -> BOOL,
-    WakeByAddressSingle: extern "system" fn(Address: *mut ffi::c_void),
+    WaitOnAddress: WaitOnAddress,
+    WakeByAddressSingle: WakeByAddressSingle,
 }
 
 impl WaitAddress {
     #[allow(non_snake_case)]
     pub fn create() -> Option<WaitAddress> {
-        // MSDN claims that that WaitOnAddress and WakeByAddressSingle are
-        // located in kernel32.dll, but they are lying...
         let synch_dll = unsafe { GetModuleHandleA(b"api-ms-win-core-synch-l1-2-0.dll\0".as_ptr()) };
         if synch_dll == 0 {
             return None;
@@ -108,12 +95,14 @@ impl WaitAddress {
     #[inline]
     fn wait_on_address(&'static self, key: &AtomicUsize, timeout: u32) -> BOOL {
         let cmp = 1usize;
-        (self.WaitOnAddress)(
-            key as *const _ as *mut ffi::c_void,
-            &cmp as *const _ as *mut ffi::c_void,
-            mem::size_of::<usize>(),
-            timeout,
-        )
+        unsafe {
+            (self.WaitOnAddress)(
+                key as *const _ as *mut ffi::c_void,
+                &cmp as *const _ as *mut ffi::c_void,
+                mem::size_of::<usize>(),
+                timeout,
+            )
+        }
     }
 }
 
@@ -130,6 +119,6 @@ impl UnparkHandle {
     // released to avoid blocking the queue for too long.
     #[inline]
     pub fn unpark(self) {
-        (self.waitaddress.WakeByAddressSingle)(self.key as *mut ffi::c_void);
+        unsafe { (self.waitaddress.WakeByAddressSingle)(self.key as *mut ffi::c_void) };
     }
 }

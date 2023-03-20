@@ -13,17 +13,11 @@ use core::{
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 
-use windows_sys::Win32::{
-    Foundation::{CloseHandle, BOOLEAN, HANDLE, NTSTATUS, STATUS_SUCCESS, STATUS_TIMEOUT},
-    System::{
-        LibraryLoader::{GetModuleHandleA, GetProcAddress},
-        SystemServices::{GENERIC_READ, GENERIC_WRITE},
-    },
-};
-
 const STATE_UNPARKED: usize = 0;
 const STATE_PARKED: usize = 1;
 const STATE_TIMED_OUT: usize = 2;
+
+use super::bindings::*;
 
 #[allow(non_snake_case)]
 pub struct KeyedEvent {
