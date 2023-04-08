@@ -257,7 +257,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// # Safety
     ///
     /// This method must only be called if the current thread logically owns a
-    /// `MutexGuard` but that guard has be discarded using `mem::forget`.
+    /// `MutexGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
     pub unsafe fn force_unlock(&self) {
@@ -344,7 +344,7 @@ impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
     /// # Safety
     ///
     /// This method must only be called if the current thread logically owns a
-    /// `MutexGuard` but that guard has be discarded using `mem::forget`.
+    /// `MutexGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
     pub unsafe fn force_unlock_fair(&self) {
