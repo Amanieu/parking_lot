@@ -22,6 +22,9 @@ libc = "0.2.95"
 [target.'cfg(target_os = "redox")'.dependencies]
 redox_syscall = "0.3"
 
+[target.'cfg(windows)'.dependencies]
+windows-targets = "0.48.0"
+
 [features]
 nightly = []
 deadlock_detection = ["petgraph", "thread-id", "backtrace"]
