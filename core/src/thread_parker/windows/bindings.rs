@@ -24,13 +24,8 @@ pub type WaitOnAddress = unsafe extern "system" fn(
 ) -> BOOL;
 pub type WakeByAddressSingle = unsafe extern "system" fn(Address: *const std::ffi::c_void);
 
-#[link(name = "kernel32")]
-extern "system" {
-    pub fn GetLastError() -> u32;
-    pub fn CloseHandle(hObject: HANDLE) -> BOOL;
-
-    pub fn GetModuleHandleA(lpModuleName: *const u8) -> HINSTANCE;
-    pub fn GetProcAddress(hModule: HINSTANCE, lpProcName: *const u8) -> FARPROC;
-
-    pub fn Sleep(dwMilliseconds: u32);
-}
+windows_targets::link!("kernel32.dll" "system" fn GetLastError() -> u32);
+windows_targets::link!("kernel32.dll" "system" fn CloseHandle(hObject: HANDLE) -> BOOL);
+windows_targets::link!("kernel32.dll" "system" fn GetModuleHandleA(lpModuleName: *const u8) -> HINSTANCE);
+windows_targets::link!("kernel32.dll" "system" fn GetProcAddress(hModule: HINSTANCE, lpProcName: *const u8) -> FARPROC);
+windows_targets::link!("kernel32.dll" "system" fn Sleep(dwMilliseconds: u32) -> ());
