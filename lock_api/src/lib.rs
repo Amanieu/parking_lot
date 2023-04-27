@@ -107,7 +107,9 @@ unsafe impl Sync for GuardNoSend {}
 mod mutex;
 pub use crate::mutex::*;
 
+#[cfg(feature = "atomic_usize")]
 mod remutex;
+#[cfg(feature = "atomic_usize")]
 pub use crate::remutex::*;
 
 mod rwlock;
