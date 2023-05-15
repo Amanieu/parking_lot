@@ -13,14 +13,8 @@ edition = "2018"
 cfg-if = "1.0.0"
 smallvec = "1.6.1"
 petgraph = { version = "0.6.0", optional = true }
-backtrace = { version = "0.3.60", optional = true }
-
-[target.'cfg(not(target = "wasm32-unknown-unknown"))'.dependencies]
 thread-id = { version = "4.0.0", optional = true }
-
-[target.'cfg(target = "wasm32-unknown-unknown")'.dependencies]
-js-sys = { version = "0.3.50", optional = true }
-web-sys = { version = "0.3.50", optional = true, features = ["console"] }
+backtrace = { version = "0.3.60", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.95"
@@ -33,4 +27,4 @@ windows-targets = "0.48.0"
 
 [features]
 nightly = []
-deadlock_detection = ["petgraph", "thread-id", "web-sys", "js-sys", "backtrace"]
+deadlock_detection = ["petgraph", "thread-id", "backtrace"]
