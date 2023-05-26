@@ -87,9 +87,9 @@ lock.
 There are a few restrictions when using this library on stable Rust:
 
 - The `wasm32-unknown-unknown` target is only fully supported on nightly with
-  `-C target-feature=+atomics` in `RUSTFLAGS` and `-Z build-std` passed to cargo.
-  parking_lot will work mostly fine on stable, the only difference is it will
-  panic instead of block forever if you hit a deadlock.
+  `-C target-feature=+atomics` in `RUSTFLAGS` and `-Zbuild-std=panic_abort,std`
+  passed to cargo. parking_lot will work mostly fine on stable, the only
+  difference is it will panic instead of block forever if you hit a deadlock.
   Just make sure not to enable `-C target-feature=+atomics` on stable as that
   will allow wasm to run with multiple threads which will completely break
   parking_lot's concurrency guarantees.
