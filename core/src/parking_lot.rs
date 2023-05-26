@@ -248,7 +248,7 @@ fn create_hashtable() -> &'static HashTable {
             // Free the table we created
             // SAFETY: `new_table` is created from `Box::into_raw` above and only freed here.
             unsafe {
-                Box::from_raw(new_table);
+                let _ = Box::from_raw(new_table);
             }
             old_table
         }
