@@ -1150,54 +1150,30 @@ mod deadlock_impl {
     use super::{get_hashtable, lock_bucket, with_thread_data, ThreadData, NUM_THREADS};
     use crate::thread_parker::{ThreadParkerT, UnparkHandleT};
     use crate::word_lock::WordLock;
-    #[cfg(not(target = "wasm32-unknown-unknown"))]
     use backtrace::Backtrace;
-    #[cfg(target = "wasm32-unknown-unknown")]
-    use js_sys::{global, Error, Reflect};
     use petgraph;
     use petgraph::graphmap::DiGraphMap;
     use std::cell::{Cell, UnsafeCell};
     use std::collections::HashSet;
     use std::sync::atomic::Ordering;
     use std::sync::mpsc;
-    #[cfg(not(target = "wasm32-unknown-unknown"))]
     use thread_id;
 
     /// Representation of a deadlocked thread
     pub struct DeadlockedThread {
-        #[cfg(not(target = "wasm32-unknown-unknown"))]
         thread_id: usize,
-        #[cfg(target = "wasm32-unknown-unknown")]
-        worker_name: String,
-        #[cfg(not(target = "wasm32-unknown-unknown"))]
         backtrace: Backtrace,
-        #[cfg(target = "wasm32-unknown-unknown")]
-        stacktrace: String,
     }
 
     impl DeadlockedThread {
-        #[cfg(not(target = "wasm32-unknown-unknown"))]
         /// The system thread id
         pub fn thread_id(&self) -> usize {
             self.thread_id
         }
 
-        #[cfg(target = "wasm32-unknown-unknown")]
-        /// The system thread id
-        pub fn worker_name(&self) -> &str {
-            &self.worker_name
-        }
-
-        #[cfg(not(target = "wasm32-unknown-unknown"))]
         /// The thread backtrace
         pub fn backtrace(&self) -> &Backtrace {
             &self.backtrace
-        }
-
-        #[cfg(target = "wasm32-unknown-unknown")]
-        /// The thread error stacktrace
-        pub fn stacktrace(&self) -> &str {
-            &self.stacktrace
         }
     }
 
@@ -1211,13 +1187,8 @@ mod deadlock_impl {
         // Sender used to report the backtrace
         backtrace_sender: UnsafeCell<Option<mpsc::Sender<DeadlockedThread>>>,
 
-        #[cfg(not(target = "wasm32-unknown-unknown"))]
         // System thread id
         thread_id: usize,
-
-        #[cfg(target = "wasm32-unknown-unknown")]
-        /// The web worker's name
-        worker_name: String,
     }
 
     impl DeadlockData {
@@ -1226,13 +1197,7 @@ mod deadlock_impl {
                 resources: UnsafeCell::new(Vec::new()),
                 deadlocked: Cell::new(false),
                 backtrace_sender: UnsafeCell::new(None),
-                #[cfg(not(target = "wasm32-unknown-unknown"))]
                 thread_id: thread_id::get(),
-                #[cfg(target = "wasm32-unknown-unknown")]
-                worker_name: Reflect::get(&global().into(), &"name".into())
-                    .unwrap()
-                    .as_string()
-                    .unwrap(),
             }
         }
     }
@@ -1242,17 +1207,8 @@ mod deadlock_impl {
             let sender = (*td.deadlock_data.backtrace_sender.get()).take().unwrap();
             sender
                 .send(DeadlockedThread {
-                    #[cfg(not(target = "wasm32-unknown-unknown"))]
                     thread_id: td.deadlock_data.thread_id,
-                    #[cfg(target = "wasm32-unknown-unknown")]
-                    worker_name: td.deadlock_data.worker_name.clone(),
-                    #[cfg(not(target = "wasm32-unknown-unknown"))]
                     backtrace: Backtrace::new(),
-                    #[cfg(target = "wasm32-unknown-unknown")]
-                    stacktrace: Reflect::get(&Error::new("deadlock").into(), &"stack".into())
-                        .unwrap()
-                        .as_string()
-                        .unwrap(),
                 })
                 .unwrap();
             // make sure to close this sender
