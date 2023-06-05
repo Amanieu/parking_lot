@@ -1,3 +1,11 @@
+## parking_lot_core 0.9.8, lock_api 0.4.10 (2023-06-05)
+
+- Mark guards with `#[clippy::has_significant_drop]` (#369, #371)
+- Removed windows-sys dependency (#374, #378)
+- Add `atomic_usize` default feature to support platforms without atomics. (#380)
+- Add with_upgraded API to upgradable read locks (#386)
+- Make RwLock guards Sync again (#370)
+
 ## parking_lot_core 0.9.7 (2023-02-01)
 
 - Update windows-sys dependency to 0.45. (#368)
