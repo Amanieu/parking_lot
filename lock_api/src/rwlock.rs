@@ -1189,6 +1189,8 @@ pub struct RwLockReadGuard<'a, R: RawRwLock, T: ?Sized> {
     marker: PhantomData<(&'a T, R::GuardMarker)>,
 }
 
+unsafe impl<R: RawRwLock + Sync, T: Sync + ?Sized> Sync for RwLockReadGuard<'_, R, T> {}
+
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     /// Returns a reference to the original reader-writer lock object.
     pub fn rwlock(s: &Self) -> &'a RwLock<R, T> {
@@ -1476,6 +1478,8 @@ pub struct RwLockWriteGuard<'a, R: RawRwLock, T: ?Sized> {
     rwlock: &'a RwLock<R, T>,
     marker: PhantomData<(&'a mut T, R::GuardMarker)>,
 }
+
+unsafe impl<R: RawRwLock + Sync, T: Sync + ?Sized> Sync for RwLockWriteGuard<'_, R, T> {}
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     /// Returns a reference to the original reader-writer lock object.
