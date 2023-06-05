@@ -1897,7 +1897,7 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
         f()
     }
 
-    /// Atomically upgrades an upgradable read lock lock into a exclusive write lock,
+    /// Atomically upgrades an upgradable read lock lock into an exclusive write lock,
     /// blocking the current thread until it can be acquired.
     pub fn upgrade(s: Self) -> RwLockWriteGuard<'a, R, T> {
         // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
@@ -1912,7 +1912,7 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
         }
     }
 
-    /// Tries to atomically upgrade an upgradable read lock into a exclusive write lock.
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive write lock.
     ///
     /// If the access could not be granted at this time, then the current guard is returned.
     pub fn try_upgrade(s: Self) -> Result<RwLockWriteGuard<'a, R, T>, Self> {
@@ -2005,10 +2005,60 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
             marker: PhantomData,
         }
     }
+
+    /// First, atomically upgrades an upgradable read lock lock into an exclusive write lock,
+    /// blocking the current thread until it can be acquired.
+    ///
+    /// Then, calls the provided closure with an exclusive reference to the lock's data.
+    ///
+    /// Finally, atomically downgrades the lock back to an upgradable read lock.
+    /// The closure's return value is wrapped in `Some` and returned.
+    ///
+    /// This function only requires a mutable reference to the guard, unlike
+    /// `upgrade` which takes the guard by value.
+    pub fn with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(&mut self, f: F) -> Ret {
+        unsafe {
+            self.rwlock.raw.upgrade();
+        }
+
+        // Safety: We just upgraded the lock, so we have mutable access to the data.
+        // This will restore the state the lock was in at the start of the function.
+        defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+
+        // Safety: We upgraded the lock, so we have mutable access to the data.
+        // When this function returns, whether by drop or panic,
+        // the drop guard will downgrade it back to an upgradeable lock.
+        f(unsafe { &mut *self.rwlock.data.get() })
+    }
+
+    /// First, tries to atomically upgrade an upgradable read lock into an exclusive write lock.
+    ///
+    /// If the access could not be granted at this time, then `None` is returned.
+    ///
+    /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
+    /// and finally downgrades the lock back to an upgradable read lock.
+    /// The closure's return value is wrapped in `Some` and returned.
+    ///
+    /// This function only requires a mutable reference to the guard, unlike
+    /// `try_upgrade` which takes the guard by value.
+    pub fn try_with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(&mut self, f: F) -> Option<Ret> {
+        if unsafe { self.rwlock.raw.try_upgrade() } {
+            // Safety: We just upgraded the lock, so we have mutable access to the data.
+            // This will restore the state the lock was in at the start of the function.
+            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+
+            // Safety: We upgraded the lock, so we have mutable access to the data.
+            // When this function returns, whether by drop or panic,
+            // the drop guard will downgrade it back to an upgradeable lock.
+            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+        } else {
+            None
+        }
+    }
 }
 
 impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a, R, T> {
-    /// Tries to atomically upgrade an upgradable read lock into a exclusive
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive
     /// write lock, until a timeout is reached.
     ///
     /// If the access could not be granted before the timeout expires, then
@@ -2030,7 +2080,7 @@ impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuar
         }
     }
 
-    /// Tries to atomically upgrade an upgradable read lock into a exclusive
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive
     /// write lock, until a timeout is reached.
     ///
     /// If the access could not be granted before the timeout expires, then
@@ -2050,6 +2100,72 @@ impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuar
             })
         } else {
             Err(s)
+        }
+    }
+}
+
+impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a>
+    RwLockUpgradableReadGuard<'a, R, T>
+{
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive
+    /// write lock, until a timeout is reached.
+    ///
+    /// If the access could not be granted before the timeout expires, then
+    /// `None` is returned.
+    ///
+    /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
+    /// and finally downgrades the lock back to an upgradable read lock.
+    /// The closure's return value is wrapped in `Some` and returned.
+    ///
+    /// This function only requires a mutable reference to the guard, unlike
+    /// `try_upgrade_for` which takes the guard by value.
+    pub fn try_with_upgraded_for<Ret, F: FnOnce(&mut T) -> Ret>(
+        &mut self,
+        timeout: R::Duration,
+        f: F,
+    ) -> Option<Ret> {
+        if unsafe { self.rwlock.raw.try_upgrade_for(timeout) } {
+            // Safety: We just upgraded the lock, so we have mutable access to the data.
+            // This will restore the state the lock was in at the start of the function.
+            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+
+            // Safety: We upgraded the lock, so we have mutable access to the data.
+            // When this function returns, whether by drop or panic,
+            // the drop guard will downgrade it back to an upgradeable lock.
+            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+        } else {
+            None
+        }
+    }
+
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive
+    /// write lock, until a timeout is reached.
+    ///
+    /// If the access could not be granted before the timeout expires, then
+    /// `None` is returned.
+    ///
+    /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
+    /// and finally downgrades the lock back to an upgradable read lock.
+    /// The closure's return value is wrapped in `Some` and returned.
+    ///
+    /// This function only requires a mutable reference to the guard, unlike
+    /// `try_upgrade_until` which takes the guard by value.
+    pub fn try_with_upgraded_until<Ret, F: FnOnce(&mut T) -> Ret>(
+        &mut self,
+        timeout: R::Instant,
+        f: F,
+    ) -> Option<Ret> {
+        if unsafe { self.rwlock.raw.try_upgrade_until(timeout) } {
+            // Safety: We just upgraded the lock, so we have mutable access to the data.
+            // This will restore the state the lock was in at the start of the function.
+            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+
+            // Safety: We upgraded the lock, so we have mutable access to the data.
+            // When this function returns, whether by drop or panic,
+            // the drop guard will downgrade it back to an upgradeable lock.
+            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+        } else {
+            None
         }
     }
 }
@@ -2129,7 +2245,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
         f()
     }
 
-    /// Atomically upgrades an upgradable read lock lock into a exclusive write lock,
+    /// Atomically upgrades an upgradable read lock lock into an exclusive write lock,
     /// blocking the current thread until it can be acquired.
     pub fn upgrade(s: Self) -> ArcRwLockWriteGuard<R, T> {
         // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
@@ -2148,7 +2264,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
         }
     }
 
-    /// Tries to atomically upgrade an upgradable read lock into a exclusive write lock.
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive write lock.
     ///
     /// If the access could not be granted at this time, then the current guard is returned.
     pub fn try_upgrade(s: Self) -> Result<ArcRwLockWriteGuard<R, T>, Self> {
@@ -2237,11 +2353,61 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T>
             marker: PhantomData,
         }
     }
+
+    /// First, atomically upgrades an upgradable read lock lock into an exclusive write lock,
+    /// blocking the current thread until it can be acquired.
+    ///
+    /// Then, calls the provided closure with an exclusive reference to the lock's data.
+    ///
+    /// Finally, atomically downgrades the lock back to an upgradable read lock.
+    /// The closure's return value is returned.
+    ///
+    /// This function only requires a mutable reference to the guard, unlike
+    /// `upgrade` which takes the guard by value.
+    pub fn with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(&mut self, f: F) -> Ret {
+        unsafe {
+            self.rwlock.raw.upgrade();
+        }
+
+        // Safety: We just upgraded the lock, so we have mutable access to the data.
+        // This will restore the state the lock was in at the start of the function.
+        defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+
+        // Safety: We upgraded the lock, so we have mutable access to the data.
+        // When this function returns, whether by drop or panic,
+        // the drop guard will downgrade it back to an upgradeable lock.
+        f(unsafe { &mut *self.rwlock.data.get() })
+    }
+
+    /// First, tries to atomically upgrade an upgradable read lock into an exclusive write lock.
+    ///
+    /// If the access could not be granted at this time, then `None` is returned.
+    ///
+    /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
+    /// and finally downgrades the lock back to an upgradable read lock.
+    /// The closure's return value is wrapped in `Some` and returned.
+    ///
+    /// This function only requires a mutable reference to the guard, unlike
+    /// `try_upgrade` which takes the guard by value.
+    pub fn try_with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(&mut self, f: F) -> Option<Ret> {
+        if unsafe { self.rwlock.raw.try_upgrade() } {
+            // Safety: We just upgraded the lock, so we have mutable access to the data.
+            // This will restore the state the lock was in at the start of the function.
+            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+
+            // Safety: We upgraded the lock, so we have mutable access to the data.
+            // When this function returns, whether by drop or panic,
+            // the drop guard will downgrade it back to an upgradeable lock.
+            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+        } else {
+            None
+        }
+    }
 }
 
 #[cfg(feature = "arc_lock")]
 impl<R: RawRwLockUpgradeTimed, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
-    /// Tries to atomically upgrade an upgradable read lock into a exclusive
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive
     /// write lock, until a timeout is reached.
     ///
     /// If the access could not be granted before the timeout expires, then
@@ -2265,7 +2431,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
         }
     }
 
-    /// Tries to atomically upgrade an upgradable read lock into a exclusive
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive
     /// write lock, until a timeout is reached.
     ///
     /// If the access could not be granted before the timeout expires, then
@@ -2287,6 +2453,73 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
             })
         } else {
             Err(s)
+        }
+    }
+}
+
+#[cfg(feature = "arc_lock")]
+impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
+    ArcRwLockUpgradableReadGuard<R, T>
+{
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive
+    /// write lock, until a timeout is reached.
+    ///
+    /// If the access could not be granted before the timeout expires, then
+    /// `None` is returned.
+    ///
+    /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
+    /// and finally downgrades the lock back to an upgradable read lock.
+    /// The closure's return value is wrapped in `Some` and returned.
+    ///
+    /// This function only requires a mutable reference to the guard, unlike
+    /// `try_upgrade_for` which takes the guard by value.
+    pub fn try_with_upgraded_for<Ret, F: FnOnce(&mut T) -> Ret>(
+        &mut self,
+        timeout: R::Duration,
+        f: F,
+    ) -> Option<Ret> {
+        if unsafe { self.rwlock.raw.try_upgrade_for(timeout) } {
+            // Safety: We just upgraded the lock, so we have mutable access to the data.
+            // This will restore the state the lock was in at the start of the function.
+            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+
+            // Safety: We upgraded the lock, so we have mutable access to the data.
+            // When this function returns, whether by drop or panic,
+            // the drop guard will downgrade it back to an upgradeable lock.
+            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+        } else {
+            None
+        }
+    }
+
+    /// Tries to atomically upgrade an upgradable read lock into an exclusive
+    /// write lock, until a timeout is reached.
+    ///
+    /// If the access could not be granted before the timeout expires, then
+    /// `None` is returned.
+    ///
+    /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
+    /// and finally downgrades the lock back to an upgradable read lock.
+    /// The closure's return value is wrapped in `Some` and returned.
+    ///
+    /// This function only requires a mutable reference to the guard, unlike
+    /// `try_upgrade_until` which takes the guard by value.
+    pub fn try_with_upgraded_until<Ret, F: FnOnce(&mut T) -> Ret>(
+        &mut self,
+        timeout: R::Instant,
+        f: F,
+    ) -> Option<Ret> {
+        if unsafe { self.rwlock.raw.try_upgrade_until(timeout) } {
+            // Safety: We just upgraded the lock, so we have mutable access to the data.
+            // This will restore the state the lock was in at the start of the function.
+            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+
+            // Safety: We upgraded the lock, so we have mutable access to the data.
+            // When this function returns, whether by drop or panic,
+            // the drop guard will downgrade it back to an upgradeable lock.
+            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+        } else {
+            None
         }
     }
 }
