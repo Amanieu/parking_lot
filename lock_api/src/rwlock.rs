@@ -1247,8 +1247,6 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
 
     /// Temporarily unlocks the `RwLock` to execute the given function.
     ///
-    /// The `RwLock` is unlocked a fair unlock protocol.
-    ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the `RwLock`.
     #[inline]
