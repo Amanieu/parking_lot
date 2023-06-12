@@ -8,6 +8,7 @@ repository = "https://github.com/Amanieu/parking_lot"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 categories = ["concurrency"]
 edition = "2018"
+rust-version = "1.49.0"
 
 [dependencies]
 cfg-if = "1.0.0"
