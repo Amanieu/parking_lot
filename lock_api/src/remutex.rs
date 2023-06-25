@@ -183,8 +183,10 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
         if self.lock_count.get() == 1 {
             let id = self.owner.load(Ordering::Relaxed);
             self.owner.store(0, Ordering::Relaxed);
+            self.lock_count.set(0);
             self.mutex.bump();
             self.owner.store(id, Ordering::Relaxed);
+            self.lock_count.set(1);
         }
     }
 }
