@@ -2025,7 +2025,7 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
 
         // Safety: We just upgraded the lock, so we have mutable access to the data.
         // This will restore the state the lock was in at the start of the function.
-        defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+        defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
 
         // Safety: We upgraded the lock, so we have mutable access to the data.
         // When this function returns, whether by drop or panic,
@@ -2047,7 +2047,7 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
         if unsafe { self.rwlock.raw.try_upgrade() } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
