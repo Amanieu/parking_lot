@@ -11,7 +11,7 @@ edition = "2018"
 
 [package.metadata.docs.rs]
 all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 
 [dependencies]
 scopeguard = { version = "1.1.0", default-features = false }
