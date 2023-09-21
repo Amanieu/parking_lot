@@ -411,9 +411,11 @@ impl<R, T> RwLock<R, T> {
 impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// The lock must be held when calling this method. This method must only
+    /// be called if this thread holds the lock and no other `MutexGaurd` exists
+    /// for this lock
     #[inline]
-    unsafe fn read_guard(&self) -> RwLockReadGuard<'_, R, T> {
+    pub unsafe fn read_guard(&self) -> RwLockReadGuard<'_, R, T> {
         RwLockReadGuard {
             rwlock: self,
             marker: PhantomData,
@@ -424,7 +426,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     ///
     /// The lock must be held when calling this method.
     #[inline]
-    unsafe fn write_guard(&self) -> RwLockWriteGuard<'_, R, T> {
+    pub unsafe fn write_guard(&self) -> RwLockWriteGuard<'_, R, T> {
         RwLockWriteGuard {
             rwlock: self,
             marker: PhantomData,
@@ -990,7 +992,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     ///
     /// The lock must be held when calling this method.
     #[inline]
-    unsafe fn upgradable_guard(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
+    pub unsafe fn upgradable_guard(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
         RwLockUpgradableReadGuard {
             rwlock: self,
             marker: PhantomData,

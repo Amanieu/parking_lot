@@ -191,9 +191,11 @@ impl<R, T> Mutex<R, T> {
 impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// The lock must be held when calling this method. This method must only
+    /// be called if this thread holds the lock and no other `MutexGaurd` exists
+    /// for this lock
     #[inline]
-    unsafe fn guard(&self) -> MutexGuard<'_, R, T> {
+    pub unsafe fn guard(&self) -> MutexGuard<'_, R, T> {
         MutexGuard {
             mutex: self,
             marker: PhantomData,

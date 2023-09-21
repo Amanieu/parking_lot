@@ -291,9 +291,11 @@ impl<R, G, T> ReentrantMutex<R, G, T> {
 impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// The lock must be held when calling this method.This method must only
+    /// be called if this thread holds the lock and no other `MutexGaurd` exists
+    /// for this lock
     #[inline]
-    unsafe fn guard(&self) -> ReentrantMutexGuard<'_, R, G, T> {
+    pub unsafe fn guard(&self) -> ReentrantMutexGuard<'_, R, G, T> {
         ReentrantMutexGuard {
             remutex: &self,
             marker: PhantomData,
