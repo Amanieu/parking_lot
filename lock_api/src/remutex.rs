@@ -292,7 +292,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// # Safety
     ///
     /// The lock must be held when calling this method.This method must only
-    /// be called if this thread holds the lock and no other `MutexGaurd` exists
+    /// be called if this thread holds the lock and no `ReentrantMutexGuard` exists
     /// for this lock
     #[inline]
     pub unsafe fn guard(&self) -> ReentrantMutexGuard<'_, R, G, T> {
