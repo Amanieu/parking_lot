@@ -416,8 +416,8 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// This method must only be called if the thread logically holds a read lock.
     ///
     /// This function does not increment the read count of the lock. Calling this function when a
-    /// guard has already been produced for the thread is undefined behaviour unless the
-    /// guard was forgotten with `mem::forget`.`
+    /// guard has already been produced is undefined behaviour unless the guard was forgotten
+    /// with `mem::forget`.`
     #[inline]
     pub unsafe fn make_read_guard_unchecked(&self) -> RwLockReadGuard<'_, R, T> {
         RwLockReadGuard {
@@ -601,8 +601,8 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// This method must only be called if the thread logically holds a read lock.
     ///
     /// This function does not increment the read count of the lock. Calling this function when a
-    /// guard has already been produced for the thread is undefined behaviour unless the
-    /// guard was forgotten with `mem::forget`.`
+    /// guard has already been produced is undefined behaviour unless the guard was forgotten
+    /// with `mem::forget`.`
     #[cfg(feature = "arc_lock")]
     #[inline]
     pub unsafe fn make_read_guard_arc_unchecked(self: &Arc<Self>) -> ArcRwLockReadGuard<R, T> {
@@ -1015,8 +1015,8 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     /// This method must only be called if the thread logically holds an upgradable read lock.
     ///
     /// This function does not increment the read count of the lock. Calling this function when a
-    /// guard has already been produced for the thread is undefined behaviour unless the
-    /// guard was forgotten with `mem::forget`.`
+    /// guard has already been produced is undefined behaviour unless the guard was forgotten
+    /// with `mem::forget`.`
     #[inline]
     pub unsafe fn make_upgradable_guard_unchecked(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
         RwLockUpgradableReadGuard {
