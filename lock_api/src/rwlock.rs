@@ -1008,11 +1008,17 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
 }
 
 impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
+    /// Creates a new `RwLockUpgradableReadGuard` without checking if the lock is held.
+    ///
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// This method must only be called if the thread logically holds an upgradable read lock.
+    ///
+    /// This function does not increment the read count of the lock. Calling this function when a
+    /// guard has already been produced for the thread is undefined behaviour unless the
+    /// guard was forgotten with `mem::forget`.`
     #[inline]
-    unsafe fn upgradable_guard(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
+    pub unsafe fn make_upgradable_guard_unchecked(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
         RwLockUpgradableReadGuard {
             rwlock: self,
             marker: PhantomData,
@@ -1032,7 +1038,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     pub fn upgradable_read(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
         self.raw.lock_upgradable();
         // SAFETY: The lock is held, as required.
-        unsafe { self.upgradable_guard() }
+        unsafe { self.make_upgradable_guard_unchecked() }
     }
 
     /// Attempts to acquire this `RwLock` with upgradable read access.
@@ -1046,7 +1052,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     pub fn try_upgradable_read(&self) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
         if self.raw.try_lock_upgradable() {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.upgradable_guard() })
+            Some(unsafe { self.make_upgradable_guard_unchecked() })
         } else {
             None
         }
@@ -1106,7 +1112,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
         if self.raw.try_lock_upgradable_for(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.upgradable_guard() })
+            Some(unsafe { self.make_upgradable_guard_unchecked() })
         } else {
             None
         }
@@ -1125,7 +1131,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
         if self.raw.try_lock_upgradable_until(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.upgradable_guard() })
+            Some(unsafe { self.make_upgradable_guard_unchecked() })
         } else {
             None
         }
