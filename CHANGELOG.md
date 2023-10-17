@@ -1,3 +1,10 @@
+## parking_lot_core 0.9.9, lock_api 0.4.11 (2023-06-05)
+
+- Fixed `RwLockUpgradeableReadGuard::with_upgraded`. (#393)
+- Fixed `ReentrantMutex::bump` lock count. (#390)
+- Added methods to unsafely create a lock guard out of thin air. (#403)
+- Added support for Apple tvOS. (#405)
+
 ## parking_lot_core 0.9.8, lock_api 0.4.10 (2023-06-05)
 
 - Mark guards with `#[clippy::has_significant_drop]` (#369, #371)
