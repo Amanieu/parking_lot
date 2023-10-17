@@ -417,7 +417,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// the guard was forgotten with `mem::forget`.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    pub unsafe fn make_guard_arc_unchecked(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
+    pub unsafe fn make_arc_guard_unchecked(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
         ArcReentrantMutexGuard {
             remutex: self.clone(),
             marker: PhantomData,
@@ -433,7 +433,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     pub fn lock_arc(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
         self.raw.lock();
         // SAFETY: locking guarantee is upheld
-        unsafe { self.make_guard_arc_unchecked() }
+        unsafe { self.make_arc_guard_unchecked() }
     }
 
     /// Attempts to acquire a reentrant mutex through an `Arc`.
@@ -445,7 +445,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcReentrantMutexGuard<R, G, T>> {
         if self.raw.try_lock() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.make_guard_arc_unchecked() })
+            Some(unsafe { self.make_arc_guard_unchecked() })
         } else {
             None
         }
@@ -513,7 +513,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ) -> Option<ArcReentrantMutexGuard<R, G, T>> {
         if self.raw.try_lock_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.make_guard_arc_unchecked() })
+            Some(unsafe { self.make_arc_guard_unchecked() })
         } else {
             None
         }
@@ -531,7 +531,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ) -> Option<ArcReentrantMutexGuard<R, G, T>> {
         if self.raw.try_lock_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.make_guard_arc_unchecked() })
+            Some(unsafe { self.make_arc_guard_unchecked() })
         } else {
             None
         }
