@@ -409,22 +409,33 @@ impl<R, T> RwLock<R, T> {
 }
 
 impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
+    /// Creates a new `RwLockReadGuard` without checking if the lock is held.
+    ///
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// This method must only be called if the thread logically holds a read lock.
+    ///
+    /// This function does not increment the read count of the lock. Calling this function when a
+    /// guard has already been produced is undefined behaviour unless the guard was forgotten
+    /// with `mem::forget`.`
     #[inline]
-    unsafe fn read_guard(&self) -> RwLockReadGuard<'_, R, T> {
+    pub unsafe fn make_read_guard_unchecked(&self) -> RwLockReadGuard<'_, R, T> {
         RwLockReadGuard {
             rwlock: self,
             marker: PhantomData,
         }
     }
 
+    /// Creates a new `RwLockReadGuard` without checking if the lock is held.
+    ///
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// This method must only be called if the thread logically holds a write lock.
+    ///
+    /// Calling this function when a guard has already been produced is undefined behaviour unless
+    /// the guard was forgotten with `mem::forget`.
     #[inline]
-    unsafe fn write_guard(&self) -> RwLockWriteGuard<'_, R, T> {
+    pub unsafe fn make_write_guard_unchecked(&self) -> RwLockWriteGuard<'_, R, T> {
         RwLockWriteGuard {
             rwlock: self,
             marker: PhantomData,
@@ -447,7 +458,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     pub fn read(&self) -> RwLockReadGuard<'_, R, T> {
         self.raw.lock_shared();
         // SAFETY: The lock is held, as required.
-        unsafe { self.read_guard() }
+        unsafe { self.make_read_guard_unchecked() }
     }
 
     /// Attempts to acquire this `RwLock` with shared read access.
@@ -461,7 +472,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     pub fn try_read(&self) -> Option<RwLockReadGuard<'_, R, T>> {
         if self.raw.try_lock_shared() {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
+            Some(unsafe { self.make_read_guard_unchecked() })
         } else {
             None
         }
@@ -479,7 +490,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     pub fn write(&self) -> RwLockWriteGuard<'_, R, T> {
         self.raw.lock_exclusive();
         // SAFETY: The lock is held, as required.
-        unsafe { self.write_guard() }
+        unsafe { self.make_write_guard_unchecked() }
     }
 
     /// Attempts to lock this `RwLock` with exclusive write access.
@@ -493,7 +504,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     pub fn try_write(&self) -> Option<RwLockWriteGuard<'_, R, T>> {
         if self.raw.try_lock_exclusive() {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.write_guard() })
+            Some(unsafe { self.make_write_guard_unchecked() })
         } else {
             None
         }
@@ -583,24 +594,35 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
         self.data.get()
     }
 
+    /// Creates a new `RwLockReadGuard` without checking if the lock is held.
+    ///
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// This method must only be called if the thread logically holds a read lock.
+    ///
+    /// This function does not increment the read count of the lock. Calling this function when a
+    /// guard has already been produced is undefined behaviour unless the guard was forgotten
+    /// with `mem::forget`.`
     #[cfg(feature = "arc_lock")]
     #[inline]
-    unsafe fn read_guard_arc(self: &Arc<Self>) -> ArcRwLockReadGuard<R, T> {
+    pub unsafe fn make_arc_read_guard_unchecked(self: &Arc<Self>) -> ArcRwLockReadGuard<R, T> {
         ArcRwLockReadGuard {
             rwlock: self.clone(),
             marker: PhantomData,
         }
     }
 
+    /// Creates a new `RwLockWriteGuard` without checking if the lock is held.
+    ///
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// This method must only be called if the thread logically holds a write lock.
+    ///
+    /// Calling this function when a guard has already been produced is undefined behaviour unless
+    /// the guard was forgotten with `mem::forget`.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    unsafe fn write_guard_arc(self: &Arc<Self>) -> ArcRwLockWriteGuard<R, T> {
+    pub unsafe fn make_arc_write_guard_unchecked(self: &Arc<Self>) -> ArcRwLockWriteGuard<R, T> {
         ArcRwLockWriteGuard {
             rwlock: self.clone(),
             marker: PhantomData,
@@ -616,7 +638,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     pub fn read_arc(self: &Arc<Self>) -> ArcRwLockReadGuard<R, T> {
         self.raw.lock_shared();
         // SAFETY: locking guarantee is upheld
-        unsafe { self.read_guard_arc() }
+        unsafe { self.make_arc_read_guard_unchecked() }
     }
 
     /// Attempts to lock this `RwLock` with read access, through an `Arc`.
@@ -628,7 +650,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     pub fn try_read_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
+            Some(unsafe { self.make_arc_read_guard_unchecked() })
         } else {
             None
         }
@@ -643,7 +665,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     pub fn write_arc(self: &Arc<Self>) -> ArcRwLockWriteGuard<R, T> {
         self.raw.lock_exclusive();
         // SAFETY: locking guarantee is upheld
-        unsafe { self.write_guard_arc() }
+        unsafe { self.make_arc_write_guard_unchecked() }
     }
 
     /// Attempts to lock this `RwLock` with writ access, through an `Arc`.
@@ -655,7 +677,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     pub fn try_write_arc(self: &Arc<Self>) -> Option<ArcRwLockWriteGuard<R, T>> {
         if self.raw.try_lock_exclusive() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.write_guard_arc() })
+            Some(unsafe { self.make_arc_write_guard_unchecked() })
         } else {
             None
         }
@@ -707,7 +729,7 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     pub fn try_read_for(&self, timeout: R::Duration) -> Option<RwLockReadGuard<'_, R, T>> {
         if self.raw.try_lock_shared_for(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
+            Some(unsafe { self.make_read_guard_unchecked() })
         } else {
             None
         }
@@ -723,7 +745,7 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     pub fn try_read_until(&self, timeout: R::Instant) -> Option<RwLockReadGuard<'_, R, T>> {
         if self.raw.try_lock_shared_until(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
+            Some(unsafe { self.make_read_guard_unchecked() })
         } else {
             None
         }
@@ -739,7 +761,7 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     pub fn try_write_for(&self, timeout: R::Duration) -> Option<RwLockWriteGuard<'_, R, T>> {
         if self.raw.try_lock_exclusive_for(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.write_guard() })
+            Some(unsafe { self.make_write_guard_unchecked() })
         } else {
             None
         }
@@ -755,7 +777,7 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     pub fn try_write_until(&self, timeout: R::Instant) -> Option<RwLockWriteGuard<'_, R, T>> {
         if self.raw.try_lock_exclusive_until(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.write_guard() })
+            Some(unsafe { self.make_write_guard_unchecked() })
         } else {
             None
         }
@@ -773,7 +795,7 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
+            Some(unsafe { self.make_arc_read_guard_unchecked() })
         } else {
             None
         }
@@ -791,7 +813,7 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
+            Some(unsafe { self.make_arc_read_guard_unchecked() })
         } else {
             None
         }
@@ -809,7 +831,7 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<ArcRwLockWriteGuard<R, T>> {
         if self.raw.try_lock_exclusive_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.write_guard_arc() })
+            Some(unsafe { self.make_arc_write_guard_unchecked() })
         } else {
             None
         }
@@ -827,7 +849,7 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<ArcRwLockWriteGuard<R, T>> {
         if self.raw.try_lock_exclusive_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.write_guard_arc() })
+            Some(unsafe { self.make_arc_write_guard_unchecked() })
         } else {
             None
         }
@@ -854,7 +876,7 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
     pub fn read_recursive(&self) -> RwLockReadGuard<'_, R, T> {
         self.raw.lock_shared_recursive();
         // SAFETY: The lock is held, as required.
-        unsafe { self.read_guard() }
+        unsafe { self.make_read_guard_unchecked() }
     }
 
     /// Attempts to acquire this `RwLock` with shared read access.
@@ -871,7 +893,7 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
     pub fn try_read_recursive(&self) -> Option<RwLockReadGuard<'_, R, T>> {
         if self.raw.try_lock_shared_recursive() {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
+            Some(unsafe { self.make_read_guard_unchecked() })
         } else {
             None
         }
@@ -886,7 +908,7 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
     pub fn read_arc_recursive(self: &Arc<Self>) -> ArcRwLockReadGuard<R, T> {
         self.raw.lock_shared_recursive();
         // SAFETY: locking guarantee is upheld
-        unsafe { self.read_guard_arc() }
+        unsafe { self.make_arc_read_guard_unchecked() }
     }
 
     /// Attempts to lock this `RwLock` with shared read access, through an `Arc`.
@@ -898,7 +920,7 @@ impl<R: RawRwLockRecursive, T: ?Sized> RwLock<R, T> {
     pub fn try_read_recursive_arc(self: &Arc<Self>) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared_recursive() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
+            Some(unsafe { self.make_arc_read_guard_unchecked() })
         } else {
             None
         }
@@ -923,7 +945,7 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<RwLockReadGuard<'_, R, T>> {
         if self.raw.try_lock_shared_recursive_for(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
+            Some(unsafe { self.make_read_guard_unchecked() })
         } else {
             None
         }
@@ -942,7 +964,7 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<RwLockReadGuard<'_, R, T>> {
         if self.raw.try_lock_shared_recursive_until(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.read_guard() })
+            Some(unsafe { self.make_read_guard_unchecked() })
         } else {
             None
         }
@@ -960,7 +982,7 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared_recursive_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
+            Some(unsafe { self.make_arc_read_guard_unchecked() })
         } else {
             None
         }
@@ -978,7 +1000,7 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<ArcRwLockReadGuard<R, T>> {
         if self.raw.try_lock_shared_recursive_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.read_guard_arc() })
+            Some(unsafe { self.make_arc_read_guard_unchecked() })
         } else {
             None
         }
@@ -986,11 +1008,17 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
 }
 
 impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
+    /// Creates a new `RwLockUpgradableReadGuard` without checking if the lock is held.
+    ///
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// This method must only be called if the thread logically holds an upgradable read lock.
+    ///
+    /// This function does not increment the read count of the lock. Calling this function when a
+    /// guard has already been produced is undefined behaviour unless the guard was forgotten
+    /// with `mem::forget`.`
     #[inline]
-    unsafe fn upgradable_guard(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
+    pub unsafe fn make_upgradable_guard_unchecked(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
         RwLockUpgradableReadGuard {
             rwlock: self,
             marker: PhantomData,
@@ -1010,7 +1038,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     pub fn upgradable_read(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
         self.raw.lock_upgradable();
         // SAFETY: The lock is held, as required.
-        unsafe { self.upgradable_guard() }
+        unsafe { self.make_upgradable_guard_unchecked() }
     }
 
     /// Attempts to acquire this `RwLock` with upgradable read access.
@@ -1024,18 +1052,26 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     pub fn try_upgradable_read(&self) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
         if self.raw.try_lock_upgradable() {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.upgradable_guard() })
+            Some(unsafe { self.make_upgradable_guard_unchecked() })
         } else {
             None
         }
     }
 
+    /// Creates a new `ArcRwLockUpgradableReadGuard` without checking if the lock is held.
+    ///
     /// # Safety
     ///
-    /// The lock must be held when calling this method.
+    /// This method must only be called if the thread logically holds an upgradable read lock.
+    ///
+    /// This function does not increment the read count of the lock. Calling this function when a
+    /// guard has already been produced is undefined behaviour unless the guard was forgotten
+    /// with `mem::forget`.`
     #[cfg(feature = "arc_lock")]
     #[inline]
-    unsafe fn upgradable_guard_arc(self: &Arc<Self>) -> ArcRwLockUpgradableReadGuard<R, T> {
+    pub unsafe fn make_upgradable_arc_guard_unchecked(
+        self: &Arc<Self>,
+    ) -> ArcRwLockUpgradableReadGuard<R, T> {
         ArcRwLockUpgradableReadGuard {
             rwlock: self.clone(),
             marker: PhantomData,
@@ -1051,7 +1087,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     pub fn upgradable_read_arc(self: &Arc<Self>) -> ArcRwLockUpgradableReadGuard<R, T> {
         self.raw.lock_upgradable();
         // SAFETY: locking guarantee is upheld
-        unsafe { self.upgradable_guard_arc() }
+        unsafe { self.make_upgradable_arc_guard_unchecked() }
     }
 
     /// Attempts to lock this `RwLock` with upgradable read access, through an `Arc`.
@@ -1063,7 +1099,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     pub fn try_upgradable_read_arc(self: &Arc<Self>) -> Option<ArcRwLockUpgradableReadGuard<R, T>> {
         if self.raw.try_lock_upgradable() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.upgradable_guard_arc() })
+            Some(unsafe { self.make_upgradable_arc_guard_unchecked() })
         } else {
             None
         }
@@ -1084,7 +1120,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
         if self.raw.try_lock_upgradable_for(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.upgradable_guard() })
+            Some(unsafe { self.make_upgradable_guard_unchecked() })
         } else {
             None
         }
@@ -1103,7 +1139,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<RwLockUpgradableReadGuard<'_, R, T>> {
         if self.raw.try_lock_upgradable_until(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.upgradable_guard() })
+            Some(unsafe { self.make_upgradable_guard_unchecked() })
         } else {
             None
         }
@@ -1121,7 +1157,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<ArcRwLockUpgradableReadGuard<R, T>> {
         if self.raw.try_lock_upgradable_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.upgradable_guard_arc() })
+            Some(unsafe { self.make_upgradable_arc_guard_unchecked() })
         } else {
             None
         }
@@ -1139,7 +1175,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     ) -> Option<ArcRwLockUpgradableReadGuard<R, T>> {
         if self.raw.try_lock_upgradable_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.upgradable_guard_arc() })
+            Some(unsafe { self.make_upgradable_arc_guard_unchecked() })
         } else {
             None
         }
