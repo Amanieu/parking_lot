@@ -9,6 +9,7 @@ readme = "README.md"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 categories = ["concurrency"]
 edition = "2018"
+rust-version = "1.49"
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--generate-link-to-definition"]
