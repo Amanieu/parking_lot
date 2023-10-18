@@ -1,4 +1,4 @@
-## parking_lot_core 0.9.9, lock_api 0.4.11 (2023-06-05)
+## parking_lot_core 0.9.9, lock_api 0.4.11 (2023-10-18)
 
 - Fixed `RwLockUpgradeableReadGuard::with_upgraded`. (#393)
 - Fixed `ReentrantMutex::bump` lock count. (#390)
