@@ -6,7 +6,6 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::raw_rwlock::RawRwLock;
-use lock_api;
 
 /// A reader-writer lock
 ///
