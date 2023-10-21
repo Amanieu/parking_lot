@@ -6,7 +6,6 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::raw_mutex::RawMutex;
-use lock_api;
 
 /// A mutual exclusion primitive useful for protecting shared data
 ///
