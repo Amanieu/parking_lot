@@ -61,9 +61,6 @@ pub unsafe trait GetThreadId {
 /// mutex can successfully acquire a lock multiple times in the same thread.
 /// Only use this when you know you want a raw mutex that can be locked
 /// reentrantly; you probably want [`ReentrantMutex`] instead.
-///
-/// [`RawMutex`]: trait.RawMutex.html
-/// [`ReentrantMutex`]: struct.ReentrantMutex.html
 pub struct RawReentrantMutex<R, G> {
     owner: AtomicUsize,
     lock_count: Cell<usize>,
@@ -214,7 +211,7 @@ impl<R: RawMutexTimed, G: GetThreadId> RawReentrantMutex<R, G> {
 /// - `ReentrantMutexGuard` does not give mutable references to the locked data.
 ///   Use a `RefCell` if you need this.
 ///
-/// See [`Mutex`](struct.Mutex.html) for more details about the underlying mutex
+/// See [`Mutex`](crate::Mutex) for more details about the underlying mutex
 /// primitive.
 pub struct ReentrantMutex<R, G, T: ?Sized> {
     raw: RawReentrantMutex<R, G>,
