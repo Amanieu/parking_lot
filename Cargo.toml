@@ -12,6 +12,7 @@ edition = "2018"
 rust-version = "1.49"
 
 [package.metadata.docs.rs]
+features = ["arc_lock", "serde", "deadlock_detection"]
 rustdoc-args = ["--generate-link-to-definition"]
 
 [dependencies]
