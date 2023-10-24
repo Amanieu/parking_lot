@@ -923,8 +923,8 @@ impl RawRwLock {
         self.lock_upgradable();
     }
 
-    /// Common code for waking up parked threads after releasing WRITER_BIT or
-    /// UPGRADABLE_BIT.
+    /// Common code for waking up parked threads after releasing `WRITER_BIT` or
+    /// `UPGRADABLE_BIT`.
     ///
     /// # Safety
     ///

@@ -58,10 +58,10 @@ pub unsafe trait RawMutex {
     /// This method may only be called if the mutex is held in the current context, i.e. it must
     /// be paired with a successful call to [`lock`], [`try_lock`], [`try_lock_for`] or [`try_lock_until`].
     ///
-    /// [`lock`]: #tymethod.lock
-    /// [`try_lock`]: #tymethod.try_lock
-    /// [`try_lock_for`]: trait.RawMutexTimed.html#tymethod.try_lock_for
-    /// [`try_lock_until`]: trait.RawMutexTimed.html#tymethod.try_lock_until
+    /// [`lock`]: RawMutex::lock
+    /// [`try_lock`]: RawMutex::try_lock
+    /// [`try_lock_for`]: RawMutexTimed::try_lock_for
+    /// [`try_lock_until`]: RawMutexTimed::try_lock_until
     unsafe fn unlock(&self);
 
     /// Checks whether the mutex is currently locked.
@@ -90,9 +90,7 @@ pub unsafe trait RawMutexFair: RawMutex {
     /// # Safety
     ///
     /// This method may only be called if the mutex is held in the current context, see
-    /// the documentation of [`unlock`].
-    ///
-    /// [`unlock`]: trait.RawMutex.html#tymethod.unlock
+    /// the documentation of [`unlock`](RawMutex::unlock).
     unsafe fn unlock_fair(&self);
 
     /// Temporarily yields the mutex to a waiting thread if there is one.
@@ -104,9 +102,7 @@ pub unsafe trait RawMutexFair: RawMutex {
     /// # Safety
     ///
     /// This method may only be called if the mutex is held in the current context, see
-    /// the documentation of [`unlock`].
-    ///
-    /// [`unlock`]: trait.RawMutex.html#tymethod.unlock
+    /// the documentation of [`unlock`](RawMutex::unlock).
     unsafe fn bump(&self) {
         self.unlock_fair();
         self.lock();
