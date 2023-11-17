@@ -27,7 +27,7 @@ libc = "0.2.95"
 redox_syscall = "0.4"
 
 [target.'cfg(windows)'.dependencies]
-windows-targets = "0.48.0"
+windows-targets = "0.52.0"
 
 [features]
 nightly = []
