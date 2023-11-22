@@ -15,6 +15,9 @@ rust-version = "1.49"
 features = ["arc_lock", "serde", "deadlock_detection"]
 rustdoc-args = ["--generate-link-to-definition"]
 
+[package.metadata.playground]
+features = ["arc_lock", "serde", "deadlock_detection"]
+
 [dependencies]
 parking_lot_core = { path = "core", version = "0.9.0" }
 lock_api = { path = "lock_api", version = "0.4.6" }
