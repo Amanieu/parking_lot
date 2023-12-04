@@ -1198,21 +1198,15 @@ impl<R: RawRwLock, T> From<T> for RwLock<R, T> {
 
 impl<R: RawRwLock, T: ?Sized + fmt::Debug> fmt::Debug for RwLock<R, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut d = f.debug_struct("RwLock");
         match self.try_read() {
-            Some(guard) => f.debug_struct("RwLock").field("data", &&*guard).finish(),
+            Some(guard) => d.field("data", &&*guard),
             None => {
-                struct LockedPlaceholder;
-                impl fmt::Debug for LockedPlaceholder {
-                    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                        f.write_str("<locked>")
-                    }
-                }
-
-                f.debug_struct("RwLock")
-                    .field("data", &LockedPlaceholder)
-                    .finish()
+                // Additional format_args! here is to remove quotes around <locked> in debug output.
+                d.field("data", &format_args!("<locked>"))
             }
-        }
+        };
+        d.finish()
     }
 }
 
