@@ -7,12 +7,9 @@
 
 use crate::elision::{have_elision, AtomicElisionExt};
 use core::sync::atomic::{AtomicUsize, Ordering};
-use parking_lot_core::{
-    self, deadlock, SpinWait,
-};
-use std::time::Duration;
+use parking_lot_core::{self, deadlock, SpinWait};
 use std::thread;
-
+use std::time::Duration;
 
 // If the reader count is zero: a writer is currently holding an exclusive lock.
 // Otherwise: a writer is waiting for the remaining readers to exit the lock.
@@ -21,7 +18,6 @@ const WRITER_BIT: usize = 0b1000;
 const READERS_MASK: usize = !0b1111;
 // Base unit for counting readers.
 const ONE_READER: usize = 0b10000;
-
 
 /// A reader-writer lock
 ///
@@ -118,46 +114,15 @@ pub type SegRwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, SegRawRwLock,
 /// dropped.
 pub type SegRwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, SegRawRwLock, T>;
 
-
-
 /// Segment Raw reader-writer lock type backed by the parking lot.
 pub struct SegRawRwLock {
     read_state: AtomicUsize,
-#[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "powerpc64",))]
-    _cache_padded: [u8; 120usize],    //128 bytes cacheline align
-#[cfg(any(
-    target_arch = "arm",
-    target_arch = "mips",
-    target_arch = "mips64",
-    target_arch = "riscv32",
-    target_arch = "riscv64",
-    target_arch = "sparc",
-    target_arch = "hexagon",
-))]
-    _cache_padded: [u8; 28usize],      //32 bytes cacheline align
-#[cfg(not(any(
-    target_arch = "x86_64",
-    target_arch = "aarch64",
-    target_arch = "powerpc64",
-    target_arch = "arm",
-    target_arch = "mips",
-    target_arch = "mips64",
-    target_arch = "riscv32",
-    target_arch = "riscv64",
-    target_arch = "sparc",
-    target_arch = "hexagon",
-    target_arch = "m68k",
-    target_arch = "s390x",
-)))]
-    _cache_padded: [u8; 56usize],     //64 bytes cacheline align
-    write_state: AtomicUsize,
-}
-
-unsafe impl lock_api::RawRwLock for SegRawRwLock {
-    const INIT: SegRawRwLock = SegRawRwLock {
-        read_state: AtomicUsize::new(0),
-    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "powerpc64",))]
-        _cache_padded : [0; 120],
+    #[cfg(any(
+        target_arch = "x86_64",
+        target_arch = "aarch64",
+        target_arch = "powerpc64",
+    ))]
+    _cache_padded: [u8; 120usize], //128 bytes cacheline align
     #[cfg(any(
         target_arch = "arm",
         target_arch = "mips",
@@ -167,7 +132,7 @@ unsafe impl lock_api::RawRwLock for SegRawRwLock {
         target_arch = "sparc",
         target_arch = "hexagon",
     ))]
-        _cache_padded: [0; 28],
+    _cache_padded: [u8; 28usize], //32 bytes cacheline align
     #[cfg(not(any(
         target_arch = "x86_64",
         target_arch = "aarch64",
@@ -179,9 +144,42 @@ unsafe impl lock_api::RawRwLock for SegRawRwLock {
         target_arch = "riscv64",
         target_arch = "sparc",
         target_arch = "hexagon",
-        target_arch = "m68k",
-        target_arch = "s390x",
     )))]
+    _cache_padded: [u8; 56usize], //64 bytes cacheline align
+    write_state: AtomicUsize,
+}
+
+unsafe impl lock_api::RawRwLock for SegRawRwLock {
+    const INIT: SegRawRwLock = SegRawRwLock {
+        read_state: AtomicUsize::new(0),
+        #[cfg(any(
+            target_arch = "x86_64",
+            target_arch = "aarch64",
+            target_arch = "powerpc64",
+        ))]
+        _cache_padded: [0; 120],
+        #[cfg(any(
+            target_arch = "arm",
+            target_arch = "mips",
+            target_arch = "mips64",
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+            target_arch = "sparc",
+            target_arch = "hexagon",
+        ))]
+        _cache_padded: [0; 28],
+        #[cfg(not(any(
+            target_arch = "x86_64",
+            target_arch = "aarch64",
+            target_arch = "powerpc64",
+            target_arch = "arm",
+            target_arch = "mips",
+            target_arch = "mips64",
+            target_arch = "riscv32",
+            target_arch = "riscv64",
+            target_arch = "sparc",
+            target_arch = "hexagon",
+        )))]
         _cache_padded: [0; 56],
         write_state: AtomicUsize::new(0),
     };
@@ -264,7 +262,7 @@ unsafe impl lock_api::RawRwLock for SegRawRwLock {
     fn is_locked(&self) -> bool {
         let read_state = self.read_state.load(Ordering::Relaxed);
         let write_state = self.write_state.load(Ordering::Relaxed);
-        (read_state & READERS_MASK) | ( write_state & WRITER_BIT) != 0
+        (read_state & READERS_MASK) | (write_state & WRITER_BIT) != 0
     }
 
     #[inline]
@@ -274,9 +272,7 @@ unsafe impl lock_api::RawRwLock for SegRawRwLock {
     }
 }
 
-
 impl SegRawRwLock {
-
     #[inline(always)]
     fn try_lock_shared_fast(&self, recursive: bool) -> bool {
         let write_state = self.write_state.load(Ordering::Relaxed);
@@ -309,7 +305,6 @@ impl SegRawRwLock {
         }
     }
 
-
     #[cold]
     fn try_lock_shared_slow(&self, recursive: bool) -> bool {
         let mut read_state = self.read_state.load(Ordering::Relaxed);
@@ -323,7 +318,10 @@ impl SegRawRwLock {
             }
 
             if have_elision() && read_state == 0 {
-                match self.read_state.elision_compare_exchange_acquire(0, ONE_READER) {
+                match self
+                    .read_state
+                    .elision_compare_exchange_acquire(0, ONE_READER)
+                {
                     Ok(_) => return true,
                     Err(x) => read_state = x,
                 }
@@ -365,9 +363,7 @@ impl SegRawRwLock {
         };
 
         // Step 1: grab exclusive ownership of WRITER_BIT
-        let timed_out = !self.lock_common(
-            try_lock,
-        );
+        let timed_out = !self.lock_common(try_lock);
         if timed_out {
             return false;
         }
@@ -394,7 +390,10 @@ impl SegRawRwLock {
                 // readers try to acquire the lock. We only do this if the lock is
                 // completely empty since elision handles conflicts poorly.
                 if have_elision() && read_state == 0 {
-                    match self.read_state.elision_compare_exchange_acquire(0, ONE_READER) {
+                    match self
+                        .read_state
+                        .elision_compare_exchange_acquire(0, ONE_READER)
+                    {
                         Ok(_) => return true,
                         Err(x) => read_state = x,
                     }
@@ -433,7 +432,6 @@ impl SegRawRwLock {
         self.lock_common(try_lock)
     }
 
-
     // Common code for waiting for readers to exit the lock after acquiring
     // WRITER_BIT.
     #[inline]
@@ -459,10 +457,7 @@ impl SegRawRwLock {
 
     /// Common code for acquiring a lock
     #[inline]
-    fn lock_common(
-        &self,
-        mut try_lock: impl FnMut(&mut usize) -> bool,
-    ) -> bool {
+    fn lock_common(&self, mut try_lock: impl FnMut(&mut usize) -> bool) -> bool {
         let mut spinwait = SpinWait::new();
         let mut write_state = self.write_state.load(Ordering::Relaxed);
         loop {
@@ -495,6 +490,4 @@ impl SegRawRwLock {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
         unsafe { deadlock::release_resource(self as *const _ as usize + 1) };
     }
-
 }
-
