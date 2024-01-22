@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 parking_lot = {path = ".."}
-seqlock = "0.1"
+seqlock = "0.2"
 libc = "0.2"
 
 [[bin]]
