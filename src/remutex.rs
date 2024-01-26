@@ -73,9 +73,9 @@ mod tests {
     use crate::ReentrantMutex;
     use crate::ReentrantMutexGuard;
     use std::cell::RefCell;
+    use std::sync::mpsc::channel;
     use std::sync::Arc;
     use std::thread;
-    use std::sync::mpsc::channel;
 
     #[cfg(feature = "serde")]
     use bincode::{deserialize, serialize};
