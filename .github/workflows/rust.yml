@@ -17,14 +17,14 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu, macos, windows]
-        channel: [1.49.0, stable, beta, nightly]
+        channel: [1.56.0, stable, beta, nightly]
         feature: [arc_lock, serde, deadlock_detection]
         exclude:
           - feature: deadlock_detection
-            channel: '1.49.0'
+            channel: '1.56.0'
             # Versions before 1.54 fail to build on the latest XCode.
           - os: macos
-            channel: '1.49.0'
+            channel: '1.56.0'
         include:
           - channel: nightly
             feature: nightly
