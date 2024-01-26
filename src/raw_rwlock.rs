@@ -346,8 +346,8 @@ unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
     unsafe fn unlock_upgradable(&self) {
         self.deadlock_release();
         let state = self.state.load(Ordering::Relaxed);
-        if state & PARKED_BIT == 0 {
-            if self
+        if state & PARKED_BIT == 0
+            && self
                 .state
                 .compare_exchange_weak(
                     state,
@@ -356,9 +356,8 @@ unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
                     Ordering::Relaxed,
                 )
                 .is_ok()
-            {
-                return;
-            }
+        {
+            return;
         }
         self.unlock_upgradable_slow(false);
     }
@@ -399,8 +398,8 @@ unsafe impl lock_api::RawRwLockUpgradeFair for RawRwLock {
     unsafe fn unlock_upgradable_fair(&self) {
         self.deadlock_release();
         let state = self.state.load(Ordering::Relaxed);
-        if state & PARKED_BIT == 0 {
-            if self
+        if state & PARKED_BIT == 0
+            && self
                 .state
                 .compare_exchange_weak(
                     state,
@@ -409,9 +408,8 @@ unsafe impl lock_api::RawRwLockUpgradeFair for RawRwLock {
                     Ordering::Relaxed,
                 )
                 .is_ok()
-            {
-                return;
-            }
+        {
+            return;
         }
         self.unlock_upgradable_slow(false);
     }
@@ -540,10 +538,8 @@ impl RawRwLock {
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
             // This mirrors the condition in try_lock_shared_fast
-            if state & WRITER_BIT != 0 {
-                if !recursive || state & READERS_MASK == 0 {
-                    return false;
-                }
+            if state & WRITER_BIT != 0 && (!recursive || state & READERS_MASK == 0) {
+                return false;
             }
             if have_elision() && state == 0 {
                 match self.state.elision_compare_exchange_acquire(0, ONE_READER) {
@@ -688,10 +684,8 @@ impl RawRwLock {
                 }
 
                 // This is the same condition as try_lock_shared_fast
-                if *state & WRITER_BIT != 0 {
-                    if !recursive || *state & READERS_MASK == 0 {
-                        return false;
-                    }
+                if *state & WRITER_BIT != 0 && (!recursive || *state & READERS_MASK == 0) {
+                    return false;
                 }
 
                 if self

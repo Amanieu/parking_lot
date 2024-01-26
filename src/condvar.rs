@@ -565,7 +565,7 @@ mod tests {
             let data = data.clone();
             let tx = tx.clone();
             thread::spawn(move || {
-                let &(ref lock, ref cond) = &*data;
+                let (lock, cond) = &*data;
                 let mut cnt = lock.lock();
                 *cnt += 1;
                 if *cnt == N {
@@ -579,7 +579,7 @@ mod tests {
         }
         drop(tx);
 
-        let &(ref lock, ref cond) = &*data;
+        let (lock, cond) = &*data;
         rx.recv().unwrap();
         let mut cnt = lock.lock();
         *cnt = 0;
@@ -627,7 +627,7 @@ mod tests {
             let data = data.clone();
             let tx = tx.clone();
             thread::spawn(move || {
-                let &(ref lock, ref cond) = &*data;
+                let (lock, cond) = &*data;
                 let mut cnt = lock.lock();
                 *cnt += 1;
                 if *cnt == N {
@@ -641,7 +641,7 @@ mod tests {
         }
         drop(tx);
 
-        let &(ref lock, ref cond) = &*data;
+        let (lock, cond) = &*data;
         rx.recv().unwrap();
         let mut cnt = lock.lock();
         *cnt = 0;
@@ -832,7 +832,7 @@ mod tests {
         drop(g);
         rx.recv().unwrap();
         let _g = m.lock();
-        let _guard = PanicGuard(&*c);
+        let _guard = PanicGuard(&c);
         c.wait(&mut m3.lock());
     }
 
@@ -1054,7 +1054,7 @@ mod webkit_queue_test {
             let (should_notify, result) = {
                 let mut queue = input_queue.lock();
                 wait(
-                    &*empty_condition,
+                    &empty_condition,
                     &mut queue,
                     |state| -> bool { !state.items.is_empty() || !state.should_continue },
                     &timeout,
@@ -1067,7 +1067,7 @@ mod webkit_queue_test {
                 std::mem::drop(queue);
                 (should_notify, result)
             };
-            notify(notify_style, &*full_condition, should_notify);
+            notify(notify_style, &full_condition, should_notify);
 
             if let Some(result) = result {
                 output_queue.lock().push(result);
@@ -1089,7 +1089,7 @@ mod webkit_queue_test {
                 let should_notify = {
                     let mut queue = queue.lock();
                     wait(
-                        &*full_condition,
+                        &full_condition,
                         &mut queue,
                         |state| state.items.len() < max_queue_size,
                         &timeout,
@@ -1099,7 +1099,7 @@ mod webkit_queue_test {
                     std::mem::drop(queue);
                     should_notify
                 };
-                notify(notify_style, &*empty_condition, should_notify);
+                notify(notify_style, &empty_condition, should_notify);
             }
         })
     }
