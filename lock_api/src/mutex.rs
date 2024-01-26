@@ -173,14 +173,22 @@ impl<R: RawMutex, T> Mutex<R, T> {
 
 impl<R, T> Mutex<R, T> {
     /// Creates a new mutex based on a pre-existing raw mutex.
-    ///
-    /// This allows creating a mutex in a constant context on stable Rust.
     #[inline]
-    pub const fn const_new(raw_mutex: R, val: T) -> Mutex<R, T> {
+    pub const fn from_raw(raw_mutex: R, val: T) -> Mutex<R, T> {
         Mutex {
             raw: raw_mutex,
             data: UnsafeCell::new(val),
         }
+    }
+
+    /// Creates a new mutex based on a pre-existing raw mutex.
+    ///
+    /// This allows creating a mutex in a constant context on stable Rust.
+    ///
+    /// This method is a legacy alias for [`from_raw`](Self::from_raw).
+    #[inline]
+    pub const fn const_new(raw_mutex: R, val: T) -> Mutex<R, T> {
+        Self::from_raw(raw_mutex, val)
     }
 }
 
