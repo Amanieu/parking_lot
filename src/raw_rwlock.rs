@@ -361,7 +361,6 @@ unsafe impl lock_api::RawRwLockUpgrade for RawRwLock {
                 return;
             }
         }
-
         self.unlock_upgradable_slow(false);
     }
 
