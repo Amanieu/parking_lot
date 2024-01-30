@@ -8,8 +8,8 @@ repository = "https://github.com/Amanieu/parking_lot"
 readme = "README.md"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 categories = ["concurrency"]
-edition = "2018"
-rust-version = "1.49"
+edition = "2021"
+rust-version = "1.56"
 
 [package.metadata.docs.rs]
 features = ["arc_lock", "serde", "deadlock_detection"]
