@@ -2168,7 +2168,7 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
         if unsafe { self.rwlock.raw.try_upgrade_for(timeout) } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
@@ -2199,7 +2199,7 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
         if unsafe { self.rwlock.raw.try_upgrade_until(timeout) } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
@@ -2412,7 +2412,7 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T>
 
         // Safety: We just upgraded the lock, so we have mutable access to the data.
         // This will restore the state the lock was in at the start of the function.
-        defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+        defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
 
         // Safety: We upgraded the lock, so we have mutable access to the data.
         // When this function returns, whether by drop or panic,
@@ -2434,7 +2434,7 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T>
         if unsafe { self.rwlock.raw.try_upgrade() } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
@@ -2522,7 +2522,7 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
         if unsafe { self.rwlock.raw.try_upgrade_for(timeout) } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
@@ -2553,7 +2553,7 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
         if unsafe { self.rwlock.raw.try_upgrade_until(timeout) } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_upgradable() });
+            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
