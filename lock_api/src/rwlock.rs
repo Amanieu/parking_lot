@@ -694,7 +694,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
 }
 
 impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
-    /// Forcibly unlocks a read lock using a fair unlock procotol.
+    /// Forcibly unlocks a read lock using a fair unlock protocol.
     ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `RwLockReadGuard` object alive, for example when
@@ -710,7 +710,7 @@ impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
         self.raw.unlock_shared_fair();
     }
 
-    /// Forcibly unlocks a write lock using a fair unlock procotol.
+    /// Forcibly unlocks a write lock using a fair unlock protocol.
     ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `RwLockWriteGuard` object alive, for example when
