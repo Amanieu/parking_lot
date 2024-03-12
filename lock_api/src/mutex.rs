@@ -349,7 +349,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 }
 
 impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
-    /// Forcibly unlocks the mutex using a fair unlock procotol.
+    /// Forcibly unlocks the mutex using a fair unlock protocol.
     ///
     /// This is useful when combined with `mem::forget` to hold a lock without
     /// the need to maintain a `MutexGuard` object alive, for example when
