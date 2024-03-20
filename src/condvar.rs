@@ -407,11 +407,12 @@ impl Condvar {
 
         result
     }
-    /// Blocks the current thread until this condition variable receives a
-    /// notification. If the provided condition evaluates to `false`, then the
-    /// thread is no longer blocked and the operation is completed. If the
-    /// condition evaluates to `true`, then the thread is blocked again and
-    /// waits for another notification before repeating this process.
+
+    /// As long as the provided condition evaluates to `true`, the current thread
+    /// will be blocked until this condition variable receives a notification.
+    /// If the provided condition evaluates to `false`, and the thread is not
+    /// blocked as a result of an evaluation to `true` by the provided condition,
+    /// then the operation is completed.
     ///
     /// This function will atomically unlock the mutex specified (represented by
     /// `mutex_guard`) and block the current thread. This means that any calls
@@ -432,12 +433,12 @@ impl Condvar {
         self.wait_while_until_internal(mutex_guard, condition, None);
     }
 
-    /// Waits on this condition variable for a notification, timing out after
-    /// the specified time instant. If the provided condition evaluates to
-    /// `false`, then the thread is no longer blocked and the operation is
-    /// completed. If the condition evaluates to `true`, then the thread is
-    /// blocked again and waits for another notification before repeating
-    /// this process.
+    /// As long as the provided condition evaluates to `true`, the current thread
+    /// will be blocked until this condition variable receives a notification,
+    /// timing out after the specified time instant.
+    /// If the provided condition evaluates to `false`, and the thread is not
+    /// blocked as a result of an evaluation to `true` by the provided condition,
+    /// or if the operation timed out, then the operation is completed.
     ///
     /// The semantics of this function are equivalent to `wait()` except that
     /// the thread will be blocked roughly until `timeout` is reached. This
@@ -473,11 +474,12 @@ impl Condvar {
         self.wait_while_until_internal(mutex_guard, condition, Some(timeout))
     }
 
-    /// Waits on this condition variable for a notification, timing out after a
-    /// specified duration. If the provided condition evaluates to `false`,
-    /// then the thread is no longer blocked and the operation is completed.
-    /// If the condition evaluates to `true`, then the thread is blocked again
-    /// and waits for another notification before repeating this process.
+    /// As long as the provided condition evaluates to `true`, the current thread
+    /// will be blocked until this condition variable receives a notification,
+    /// timing out after the specified duration.
+    /// If the provided condition evaluates to `false`, and the thread is not
+    /// blocked as a result of an evaluation to `true` by the provided condition,
+    /// or if the operation timed out, then the operation is completed.
     ///
     /// The semantics of this function are equivalent to `wait()` except that
     /// the thread will be blocked for roughly no longer than `timeout`. This
