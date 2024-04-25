@@ -1,3 +1,10 @@
+## parking_lot 0.12.2, parking_lot_core 0.9.10, lock_api 0.4.12 (2024-04-15)
+
+- Fixed panic when calling `with_upgraded` twice on a `ArcRwLockUpgradableReadGuard` (#431)
+- Fixed `RwLockUpgradeableReadGuard::with_upgraded` 
+- Added lock_api::{Mutex, ReentrantMutex, RwLock}::from_raw methods (#429)
+- Added Apple visionOS support (#433)
+
 ## parking_lot_core 0.9.9, lock_api 0.4.11 (2023-10-18)
 
 - Fixed `RwLockUpgradeableReadGuard::with_upgraded`. (#393)

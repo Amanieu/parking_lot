@@ -1,6 +1,6 @@
 [package]
 name = "lock_api"
-version = "0.4.11"
+version = "0.4.12"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 description = "Wrappers to create fully-featured Mutex and RwLock types. Compatible with no_std."
 license = "MIT OR Apache-2.0"
