@@ -1,3 +1,7 @@
+## parking_lot 0.12.3 (2024-05-24)
+
+- Export types provided by arc_lock feature (#442)
+
 ## parking_lot 0.12.2, parking_lot_core 0.9.10, lock_api 0.4.12 (2024-04-15)
 
 - Fixed panic when calling `with_upgraded` twice on a `ArcRwLockUpgradableReadGuard` (#431)
