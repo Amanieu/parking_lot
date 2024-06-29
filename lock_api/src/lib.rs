@@ -100,6 +100,7 @@ extern crate alloc;
 pub struct GuardSend(());
 
 /// Marker type which indicates that the Guard type for a lock is not `Send`.
+#[allow(dead_code)]
 pub struct GuardNoSend(*mut ());
 
 unsafe impl Sync for GuardNoSend {}
