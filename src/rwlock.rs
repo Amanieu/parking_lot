@@ -130,9 +130,12 @@ mod tests {
     use rand::Rng;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::channel;
+    #[cfg(not(feature = "triomphe"))]
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
+    #[cfg(feature = "triomphe")]
+    use triomphe::Arc;
 
     #[cfg(feature = "serde")]
     use bincode::{deserialize, serialize};
@@ -642,7 +645,12 @@ mod tests {
     #[test]
     #[cfg(feature = "arc_lock")]
     fn test_issue_430() {
-        let lock = std::sync::Arc::new(RwLock::new(0));
+        #[cfg(not(feature = "triomphe"))]
+        use std::sync::Arc;
+        #[cfg(feature = "triomphe")]
+        use triomphe::Arc;
+
+        let lock = Arc::new(RwLock::new(0));
 
         let mut rl = lock.upgradable_read_arc();
 
