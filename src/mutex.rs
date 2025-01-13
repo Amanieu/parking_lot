@@ -108,6 +108,16 @@ pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawMutex, T>;
 /// thread.
 pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawMutex, T>;
 
+/// An RAII mutex guard returned by `ArcMutexGuard::map`, which can point to a
+/// subfield of the protected data.
+///
+/// The main difference between `MappedArcMutexGuard` and `ArcMutexGuard` is that the
+/// former doesn't support temporarily unlocking and re-locking, since that
+/// could introduce soundness issues if the locked object is modified by another
+/// thread.
+#[cfg(feature = "arc_lock")]
+pub type MappedArcMutexGuard<T, U> = lock_api::MappedArcMutexGuard<RawMutex, T, U>;
+
 #[cfg(test)]
 mod tests {
     use crate::{Condvar, Mutex};
