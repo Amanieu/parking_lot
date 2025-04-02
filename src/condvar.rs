@@ -526,12 +526,15 @@ impl fmt::Debug for Condvar {
 mod tests {
     use crate::{Condvar, Mutex, MutexGuard};
     use std::sync::mpsc::channel;
+    #[cfg(not(feature = "triomphe"))]
     use std::sync::Arc;
     use std::thread;
     use std::thread::sleep;
     use std::thread::JoinHandle;
     use std::time::Duration;
     use std::time::Instant;
+    #[cfg(feature = "triomphe")]
+    use triomphe::Arc;
 
     #[test]
     fn smoke() {
@@ -916,7 +919,11 @@ mod tests {
 #[cfg(test)]
 mod webkit_queue_test {
     use crate::{Condvar, Mutex, MutexGuard};
-    use std::{collections::VecDeque, sync::Arc, thread, time::Duration};
+    #[cfg(not(feature = "triomphe"))]
+    use std::sync::Arc;
+    use std::{collections::VecDeque, thread, time::Duration};
+    #[cfg(feature = "triomphe")]
+    use triomphe::Arc;
 
     #[derive(Clone, Copy)]
     enum Timeout {
