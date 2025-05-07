@@ -6,7 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::elision::{have_elision, AtomicElisionExt};
-use crate::raw_mutex::{TOKEN_CONTENTION, TOKEN_HANDOFF, TOKEN_NORMAL};
+use crate::raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use crate::util;
 use core::{
     cell::Cell,
@@ -93,9 +93,11 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
     #[inline]
     unsafe fn unlock_exclusive(&self) {
         self.deadlock_release();
-        let mut state = self.state.load(Ordering::Relaxed);
-        state = self.state.swap(state & !WRITER_BIT, Ordering::Release);
-        if state == WRITER_BIT {
+        if self
+            .state
+            .compare_exchange(WRITER_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .is_ok()
+        {
             return;
         }
         self.unlock_exclusive_slow(false);
@@ -611,21 +613,16 @@ impl RawRwLock {
 
     #[cold]
     fn lock_exclusive_slow(&self, timeout: Option<Instant>) -> bool {
-        let try_lock = |state: &mut usize, set_parked_bit: bool| {
+        let try_lock = |state: &mut usize| {
             loop {
                 if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
                     return false;
                 }
 
-                let mut new_state = *state | WRITER_BIT;
-                if set_parked_bit {
-                    new_state |= PARKED_BIT;
-                }
-
                 // Grab WRITER_BIT if it isn't set, even if there are parked threads.
                 match self.state.compare_exchange_weak(
                     *state,
-                    new_state,
+                    *state | WRITER_BIT,
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 ) {
@@ -656,23 +653,19 @@ impl RawRwLock {
         let callback = |mut new_state, result: UnparkResult| {
             // If we are using a fair unlock then we should keep the
             // rwlock locked and hand it off to the unparked threads.
-            if result.unparked_threads != 0 && force_fair {
+            if result.unparked_threads != 0 && (force_fair || result.be_fair) {
                 if result.have_more_threads {
                     new_state |= PARKED_BIT;
                 }
                 self.state.store(new_state, Ordering::Release);
                 TOKEN_HANDOFF
-            } else if force_fair {
+            } else {
                 // Clear the parked bit if there are no more parked threads.
                 if result.have_more_threads {
                     self.state.store(PARKED_BIT, Ordering::Release);
                 } else {
                     self.state.store(0, Ordering::Release);
                 }
-                TOKEN_NORMAL
-            } else if result.have_more_threads {
-                TOKEN_CONTENTION
-            } else {
                 TOKEN_NORMAL
             }
         };
@@ -684,13 +677,13 @@ impl RawRwLock {
 
     #[cold]
     fn lock_shared_slow(&self, recursive: bool, timeout: Option<Instant>) -> bool {
-        let try_lock = |state: &mut usize, set_parked_bit: bool| {
+        let try_lock = |state: &mut usize| {
             let mut spinwait_shared = SpinWait::new();
             loop {
                 // Use hardware lock elision to avoid cache conflicts when multiple
                 // readers try to acquire the lock. We only do this if the lock is
                 // completely empty since elision handles conflicts poorly.
-                if have_elision() && *state == 0 && !set_parked_bit {
+                if have_elision() && *state == 0 {
                     match self.state.elision_compare_exchange_acquire(0, ONE_READER) {
                         Ok(_) => return true,
                         Err(x) => *state = x,
@@ -705,18 +698,13 @@ impl RawRwLock {
                     }
                 }
 
-                let mut new_state = state
-                    .checked_add(ONE_READER)
-                    .expect("RwLock reader count overflow");
-                if set_parked_bit {
-                    new_state |= PARKED_BIT;
-                }
-
                 if self
                     .state
                     .compare_exchange_weak(
                         *state,
-                        new_state,
+                        state
+                            .checked_add(ONE_READER)
+                            .expect("RwLock reader count overflow"),
                         Ordering::Acquire,
                         Ordering::Relaxed,
                     )
@@ -757,24 +745,20 @@ impl RawRwLock {
 
     #[cold]
     fn lock_upgradable_slow(&self, timeout: Option<Instant>) -> bool {
-        let try_lock = |state: &mut usize, set_parked_bit: bool| {
+        let try_lock = |state: &mut usize| {
             let mut spinwait_shared = SpinWait::new();
             loop {
                 if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
                     return false;
                 }
 
-                let mut new_state = state.checked_add(ONE_READER | UPGRADABLE_BIT)
-                    .expect("RwLock reader count overflow");
-                if set_parked_bit {
-                    new_state |= PARKED_BIT;
-                }
-
                 if self
                     .state
                     .compare_exchange_weak(
                         *state,
-                        new_state,
+                        state
+                            .checked_add(ONE_READER | UPGRADABLE_BIT)
+                            .expect("RwLock reader count overflow"),
                         Ordering::Acquire,
                         Ordering::Relaxed,
                     )
@@ -1083,15 +1067,14 @@ impl RawRwLock {
         &self,
         timeout: Option<Instant>,
         token: ParkToken,
-        mut try_lock: impl FnMut(&mut usize, bool) -> bool,
+        mut try_lock: impl FnMut(&mut usize) -> bool,
         validate_flags: usize,
     ) -> bool {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
-        let mut set_parked_bit = false;
         loop {
             // Attempt to grab the lock
-            if try_lock(&mut state, set_parked_bit) {
+            if try_lock(&mut state) {
                 return true;
             }
 
@@ -1135,16 +1118,10 @@ impl RawRwLock {
             let park_result = unsafe {
                 parking_lot_core::park(addr, validate, before_sleep, timed_out, token, timeout)
             };
-            set_parked_bit = false;
             match park_result {
                 // The thread that unparked us passed the lock on to us
                 // directly without unlocking it.
                 ParkResult::Unparked(TOKEN_HANDOFF) => return true,
-
-                // We are unparked in contention mode, force set parked bit.
-                ParkResult::Unparked(TOKEN_CONTENTION) => {
-                    set_parked_bit = true;
-                }
 
                 // We were unparked normally, try acquiring the lock again
                 ParkResult::Unparked(_) => (),

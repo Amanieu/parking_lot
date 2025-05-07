@@ -22,11 +22,6 @@ pub(crate) const TOKEN_NORMAL: UnparkToken = UnparkToken(0);
 // thread directly without unlocking it.
 pub(crate) const TOKEN_HANDOFF: UnparkToken = UnparkToken(1);
 
-// UnparkToken used to indicate that the mutex is being woken up in a contention situation.
-// In this case, the waker may unlock the lock first so that other threads may acquire lock
-// more quickly. And the woken thread is responsible to set PARKED_BIT when acquiring lock.
-pub(crate) const TOKEN_CONTENTION: UnparkToken = UnparkToken(2);
-
 /// This bit is set in the `state` of a `RawMutex` when that mutex is locked by some thread.
 const LOCKED_BIT: u8 = 0b01;
 /// This bit is set in the `state` of a `RawMutex` just before parking a thread. A thread is being
@@ -104,8 +99,11 @@ unsafe impl lock_api::RawMutex for RawMutex {
     #[inline]
     unsafe fn unlock(&self) {
         deadlock::release_resource(self as *const _ as usize);
-        let prev = self.state.swap(0, Ordering::Release);
-        if prev == LOCKED_BIT {
+        if self
+            .state
+            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .is_ok()
+        {
             return;
         }
         self.unlock_slow(false);
@@ -212,17 +210,12 @@ impl RawMutex {
     fn lock_slow(&self, timeout: Option<Instant>) -> bool {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
-        let mut set_parked_bit = false;
         loop {
             // Grab the lock if it isn't locked, even if there is a queue on it
             if state & LOCKED_BIT == 0 {
-                let mut new_state = state | LOCKED_BIT;
-                if set_parked_bit {
-                    new_state |= PARKED_BIT;
-                }
                 match self.state.compare_exchange_weak(
                     state,
-                    new_state,
+                    state | LOCKED_BIT,
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 ) {
@@ -261,7 +254,6 @@ impl RawMutex {
                     self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
                 }
             };
-            set_parked_bit = false;
             // SAFETY:
             //   * `addr` is an address we control.
             //   * `validate`/`timed_out` does not panic or call into any function of `parking_lot`.
@@ -279,11 +271,6 @@ impl RawMutex {
                 // The thread that unparked us passed the lock on to us
                 // directly without unlocking it.
                 ParkResult::Unparked(TOKEN_HANDOFF) => return true,
-
-                // We are unparked in contention mode, force set parked bit.
-                ParkResult::Unparked(TOKEN_CONTENTION) => {
-                    set_parked_bit = true;
-                }
 
                 // We were unparked normally, try acquiring the lock again
                 ParkResult::Unparked(_) => (),
@@ -309,27 +296,23 @@ impl RawMutex {
         let callback = |result: UnparkResult| {
             // If we are using a fair unlock then we should keep the
             // mutex locked and hand it off to the unparked thread.
-            if result.unparked_threads != 0 && force_fair {
+            if result.unparked_threads != 0 && (force_fair || result.be_fair) {
                 // Clear the parked bit if there are no more parked
                 // threads.
                 if !result.have_more_threads {
                     self.state.store(LOCKED_BIT, Ordering::Relaxed);
                 }
                 return TOKEN_HANDOFF;
-            } else if force_fair {
-                // Clear the locked bit, and the parked bit as well if there
-                // are no more parked threads.
-                if result.have_more_threads {
-                    self.state.store(PARKED_BIT, Ordering::Release);
-                } else {
-                    self.state.store(0, Ordering::Release);
-                }
-                TOKEN_NORMAL
-            } else if result.have_more_threads {
-                TOKEN_CONTENTION
-            } else {
-                TOKEN_NORMAL
             }
+
+            // Clear the locked bit, and the parked bit as well if there
+            // are no more parked threads.
+            if result.have_more_threads {
+                self.state.store(PARKED_BIT, Ordering::Release);
+            } else {
+                self.state.store(0, Ordering::Release);
+            }
+            TOKEN_NORMAL
         };
         // SAFETY:
         //   * `addr` is an address we control.
