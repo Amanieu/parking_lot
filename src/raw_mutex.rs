@@ -22,6 +22,9 @@ pub(crate) const TOKEN_NORMAL: UnparkToken = UnparkToken(0);
 // thread directly without unlocking it.
 pub(crate) const TOKEN_HANDOFF: UnparkToken = UnparkToken(1);
 
+// UnparkToken used to indicate that the waiter should restore PARKED_BIT.
+pub(crate) const TOKEN_RESTORE_PARKED_BIT: UnparkToken = UnparkToken(2);
+
 /// This bit is set in the `state` of a `RawMutex` when that mutex is locked by some thread.
 const LOCKED_BIT: u8 = 0b01;
 /// This bit is set in the `state` of a `RawMutex` just before parking a thread. A thread is being
@@ -69,7 +72,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            self.lock_slow(None);
+            self.lock_slow(None, false);
         }
         unsafe { deadlock::acquire_resource(self as *const _ as usize) };
     }
@@ -99,11 +102,8 @@ unsafe impl lock_api::RawMutex for RawMutex {
     #[inline]
     unsafe fn unlock(&self) {
         deadlock::release_resource(self as *const _ as usize);
-        if self
-            .state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
-        {
+        let prev = self.state.swap(0, Ordering::Release);
+        if prev == LOCKED_BIT {
             return;
         }
         self.unlock_slow(false);
@@ -151,7 +151,7 @@ unsafe impl lock_api::RawMutexTimed for RawMutex {
         {
             true
         } else {
-            self.lock_slow(Some(timeout))
+            self.lock_slow(Some(timeout), false)
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -168,7 +168,7 @@ unsafe impl lock_api::RawMutexTimed for RawMutex {
         {
             true
         } else {
-            self.lock_slow(util::to_deadline(timeout))
+            self.lock_slow(util::to_deadline(timeout), false)
         };
         if result {
             unsafe { deadlock::acquire_resource(self as *const _ as usize) };
@@ -199,23 +199,27 @@ impl RawMutex {
         }
     }
 
-    // Used by Condvar when requeuing threads to us, must be called while
-    // holding the queue lock.
     #[inline]
-    pub(crate) fn mark_parked(&self) {
-        self.state.fetch_or(PARKED_BIT, Ordering::Relaxed);
+    pub(crate) fn lock_contention(&self) {
+        self.lock_slow(None, true);
     }
 
     #[cold]
-    fn lock_slow(&self, timeout: Option<Instant>) -> bool {
+    fn lock_slow(&self, timeout: Option<Instant>, in_contention: bool) -> bool {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
+        let mut extra_flags;
+        if in_contention {
+            extra_flags = PARKED_BIT;
+        } else {
+            extra_flags = 0;
+        }
         loop {
             // Grab the lock if it isn't locked, even if there is a queue on it
             if state & LOCKED_BIT == 0 {
                 match self.state.compare_exchange_weak(
                     state,
-                    state | LOCKED_BIT,
+                    state | LOCKED_BIT | extra_flags,
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 ) {
@@ -254,6 +258,7 @@ impl RawMutex {
                     self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
                 }
             };
+            extra_flags = 0;
             // SAFETY:
             //   * `addr` is an address we control.
             //   * `validate`/`timed_out` does not panic or call into any function of `parking_lot`.
@@ -271,12 +276,16 @@ impl RawMutex {
                 // The thread that unparked us passed the lock on to us
                 // directly without unlocking it.
                 ParkResult::Unparked(TOKEN_HANDOFF) => return true,
+                ParkResult::Unparked(TOKEN_RESTORE_PARKED_BIT) => extra_flags = PARKED_BIT,
 
                 // We were unparked normally, try acquiring the lock again
                 ParkResult::Unparked(_) => (),
 
                 // The validation function failed, try locking again
-                ParkResult::Invalid => (),
+                // This thread doesn't sleep, so it's not sure whether it's the last thread
+                // in queue. Setting PARKED_BIT can lead to false wake up. But false wake up
+                // is good for throughput during high contention.
+                ParkResult::Invalid => extra_flags = PARKED_BIT,
 
                 // Timeout expired
                 ParkResult::TimedOut => return false,
@@ -296,7 +305,7 @@ impl RawMutex {
         let callback = |result: UnparkResult| {
             // If we are using a fair unlock then we should keep the
             // mutex locked and hand it off to the unparked thread.
-            if result.unparked_threads != 0 && (force_fair || result.be_fair) {
+            if result.unparked_threads != 0 && force_fair {
                 // Clear the parked bit if there are no more parked
                 // threads.
                 if !result.have_more_threads {
@@ -308,8 +317,12 @@ impl RawMutex {
             // Clear the locked bit, and the parked bit as well if there
             // are no more parked threads.
             if result.have_more_threads {
-                self.state.store(PARKED_BIT, Ordering::Release);
-            } else {
+                if force_fair {
+                    self.state.store(PARKED_BIT, Ordering::Release);
+                } else {
+                    return TOKEN_RESTORE_PARKED_BIT;
+                }
+            } else if force_fair {
                 self.state.store(0, Ordering::Release);
             }
             TOKEN_NORMAL
