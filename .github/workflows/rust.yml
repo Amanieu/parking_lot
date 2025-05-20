@@ -17,14 +17,8 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu, macos, windows]
-        channel: [1.56.0, stable, beta, nightly]
+        channel: [stable, beta, nightly]
         feature: [arc_lock, serde, deadlock_detection]
-        exclude:
-          - feature: deadlock_detection
-            channel: '1.56.0'
-            # Versions before 1.54 fail to build on the latest XCode.
-          - os: macos
-            channel: '1.56.0'
         include:
           - channel: nightly
             feature: nightly
@@ -41,6 +35,8 @@ jobs:
     - run: cargo build --all --features ${{ matrix.feature }}
     - run: cargo test --all --features ${{ matrix.feature }}
       if: matrix.feature == 'nightly'
+    - run: cargo install cargo-msrv
+    - run: cargo msrv --workspace verify
   build_other_platforms:
     runs-on: ubuntu-latest
     strategy:
@@ -48,8 +44,8 @@ jobs:
         target:
           - wasm32-unknown-unknown
           - x86_64-fortanix-unknown-sgx
-          #- x86_64-unknown-redox
-          #- x86_64-linux-android
+          - x86_64-unknown-redox
+          - x86_64-linux-android
     steps:
     - uses: actions/checkout@v4
     - run: rustup default nightly
