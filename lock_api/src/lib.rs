@@ -89,12 +89,18 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
+#![cfg_attr(
+    all(feature = "arc_lock", feature = "triomphe"),
+    feature(arbitrary_self_types)
+)]
 
 #[macro_use]
 extern crate scopeguard;
 
-#[cfg(feature = "arc_lock")]
+#[cfg(all(feature = "arc_lock", not(feature = "triomphe")))]
 extern crate alloc;
+#[cfg(all(feature = "arc_lock", feature = "triomphe"))]
+extern crate triomphe;
 
 /// Marker type which indicates that the Guard type for a lock is `Send`.
 pub struct GuardSend(());

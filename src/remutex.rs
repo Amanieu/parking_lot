@@ -74,8 +74,11 @@ mod tests {
     use crate::ReentrantMutexGuard;
     use std::cell::RefCell;
     use std::sync::mpsc::channel;
+    #[cfg(not(feature = "triomphe"))]
     use std::sync::Arc;
     use std::thread;
+    #[cfg(feature = "triomphe")]
+    use triomphe::Arc;
 
     #[cfg(feature = "serde")]
     use bincode::{deserialize, serialize};

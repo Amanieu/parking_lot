@@ -19,12 +19,14 @@ use core::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-#[cfg(feature = "arc_lock")]
+#[cfg(all(feature = "arc_lock", not(feature = "triomphe")))]
 use alloc::sync::Arc;
 #[cfg(feature = "arc_lock")]
 use core::mem::ManuallyDrop;
 #[cfg(feature = "arc_lock")]
 use core::ptr;
+#[cfg(all(feature = "arc_lock", feature = "triomphe"))]
+use triomphe::Arc;
 
 #[cfg(feature = "owning_ref")]
 use owning_ref::StableAddress;

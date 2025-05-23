@@ -17,6 +17,7 @@ rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 [dependencies]
 scopeguard = { version = "1.1.0", default-features = false }
 owning_ref = { version = "0.4.1", optional = true }
+triomphe = { version = "0.1.14", optional = true }
 
 # Optional dependency for supporting serde.  Optional crates automatically
 # create a feature with the same name as the crate, so if you need serde
@@ -31,3 +32,4 @@ default = ["atomic_usize"]
 nightly = []
 arc_lock = []
 atomic_usize = []
+triomphe = ["dep:triomphe"]
