@@ -719,6 +719,56 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
         &s.mutex
     }
 
+    /// Makes a new `MappedArcMutexGuard` for a component of the locked data.
+    ///
+    /// This operation cannot fail as the `ArcMutexGuard` passed
+    /// in already locked the mutex.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `ArcMutexGuard::map(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedArcMutexGuard<R, T, U>
+    where
+        F: FnOnce(&mut T) -> &mut U,
+    {
+        let mutex = Arc::clone(&s.mutex);
+        let data = f(unsafe { &mut *s.mutex.data.get() });
+        mem::forget(s);
+        MappedArcMutexGuard {
+            mutex,
+            data,
+            marker: PhantomData,
+        }
+    }
+
+    /// Attempts to make a new `MappedArcMutexGuard` for a component of the
+    /// locked data. The original guard is returned if the closure returns `None`.
+    ///
+    /// This operation cannot fail as the `ArcMutexGuard` passed
+    /// in already locked the mutex.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `ArcMutexGuard::try_map(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedArcMutexGuard<R, T, U>, Self>
+    where
+        F: FnOnce(&mut T) -> Option<&mut U>,
+    {
+        let mutex = Arc::clone(&s.mutex);
+        let data = match f(unsafe { &mut *s.mutex.data.get() }) {
+            Some(data) => data,
+            None => return Err(s),
+        };
+        mem::forget(s);
+        Ok(MappedArcMutexGuard {
+            mutex,
+            data,
+            marker: PhantomData,
+        })
+    }
+
     /// Unlocks the mutex and returns the `Arc` that was held by the [`ArcMutexGuard`].
     #[inline]
     pub fn into_arc(s: Self) -> Arc<Mutex<R, T>> {
@@ -962,3 +1012,156 @@ impl<'a, R: RawMutex + 'a, T: fmt::Display + ?Sized + 'a> fmt::Display
 
 #[cfg(feature = "owning_ref")]
 unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MappedMutexGuard<'a, R, T> {}
+
+/// An RAII mutex guard returned by `ArcMutexGuard::map`, which can point to a
+/// subfield of the protected data.
+///
+/// The main difference between `MappedArcMutexGuard` and `ArcMutexGuard` is that the
+/// former doesn't support temporarily unlocking and re-locking, since that
+/// could introduce soundness issues if the locked object is modified by another
+/// thread.
+#[cfg(feature = "arc_lock")]
+#[clippy::has_significant_drop]
+#[must_use = "if unused the Mutex will immediately unlock"]
+pub struct MappedArcMutexGuard<R: RawMutex, T: ?Sized, U: ?Sized> {
+    mutex: Arc<Mutex<R, T>>,
+    data: *mut U,
+    marker: PhantomData<T>,
+}
+
+#[cfg(feature = "arc_lock")]
+unsafe impl<R: RawMutex + Sync, T: ?Sized + Sync, U: ?Sized + Sync> Sync
+    for MappedArcMutexGuard<R, T, U>
+{
+}
+#[cfg(feature = "arc_lock")]
+unsafe impl<R: RawMutex, T: ?Sized + Send, U: ?Sized + Sync> Send for MappedArcMutexGuard<R, T, U> where
+    R::GuardMarker: Send
+{
+}
+
+#[cfg(feature = "arc_lock")]
+impl<R: RawMutex, T: ?Sized, U: ?Sized> MappedArcMutexGuard<R, T, U> {
+    /// Makes a new `MappedArcMutexGuard` for a component of the locked data.
+    ///
+    /// This operation cannot fail as the `MappedArcMutexGuard` passed
+    /// in already locked the mutex.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `MappedArcMutexGuard::map(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn map<V: ?Sized, F>(s: Self, f: F) -> MappedArcMutexGuard<R, T, V>
+    where
+        F: FnOnce(&mut U) -> &mut V,
+    {
+        let mutex = Arc::clone(&s.mutex);
+        let data = f(unsafe { &mut *s.data });
+        mem::forget(s);
+        MappedArcMutexGuard {
+            mutex,
+            data,
+            marker: PhantomData,
+        }
+    }
+
+    /// Attempts to make a new `MappedArcMutexGuard` for a component of the
+    /// locked data. The original guard is returned if the closure returns `None`.
+    ///
+    /// This operation cannot fail as the `MappedArcMutexGuard` passed
+    /// in already locked the mutex.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `MappedArcMutexGuard::try_map(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn try_map<V: ?Sized, F>(s: Self, f: F) -> Result<MappedArcMutexGuard<R, T, V>, Self>
+    where
+        F: FnOnce(&mut U) -> Option<&mut V>,
+    {
+        let mutex = Arc::clone(&s.mutex);
+        let data = match f(unsafe { &mut *s.data }) {
+            Some(data) => data,
+            None => return Err(s),
+        };
+        mem::forget(s);
+        Ok(MappedArcMutexGuard {
+            mutex,
+            data,
+            marker: PhantomData,
+        })
+    }
+}
+
+#[cfg(feature = "arc_lock")]
+impl<R: RawMutexFair, T: ?Sized, U: ?Sized> MappedArcMutexGuard<R, T, U> {
+    /// Unlocks the mutex using a fair unlock protocol.
+    ///
+    /// By default, mutexes are unfair and allow the current thread to re-lock
+    /// the mutex before another has the chance to acquire the lock, even if
+    /// that thread has been blocked on the mutex for a long time. This is the
+    /// default because it allows much higher throughput as it avoids forcing a
+    /// context switch on every mutex unlock. This can result in one thread
+    /// acquiring a mutex many more times than other threads.
+    ///
+    /// However, in some cases it can be beneficial to ensure fairness by forcing
+    /// the lock to pass on to a waiting thread if there is one. This is done by
+    /// using this method instead of dropping the `MutexGuard` normally.
+    #[inline]
+    pub fn unlock_fair(s: Self) {
+        // Safety: A MutexGuard always holds the lock.
+        unsafe {
+            s.mutex.raw.unlock_fair();
+        }
+        mem::forget(s);
+    }
+}
+
+#[cfg(feature = "arc_lock")]
+impl<R: RawMutex, T: ?Sized, U: ?Sized> Deref for MappedArcMutexGuard<R, T, U> {
+    type Target = U;
+    #[inline]
+    fn deref(&self) -> &U {
+        unsafe { &*self.data }
+    }
+}
+
+#[cfg(feature = "arc_lock")]
+impl<R: RawMutex, T: ?Sized, U: ?Sized> DerefMut for MappedArcMutexGuard<R, T, U> {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut U {
+        unsafe { &mut *self.data }
+    }
+}
+
+#[cfg(feature = "arc_lock")]
+impl<R: RawMutex, T: ?Sized, U: ?Sized> Drop for MappedArcMutexGuard<R, T, U> {
+    #[inline]
+    fn drop(&mut self) {
+        // Safety: A MappedArcMutexGuard always holds the lock.
+        unsafe {
+            self.mutex.raw.unlock();
+        }
+    }
+}
+
+#[cfg(feature = "arc_lock")]
+impl<R: RawMutex, T: fmt::Debug + ?Sized, U: fmt::Debug + ?Sized> fmt::Debug
+    for MappedArcMutexGuard<R, T, U>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&**self, f)
+    }
+}
+
+#[cfg(feature = "arc_lock")]
+impl<R: RawMutex, T: fmt::Display + ?Sized, U: fmt::Display + ?Sized> fmt::Display
+    for MappedArcMutexGuard<R, T, U>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+#[cfg(all(feature = "arc_lock", feature = "owning_ref"))]
+unsafe impl<R: RawMutex, T: ?Sized, U: ?Sized> StableAddress for MappedArcMutexGuard<R, T, U> {}
