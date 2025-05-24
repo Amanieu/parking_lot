@@ -40,3 +40,8 @@ hardware-lock-elision = []
 
 [workspace]
 exclude = ["benchmark"]
+
+# TODO: Consume a release of `backtrace` that contains
+# <https://github.com/rust-lang/backtrace-rs/pull/694>.
+[patch.crates-io]
+backtrace = { git = "https://github.com/erichdongubler-contrib/backtrace-rs", rev = "43e7db9bf1f9d60333a04cf1b0cbe86a679aaad0" }
