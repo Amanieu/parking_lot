@@ -1055,7 +1055,7 @@ impl RawRwLock {
                         };
                         // SAFETY: `callback` does not panic or call any function of `parking_lot`.
                         unsafe {
-                            self.wake_parked_threads(ONE_READER | UPGRADABLE_BIT, callback);
+                            self.wake_parked_threads(prev_value, callback);
                         }
                     }
                     return false;
