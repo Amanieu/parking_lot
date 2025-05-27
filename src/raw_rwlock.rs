@@ -1008,7 +1008,12 @@ impl RawRwLock {
                 state & READERS_MASK != 0 && state & WRITER_PARKED_BIT != 0
             };
             let before_sleep = || {};
-            let timed_out = |_, _| {};
+            let timed_out = |_, was_last_thread: bool| {
+                // Clear the parked bit while holding the queue lock. There can
+                // only be one thread parked (this one).
+                debug_assert!(was_last_thread);
+                self.state.fetch_and(!WRITER_PARKED_BIT, Ordering::Relaxed);
+            };
             // SAFETY:
             //   * `addr` is an address we control.
             //   * `validate`/`timed_out` does not panic or call into any function of `parking_lot`.
@@ -1037,10 +1042,9 @@ impl RawRwLock {
                     // We need to release WRITER_BIT and revert back to
                     // our previous value. We also wake up any threads that
                     // might be waiting on WRITER_BIT.
-                    let state = self.state.fetch_add(
-                        prev_value.wrapping_sub(WRITER_BIT | WRITER_PARKED_BIT),
-                        Ordering::Relaxed,
-                    );
+                    let state = self
+                        .state
+                        .fetch_add(prev_value.wrapping_sub(WRITER_BIT), Ordering::Relaxed);
                     if state & PARKED_BIT != 0 {
                         let callback = |_, result: UnparkResult| {
                             // Clear the parked bit if there no more parked threads
@@ -1051,7 +1055,7 @@ impl RawRwLock {
                         };
                         // SAFETY: `callback` does not panic or call any function of `parking_lot`.
                         unsafe {
-                            self.wake_parked_threads(ONE_READER | UPGRADABLE_BIT, callback);
+                            self.wake_parked_threads(prev_value, callback);
                         }
                     }
                     return false;
