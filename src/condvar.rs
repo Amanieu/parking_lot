@@ -6,8 +6,8 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::mutex::MutexGuard;
-use crate::raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
-use crate::{deadlock, util};
+use crate::raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL, TOKEN_RESTORE_PARKED_BIT};
+use crate::util;
 use core::{
     fmt, ptr,
     sync::atomic::{AtomicPtr, Ordering},
@@ -229,9 +229,10 @@ impl Condvar {
             // If we requeued threads to the mutex, mark it as having
             // parked threads. The RequeueAll case is already handled above.
             if op == RequeueOp::UnparkOneRequeueRest && result.requeued_threads != 0 {
-                unsafe { (*mutex).mark_parked() };
+                TOKEN_RESTORE_PARKED_BIT
+            } else {
+                TOKEN_NORMAL
             }
-            TOKEN_NORMAL
         };
         let res = unsafe { parking_lot_core::unpark_requeue(from, to, validate, callback) };
 
@@ -350,10 +351,10 @@ impl Condvar {
         }
 
         // ... and re-lock it once we are done sleeping
-        if result == ParkResult::Unparked(TOKEN_HANDOFF) {
-            unsafe { deadlock::acquire_resource(mutex as *const _ as usize) };
-        } else {
-            mutex.lock();
+        match result {
+            ParkResult::Unparked(TOKEN_HANDOFF) => unreachable!("can't be handed off"),
+            ParkResult::Unparked(TOKEN_RESTORE_PARKED_BIT) => mutex.lock_contention(),
+            _ => mutex.lock(),
         }
 
         WaitTimeoutResult(!(result.is_unparked() || requeued))
