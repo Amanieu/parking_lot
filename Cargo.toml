@@ -21,6 +21,7 @@ features = ["arc_lock", "serde", "deadlock_detection"]
 [dependencies]
 parking_lot_core = { path = "core", version = "0.9.0" }
 lock_api = { path = "lock_api", version = "0.4.6" }
+triomphe = { version = "0.1.14", optional = true }
 
 [dev-dependencies]
 rand = "0.8.3"
@@ -37,6 +38,7 @@ deadlock_detection = ["parking_lot_core/deadlock_detection"]
 serde = ["lock_api/serde"]
 send_guard = []
 hardware-lock-elision = []
+triomphe = ["dep:triomphe", "lock_api/triomphe"]
 
 [workspace]
 exclude = ["benchmark"]
