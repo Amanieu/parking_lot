@@ -1,3 +1,26 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## `parking_lot` - [0.12.4](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.3...parking_lot-v0.12.4) - 2025-05-29
+
+- Fix parked upgraders potentially not being woken up after a write lock
+- Fix clearing `PARKED_WRITER_BIT` after a timeout
+
+## `parking_lot_core` - [0.9.11](https://github.com/Amanieu/parking_lot/compare/parking_lot_core-v0.9.10...parking_lot_core-v0.9.11) - 2025-05-29
+
+- Use Release/Acquire ordering in thread_parker::windows::Backend::create
+- Remove warnings due to new lint on unknown cfgs
+
+## `lock_api` - [0.4.13](https://github.com/Amanieu/parking_lot/compare/lock_api-v0.4.12...lock_api-v0.4.13) - 2025-05-29
+
+- Remove warnings due to new lint on unknown cfgs
+
 ## parking_lot 0.12.3 (2024-05-24)
 
 - Export types provided by arc_lock feature (#442)
