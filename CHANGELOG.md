@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## `parking_lot` - [0.12.5](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.4...parking_lot-v0.12.5) - 2025-06-10
+
+### Other
+- Merge pull request #472 from orlp/into-arc
+- Add missing into_arc implementations
+- Add missing into_arc(_fair) methods
+
+## `lock_api` - [0.4.14](https://github.com/Amanieu/parking_lot/compare/lock_api-v0.4.13...lock_api-v0.4.14) - 2025-06-10
+
+### Other
+- Add missing into_arc implementations
+- Add missing into_arc(_fair) methods
+
 ## `parking_lot` - [0.12.4](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.3...parking_lot-v0.12.4) - 2025-05-29
 
 - Fix parked upgraders potentially not being woken up after a write lock
