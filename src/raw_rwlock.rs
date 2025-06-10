@@ -173,9 +173,7 @@ unsafe impl lock_api::RawRwLockFair for RawRwLock {
 
     #[inline]
     unsafe fn bump_shared(&self) {
-        if self.state.load(Ordering::Relaxed) & (READERS_MASK | WRITER_BIT)
-            == ONE_READER | WRITER_BIT
-        {
+        if self.state.load(Ordering::Relaxed) & WRITER_BIT != 0 {
             self.bump_shared_slow();
         }
     }
@@ -420,7 +418,7 @@ unsafe impl lock_api::RawRwLockUpgradeFair for RawRwLock {
 
     #[inline]
     unsafe fn bump_upgradable(&self) {
-        if self.state.load(Ordering::Relaxed) == ONE_READER | UPGRADABLE_BIT | PARKED_BIT {
+        if self.state.load(Ordering::Relaxed) & PARKED_BIT != 0 {
             self.bump_upgradable_slow();
         }
     }
