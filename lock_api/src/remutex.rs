@@ -827,6 +827,17 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
         &s.remutex
     }
 
+    /// Unlocks the mutex and returns the `Arc` that was held by the [`ArcReentrantMutexGuard`].
+    #[inline]
+    pub fn into_arc(s: Self) -> Arc<ReentrantMutex<R, G, T>> {
+        // SAFETY: Skip our Drop impl and manually unlock the mutex.
+        let s = ManuallyDrop::new(s);
+        unsafe {
+            s.remutex.raw.unlock();
+            ptr::read(&s.remutex)
+        }
+    }
+
     /// Temporarily unlocks the mutex to execute the given function.
     ///
     /// This is safe because `&mut` guarantees that there exist no other
@@ -852,14 +863,18 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
     /// This is functionally identical to the `unlock_fair` method on [`ReentrantMutexGuard`].
     #[inline]
     pub fn unlock_fair(s: Self) {
-        // Safety: A ReentrantMutexGuard always holds the lock
+        drop(Self::into_arc_fair(s));
+    }
+
+    /// Unlocks the mutex using a fair unlock protocol and returns the `Arc` that was held by the [`ArcReentrantMutexGuard`].
+    #[inline]
+    pub fn into_arc_fair(s: Self) -> Arc<ReentrantMutex<R, G, T>> {
+        // SAFETY: Skip our Drop impl and manually unlock the mutex.
+        let s = ManuallyDrop::new(s);
         unsafe {
             s.remutex.raw.unlock_fair();
+            ptr::read(&s.remutex)
         }
-
-        // SAFETY: ensure that the Arc's refcount is decremented
-        let mut s = ManuallyDrop::new(s);
-        unsafe { ptr::drop_in_place(&mut s.remutex) };
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
