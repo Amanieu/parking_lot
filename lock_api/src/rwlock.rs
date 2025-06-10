@@ -1413,6 +1413,17 @@ impl<R: RawRwLock, T: ?Sized> ArcRwLockReadGuard<R, T> {
         &s.rwlock
     }
 
+    /// Unlocks the `RwLock` and returns the `Arc` that was held by the [`ArcRwLockReadGuard`].
+    #[inline]
+    pub fn into_arc(s: Self) -> Arc<RwLock<R, T>> {
+        // SAFETY: Skip our Drop impl and manually unlock the rwlock.
+        let s = ManuallyDrop::new(s);
+        unsafe {
+            s.rwlock.raw.unlock_shared();
+            ptr::read(&s.rwlock)
+        }
+    }
+
     /// Temporarily unlocks the `RwLock` to execute the given function.
     ///
     /// This is functionally identical to the `unlocked` method on [`RwLockReadGuard`].
@@ -1437,14 +1448,18 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockReadGuard<R, T> {
     /// This is functionally identical to the `unlock_fair` method on [`RwLockReadGuard`].
     #[inline]
     pub fn unlock_fair(s: Self) {
-        // Safety: An RwLockReadGuard always holds a shared lock.
+        drop(Self::into_arc_fair(s));
+    }
+
+    /// Unlocks the `RwLock` using a fair unlock protocol and returns the `Arc` that was held by the [`ArcRwLockReadGuard`].
+    #[inline]
+    pub fn into_arc_fair(s: Self) -> Arc<RwLock<R, T>> {
+        // SAFETY: Skip our Drop impl and manually unlock the rwlock.
+        let s = ManuallyDrop::new(s);
         unsafe {
             s.rwlock.raw.unlock_shared_fair();
+            ptr::read(&s.rwlock)
         }
-
-        // SAFETY: ensure the Arc has its refcount decremented
-        let mut s = ManuallyDrop::new(s);
-        unsafe { ptr::drop_in_place(&mut s.rwlock) };
     }
 
     /// Temporarily unlocks the `RwLock` to execute the given function.

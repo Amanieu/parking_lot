@@ -722,13 +722,12 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     /// Unlocks the mutex and returns the `Arc` that was held by the [`ArcMutexGuard`].
     #[inline]
     pub fn into_arc(s: Self) -> Arc<Mutex<R, T>> {
-        // Safety: Skip our Drop impl and manually unlock the mutex.
-        let arc = unsafe { ptr::read(&s.mutex) };
-        mem::forget(s);
+        // SAFETY: Skip our Drop impl and manually unlock the mutex.
+        let s = ManuallyDrop::new(s);
         unsafe {
-            arc.raw.unlock();
+            s.mutex.raw.unlock();
+            ptr::read(&s.mutex)
         }
-        arc
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
@@ -756,14 +755,18 @@ impl<R: RawMutexFair, T: ?Sized> ArcMutexGuard<R, T> {
     /// This is functionally identical to the `unlock_fair` method on [`MutexGuard`].
     #[inline]
     pub fn unlock_fair(s: Self) {
-        // Safety: A MutexGuard always holds the lock.
+        drop(Self::into_arc_fair(s));
+    }
+
+    /// Unlocks the mutex using a fair unlock protocol and returns the `Arc` that was held by the [`ArcMutexGuard`].
+    #[inline]
+    pub fn into_arc_fair(s: Self) -> Arc<Mutex<R, T>> {
+        // SAFETY: Skip our Drop impl and manually unlock the mutex.
+        let s = ManuallyDrop::new(s);
         unsafe {
             s.mutex.raw.unlock_fair();
+            ptr::read(&s.mutex)
         }
-
-        // SAFETY: make sure the Arc gets it reference decremented
-        let mut s = ManuallyDrop::new(s);
-        unsafe { ptr::drop_in_place(&mut s.mutex) };
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
