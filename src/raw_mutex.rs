@@ -99,14 +99,13 @@ unsafe impl lock_api::RawMutex for RawMutex {
     #[inline]
     unsafe fn unlock(&self) {
         deadlock::release_resource(self as *const _ as usize);
-        if self
-            .state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
-        {
+        let mut prev = self.state.load(Ordering::Relaxed);
+        let new_state = prev & !LOCKED_BIT;
+        prev = self.state.swap(new_state, Ordering::Release);
+        if prev == LOCKED_BIT {
             return;
         }
-        self.unlock_slow(false);
+        self.unlock_slow(false, (new_state & PARKED_BIT) == 0);
     }
 
     #[inline]
@@ -127,7 +126,7 @@ unsafe impl lock_api::RawMutexFair for RawMutex {
         {
             return;
         }
-        self.unlock_slow(true);
+        self.unlock_slow(true, false);
     }
 
     #[inline]
@@ -289,14 +288,14 @@ impl RawMutex {
     }
 
     #[cold]
-    fn unlock_slow(&self, force_fair: bool) {
+    fn unlock_slow(&self, force_fair: bool, parked_cleared: bool) {
         // Unpark one thread and leave the parked bit set if there might
         // still be parked threads on this address.
         let addr = self as *const _ as usize;
         let callback = |result: UnparkResult| {
             // If we are using a fair unlock then we should keep the
             // mutex locked and hand it off to the unparked thread.
-            if result.unparked_threads != 0 && (force_fair || result.be_fair) {
+            if result.unparked_threads != 0 && force_fair {
                 // Clear the parked bit if there are no more parked
                 // threads.
                 if !result.have_more_threads {
@@ -308,9 +307,16 @@ impl RawMutex {
             // Clear the locked bit, and the parked bit as well if there
             // are no more parked threads.
             if result.have_more_threads {
-                self.state.store(PARKED_BIT, Ordering::Release);
-            } else {
+                if force_fair {
+                    self.state.store(PARKED_BIT, Ordering::Release);
+                } else if parked_cleared {
+                    // Protected by mutex, must seen by woken threads.
+                    self.state.fetch_or(PARKED_BIT, Ordering::Relaxed);
+                }
+            } else if force_fair {
                 self.state.store(0, Ordering::Release);
+            } else if !parked_cleared {
+                self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
             }
             TOKEN_NORMAL
         };
@@ -325,7 +331,7 @@ impl RawMutex {
     #[cold]
     fn bump_slow(&self) {
         unsafe { deadlock::release_resource(self as *const _ as usize) };
-        self.unlock_slow(true);
+        self.unlock_slow(true, false);
         self.lock();
     }
 }
