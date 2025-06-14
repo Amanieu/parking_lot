@@ -229,24 +229,8 @@ unsafe impl<R: RawMutex + Sync, G: GetThreadId + Sync, T: ?Sized + Send> Sync
 
 impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
     /// Creates a new reentrant mutex in an unlocked state ready for use.
-    #[cfg(has_const_fn_trait_bound)]
     #[inline]
     pub const fn new(val: T) -> ReentrantMutex<R, G, T> {
-        ReentrantMutex {
-            data: UnsafeCell::new(val),
-            raw: RawReentrantMutex {
-                owner: AtomicUsize::new(0),
-                lock_count: Cell::new(0),
-                mutex: R::INIT,
-                get_thread_id: G::INIT,
-            },
-        }
-    }
-
-    /// Creates a new reentrant mutex in an unlocked state ready for use.
-    #[cfg(not(has_const_fn_trait_bound))]
-    #[inline]
-    pub fn new(val: T) -> ReentrantMutex<R, G, T> {
         ReentrantMutex {
             data: UnsafeCell::new(val),
             raw: RawReentrantMutex {
