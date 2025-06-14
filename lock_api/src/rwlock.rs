@@ -366,19 +366,8 @@ unsafe impl<R: RawRwLock + Sync, T: ?Sized + Send + Sync> Sync for RwLock<R, T> 
 
 impl<R: RawRwLock, T> RwLock<R, T> {
     /// Creates a new instance of an `RwLock<T>` which is unlocked.
-    #[cfg(has_const_fn_trait_bound)]
     #[inline]
     pub const fn new(val: T) -> RwLock<R, T> {
-        RwLock {
-            data: UnsafeCell::new(val),
-            raw: R::INIT,
-        }
-    }
-
-    /// Creates a new instance of an `RwLock<T>` which is unlocked.
-    #[cfg(not(has_const_fn_trait_bound))]
-    #[inline]
-    pub fn new(val: T) -> RwLock<R, T> {
         RwLock {
             data: UnsafeCell::new(val),
             raw: R::INIT,
