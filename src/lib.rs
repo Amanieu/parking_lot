@@ -22,6 +22,8 @@ mod raw_mutex;
 mod raw_rwlock;
 mod remutex;
 mod rwlock;
+#[cfg(feature = "segment_rwlock")]
+mod seg_rwlock;
 mod util;
 
 #[cfg(feature = "deadlock_detection")]
@@ -52,6 +54,10 @@ pub use self::remutex::{
 pub use self::rwlock::{
     const_rwlock, MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
     RwLockUpgradableReadGuard, RwLockWriteGuard,
+};
+#[cfg(feature = "segment_rwlock")]
+pub use self::seg_rwlock::{
+    const_seg_rwlock, SegRawRwLock, SegRwLock, SegRwLockReadGuard, SegRwLockWriteGuard,
 };
 pub use ::lock_api;
 
