@@ -553,6 +553,37 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         })
     }
 
+    /// Attempts to make a new `MappedMutexGuard` for a component of the
+    /// locked data. The original guard is returned alongside arbitrary user data
+    /// if the closure returns `Err`.
+    ///
+    /// This operation cannot fail as the `MutexGuard` passed
+    /// in already locked the mutex.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `MutexGuard::try_map_or_err(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn try_map_or_err<U: ?Sized, F, E>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedMutexGuard<'a, R, U>, (Self, E)>
+    where
+        F: FnOnce(&mut T) -> Result<&mut U, E>,
+    {
+        let raw = &s.mutex.raw;
+        let data = match f(unsafe { &mut *s.mutex.data.get() }) {
+            Ok(data) => data,
+            Err(e) => return Err((s, e)),
+        };
+        mem::forget(s);
+        Ok(MappedMutexGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        })
+    }
+
     /// Temporarily unlocks the mutex to execute the given function.
     ///
     /// This is safe because `&mut` guarantees that there exist no other
@@ -880,6 +911,37 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
         let data = match f(unsafe { &mut *s.data }) {
             Some(data) => data,
             None => return Err(s),
+        };
+        mem::forget(s);
+        Ok(MappedMutexGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        })
+    }
+
+    /// Attempts to make a new `MappedMutexGuard` for a component of the
+    /// locked data. The original guard is returned alongside arbitrary user data
+    /// if the closure returns `Err`.
+    ///
+    /// This operation cannot fail as the `MappedMutexGuard` passed
+    /// in already locked the mutex.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `MappedMutexGuard::try_map_or_err(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn try_map_or_err<U: ?Sized, F, E>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedMutexGuard<'a, R, U>, (Self, E)>
+    where
+        F: FnOnce(&mut T) -> Result<&mut U, E>,
+    {
+        let raw = s.raw;
+        let data = match f(unsafe { &mut *s.data }) {
+            Ok(data) => data,
+            Err(e) => return Err((s, e)),
         };
         mem::forget(s);
         Ok(MappedMutexGuard {

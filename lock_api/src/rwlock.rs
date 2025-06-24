@@ -1275,6 +1275,37 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         })
     }
 
+    /// Attempts to make  a new `MappedRwLockReadGuard` for a component of the
+    /// locked data. The original guard is returned alongside arbitrary user data
+    /// if the closure returns `Err`.
+    ///
+    /// This operation cannot fail as the `RwLockReadGuard` passed
+    /// in already locked the data.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `RwLockReadGuard::try_map_or_err(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn try_map_or_err<U: ?Sized, F, E>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedRwLockReadGuard<'a, R, U>, (Self, E)>
+    where
+        F: FnOnce(&T) -> Result<&U, E>,
+    {
+        let raw = &s.rwlock.raw;
+        let data = match f(unsafe { &*s.rwlock.data.get() }) {
+            Ok(data) => data,
+            Err(e) => return Err((s, e)),
+        };
+        mem::forget(s);
+        Ok(MappedRwLockReadGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        })
+    }
+
     /// Temporarily unlocks the `RwLock` to execute the given function.
     ///
     /// This is safe because `&mut` guarantees that there exist no other
@@ -1571,6 +1602,37 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         let data = match f(unsafe { &mut *s.rwlock.data.get() }) {
             Some(data) => data,
             None => return Err(s),
+        };
+        mem::forget(s);
+        Ok(MappedRwLockWriteGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        })
+    }
+
+    /// Attempts to make  a new `MappedRwLockWriteGuard` for a component of the
+    /// locked data. The original guard is returned alongside arbitrary user data
+    /// if the closure returns `Err`.
+    ///
+    /// This operation cannot fail as the `RwLockWriteGuard` passed
+    /// in already locked the data.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `RwLockWriteGuard::try_map_or_err(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn try_map_or_err<U: ?Sized, F, E>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedRwLockWriteGuard<'a, R, U>, (Self, E)>
+    where
+        F: FnOnce(&mut T) -> Result<&mut U, E>,
+    {
+        let raw = &s.rwlock.raw;
+        let data = match f(unsafe { &mut *s.rwlock.data.get() }) {
+            Ok(data) => data,
+            Err(e) => return Err((s, e)),
         };
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {
@@ -2708,6 +2770,37 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
             marker: PhantomData,
         })
     }
+
+    /// Attempts to make  a new `MappedRwLockReadGuard` for a component of the
+    /// locked data. The original guard is returned alongside arbitrary user data
+    /// if the closure returns `Err`.
+    ///
+    /// This operation cannot fail as the `MappedRwLockReadGuard` passed
+    /// in already locked the data.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `MappedRwLockReadGuard::try_map_or_err(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn try_map_or_else<U: ?Sized, F, E>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedRwLockReadGuard<'a, R, U>, (Self, E)>
+    where
+        F: FnOnce(&T) -> Result<&U, E>,
+    {
+        let raw = s.raw;
+        let data = match f(unsafe { &*s.data }) {
+            Ok(data) => data,
+            Err(e) => return Err((s, e)),
+        };
+        mem::forget(s);
+        Ok(MappedRwLockReadGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        })
+    }
 }
 
 impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
@@ -2839,6 +2932,37 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
         let data = match f(unsafe { &mut *s.data }) {
             Some(data) => data,
             None => return Err(s),
+        };
+        mem::forget(s);
+        Ok(MappedRwLockWriteGuard {
+            raw,
+            data,
+            marker: PhantomData,
+        })
+    }
+
+    /// Attempts to make  a new `MappedRwLockWriteGuard` for a component of the
+    /// locked data. The original guard is returned alongside arbitrary user data
+    /// if the closure returns `Err`.
+    ///
+    /// This operation cannot fail as the `MappedRwLockWriteGuard` passed
+    /// in already locked the data.
+    ///
+    /// This is an associated function that needs to be
+    /// used as `MappedRwLockWriteGuard::try_map_or_err(...)`. A method would interfere with methods of
+    /// the same name on the contents of the locked data.
+    #[inline]
+    pub fn try_map_or_err<U: ?Sized, F, E>(
+        s: Self,
+        f: F,
+    ) -> Result<MappedRwLockWriteGuard<'a, R, U>, (Self, E)>
+    where
+        F: FnOnce(&mut T) -> Result<&mut U, E>,
+    {
+        let raw = s.raw;
+        let data = match f(unsafe { &mut *s.data }) {
+            Ok(data) => data,
+            Err(e) => return Err((s, e)),
         };
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {
