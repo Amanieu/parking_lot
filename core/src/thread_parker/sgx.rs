@@ -59,17 +59,21 @@ impl super::ThreadParkerT for ThreadParker {
 
     #[inline]
     unsafe fn park_until(&self, timeout: Instant) -> bool {
+        let start = Instant::now();
         while self.parked.load(Ordering::Acquire) {
-            if Instant::now() >= timeout {
-                return false;
-            }
-            let timeout_duration = timeout.duration_since(Instant::now());
-            let timeout_nanos =
-                u128::min(timeout_duration.as_nanos(), WAIT_INDEFINITE as u128 - 1) as u64;
+            let now = Instant::now();
+            let remaining = match now.checked_duration_since(start) {
+                Some(remaining) => remaining,
+                None => {
+                    return false;
+                }
+            };
+            let timeout_nanos = u128::min(remaining.as_nanos(), WAIT_INDEFINITE as u128 - 1) as u64;
 
             if let Err(e) = usercalls::wait(EV_UNPARK, timeout_nanos) {
-                // If the wait was interrupted, we treat it as a timeout
-                return false;
+                if e.kind() == ErrorKind::TimedOut {
+                    return false;
+                }
             }
         }
         true
