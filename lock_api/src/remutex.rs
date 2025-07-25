@@ -306,6 +306,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// returned to allow scoped unlock of the lock. When the guard goes out of
     /// scope, the mutex will be unlocked.
     #[inline]
+    #[track_caller]
     pub fn lock(&self) -> ReentrantMutexGuard<'_, R, G, T> {
         self.raw.lock();
         // SAFETY: The lock is held, as required.
@@ -320,6 +321,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ///
     /// This function does not block.
     #[inline]
+    #[track_caller]
     pub fn try_lock(&self) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
         if self.raw.try_lock() {
             // SAFETY: The lock is held, as required.
@@ -340,12 +342,14 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
 
     /// Checks whether the mutex is currently locked.
     #[inline]
+    #[track_caller]
     pub fn is_locked(&self) -> bool {
         self.raw.is_locked()
     }
 
     /// Checks whether the mutex is currently held by the current thread.
     #[inline]
+    #[track_caller]
     pub fn is_owned_by_current_thread(&self) -> bool {
         self.raw.is_owned_by_current_thread()
     }
@@ -362,6 +366,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// `ReentrantMutexGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
+    #[track_caller]
     pub unsafe fn force_unlock(&self) {
         self.raw.unlock();
     }
@@ -420,6 +425,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
+    #[track_caller]
     pub fn lock_arc(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
         self.raw.lock();
         // SAFETY: locking guarantee is upheld
@@ -432,6 +438,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// of an `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
+    #[track_caller]
     pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcReentrantMutexGuard<R, G, T>> {
         if self.raw.try_lock() {
             // SAFETY: locking guarantee is upheld
@@ -455,6 +462,7 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// `ReentrantMutexGuard` but that guard has be discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
+    #[track_caller]
     pub unsafe fn force_unlock_fair(&self) {
         self.raw.unlock_fair();
     }
@@ -467,6 +475,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
     /// be unlocked when the guard is dropped.
     #[inline]
+    #[track_caller]
     pub fn try_lock_for(&self, timeout: R::Duration) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
         if self.raw.try_lock_for(timeout) {
             // SAFETY: The lock is held, as required.
@@ -482,6 +491,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
     /// be unlocked when the guard is dropped.
     #[inline]
+    #[track_caller]
     pub fn try_lock_until(&self, timeout: R::Instant) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
         if self.raw.try_lock_until(timeout) {
             // SAFETY: The lock is held, as required.
@@ -497,6 +507,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// inside of an `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
+    #[track_caller]
     pub fn try_lock_arc_for(
         self: &Arc<Self>,
         timeout: R::Duration,
@@ -515,6 +526,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// inside of an `Arc` and the resulting mutex guard has no lifetime requirements.
     #[cfg(feature = "arc_lock")]
     #[inline]
+    #[track_caller]
     pub fn try_lock_arc_until(
         self: &Arc<Self>,
         timeout: R::Instant,
@@ -708,6 +720,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
     #[inline]
+    #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
     where
         F: FnOnce() -> U,
@@ -737,6 +750,7 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// the lock to pass on to a waiting thread if there is one. This is done by
     /// using this method instead of dropping the `ReentrantMutexGuard` normally.
     #[inline]
+    #[track_caller]
     pub fn unlock_fair(s: Self) {
         // Safety: A ReentrantMutexGuard always holds the lock
         unsafe {
@@ -752,6 +766,7 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
     #[inline]
+    #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
     where
         F: FnOnce() -> U,
@@ -770,6 +785,7 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// by `lock`, however it can be much more efficient in the case where there
     /// are no waiting threads.
     #[inline]
+    #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: A ReentrantMutexGuard always holds the lock
         unsafe {
@@ -858,6 +874,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
     #[inline]
+    #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
     where
         F: FnOnce() -> U,
@@ -877,6 +894,7 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
     ///
     /// This is functionally identical to the `unlock_fair` method on [`ReentrantMutexGuard`].
     #[inline]
+    #[track_caller]
     pub fn unlock_fair(s: Self) {
         drop(Self::into_arc_fair(s));
     }
@@ -896,6 +914,7 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
     ///
     /// This is functionally identical to the `unlocked_fair` method on [`ReentrantMutexGuard`].
     #[inline]
+    #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
     where
         F: FnOnce() -> U,
@@ -912,6 +931,7 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
     ///
     /// This is functionally equivalent to the `bump` method on [`ReentrantMutexGuard`].
     #[inline]
+    #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: A ReentrantMutexGuard always holds the lock
         unsafe {
@@ -1064,6 +1084,7 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     /// the lock to pass on to a waiting thread if there is one. This is done by
     /// using this method instead of dropping the `ReentrantMutexGuard` normally.
     #[inline]
+    #[track_caller]
     pub fn unlock_fair(s: Self) {
         // Safety: A MappedReentrantMutexGuard always holds the lock
         unsafe {
