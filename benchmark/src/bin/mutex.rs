@@ -61,9 +61,11 @@ impl<T> Mutex<T> for parking_lot::Mutex<T> {
 type SrwLock<T> = std::sync::Mutex<T>;
 
 #[cfg(windows)]
-use winapi::um::synchapi;
+use windows_sys::Win32::System::Threading::{
+    SRWLOCK, InitializeSRWLock, AcquireSRWLockExclusive, ReleaseSRWLockExclusive,
+};
 #[cfg(windows)]
-struct SrwLock<T>(UnsafeCell<T>, UnsafeCell<synchapi::SRWLOCK>);
+struct SrwLock<T>(UnsafeCell<T>, UnsafeCell<SRWLOCK>);
 #[cfg(windows)]
 unsafe impl<T> Sync for SrwLock<T> {}
 #[cfg(windows)]
@@ -71,12 +73,12 @@ unsafe impl<T: Send> Send for SrwLock<T> {}
 #[cfg(windows)]
 impl<T> Mutex<T> for SrwLock<T> {
     fn new(v: T) -> Self {
-        let mut h: synchapi::SRWLOCK = synchapi::SRWLOCK {
+        let mut h: SRWLOCK = SRWLOCK {
             Ptr: std::ptr::null_mut(),
         };
 
         unsafe {
-            synchapi::InitializeSRWLock(&mut h);
+            InitializeSRWLock(&mut h);
         }
         SrwLock(UnsafeCell::new(v), UnsafeCell::new(h))
     }
@@ -85,14 +87,14 @@ impl<T> Mutex<T> for SrwLock<T> {
         F: FnOnce(&mut T) -> R,
     {
         unsafe {
-            synchapi::AcquireSRWLockExclusive(self.1.get());
+            AcquireSRWLockExclusive(self.1.get());
             let res = f(&mut *self.0.get());
-            synchapi::ReleaseSRWLockExclusive(self.1.get());
+            ReleaseSRWLockExclusive(self.1.get());
             res
         }
     }
     fn name() -> &'static str {
-        "winapi_srwlock"
+        "windows_sys_srwlock"
     }
 }
 

@@ -14,4 +14,4 @@ nightly = ["parking_lot/nightly"]
 deadlock_detection = ["parking_lot/deadlock_detection"]
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["synchapi"] }
+windows-sys = { version = "0.60", features = ["Win32_System_Threading"] }
