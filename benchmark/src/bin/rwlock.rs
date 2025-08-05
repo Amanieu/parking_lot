@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-mod args;
-use crate::args::ArgRange;
+use parking_lot_benchmark::args;
+use parking_lot_benchmark::args::ArgRange;
 
 #[cfg(any(windows, unix))]
 use std::cell::UnsafeCell;
