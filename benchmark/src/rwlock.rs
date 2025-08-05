@@ -355,8 +355,16 @@ fn run_all(
         seconds_per_test,
         test_iterations,
     );
+    run_benchmark_iterations::<std::sync::RwLock<f64>>(
+        num_writer_threads,
+        num_reader_threads,
+        work_per_critical_section,
+        work_between_critical_sections,
+        seconds_per_test,
+        test_iterations,
+    );
     if cfg!(windows) {
-        run_benchmark_iterations::<std::sync::RwLock<f64>>(
+        run_benchmark_iterations::<SrwLock<f64>>(
             num_writer_threads,
             num_reader_threads,
             work_per_critical_section,
