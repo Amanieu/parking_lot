@@ -9,14 +9,6 @@ parking_lot = {path = ".."}
 seqlock = "0.2"
 libc = "0.2"
 
-[[bin]]
-name = "mutex"
-path = "src/mutex.rs"
-
-[[bin]]
-name = "rwlock"
-path = "src/rwlock.rs"
-
 [features]
 nightly = ["parking_lot/nightly"]
 deadlock_detection = ["parking_lot/deadlock_detection"]
