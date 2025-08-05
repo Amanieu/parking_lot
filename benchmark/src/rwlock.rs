@@ -164,7 +164,7 @@ impl<T> RwLock<T> for PthreadRwLock<T> {
         F: FnOnce(&T) -> R,
     {
         unsafe {
-            libc::pthread_rwlock_wrlock(self.1.get());
+            libc::pthread_rwlock_rdlock(self.1.get());
             let res = f(&*self.0.get());
             libc::pthread_rwlock_unlock(self.1.get());
             res
