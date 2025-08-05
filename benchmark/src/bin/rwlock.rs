@@ -107,15 +107,14 @@ unsafe impl<T: Send> Send for SrwLock<T> {}
 #[cfg(windows)]
 impl<T> RwLock<T> for SrwLock<T> {
     fn new(v: T) -> Self {
-        let mut h: synchapi::SRWLOCK = synchapi::SRWLOCK { Ptr: std::ptr::null_mut() };
+        let mut h: synchapi::SRWLOCK = synchapi::SRWLOCK {
+            Ptr: std::ptr::null_mut(),
+        };
 
         unsafe {
             synchapi::InitializeSRWLock(&mut h);
         }
-        SrwLock(
-            UnsafeCell::new(v),
-            UnsafeCell::new(h),
-        )
+        SrwLock(UnsafeCell::new(v), UnsafeCell::new(h))
     }
     fn read<F, R>(&self, f: F) -> R
     where

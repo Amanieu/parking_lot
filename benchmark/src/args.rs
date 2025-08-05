@@ -46,12 +46,9 @@ fn print_usage(names: &[&str], error_msg: Option<String>) -> ! {
 }
 
 fn parse_num(names: &[&str], name: &str, value: &str) -> usize {
-    value.parse().unwrap_or_else(|_| {
-        print_usage(
-            names,
-            Some(format!("Invalid value for {name}: {value}")),
-        )
-    })
+    value
+        .parse()
+        .unwrap_or_else(|_| print_usage(names, Some(format!("Invalid value for {name}: {value}"))))
 }
 
 fn parse_one(names: &[&str], name: &str, value: &str) -> ArgRange {
@@ -69,10 +66,7 @@ fn parse_one(names: &[&str], name: &str, value: &str) -> ArgRange {
             let start = parse_num(names, name, components[0]);
             let end = parse_num(names, name, components[1]);
             if start > end {
-                print_usage(
-                    names,
-                    Some(format!("Invalid range for {name}: {value}")),
-                );
+                print_usage(names, Some(format!("Invalid range for {name}: {value}")));
             }
             ArgRange {
                 current: start,
@@ -85,10 +79,7 @@ fn parse_one(names: &[&str], name: &str, value: &str) -> ArgRange {
             let end = parse_num(names, name, components[1]);
             let step = parse_num(names, name, components[2]);
             if start > end {
-                print_usage(
-                    names,
-                    Some(format!("Invalid range for {name}: {value}")),
-                );
+                print_usage(names, Some(format!("Invalid range for {name}: {value}")));
             }
             ArgRange {
                 current: start,
@@ -96,10 +87,7 @@ fn parse_one(names: &[&str], name: &str, value: &str) -> ArgRange {
                 step,
             }
         }
-        _ => print_usage(
-            names,
-            Some(format!("Invalid value for {name}: {value}")),
-        ),
+        _ => print_usage(names, Some(format!("Invalid value for {name}: {value}"))),
     }
 }
 
