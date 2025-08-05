@@ -227,16 +227,15 @@ fn run_all(
         return;
     }
     if *first || !args[0].is_single() {
-        println!("- Running with {} threads", num_threads);
+        println!("- Running with {num_threads} threads");
     }
     if *first || !args[1].is_single() || !args[2].is_single() {
         println!(
-            "- {} iterations inside lock, {} iterations outside lock",
-            work_per_critical_section, work_between_critical_sections
+            "- {work_per_critical_section} iterations inside lock, {work_between_critical_sections} iterations outside lock"
         );
     }
     if *first || !args[3].is_single() {
-        println!("- {} seconds per test", seconds_per_test);
+        println!("- {seconds_per_test} seconds per test");
     }
     *first = false;
 

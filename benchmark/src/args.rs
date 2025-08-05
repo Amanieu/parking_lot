@@ -35,7 +35,7 @@ impl Iterator for ArgRange {
 
 fn print_usage(names: &[&str], error_msg: Option<String>) -> ! {
     if let Some(error) = error_msg {
-        println!("{}", error);
+        println!("{error}");
     }
     println!("Usage: {} {}", env::args().next().unwrap(), names.join(" "));
     println!(
@@ -49,7 +49,7 @@ fn parse_num(names: &[&str], name: &str, value: &str) -> usize {
     value.parse().unwrap_or_else(|_| {
         print_usage(
             names,
-            Some(format!("Invalid value for {}: {}", name, value)),
+            Some(format!("Invalid value for {name}: {value}")),
         )
     })
 }
@@ -71,7 +71,7 @@ fn parse_one(names: &[&str], name: &str, value: &str) -> ArgRange {
             if start > end {
                 print_usage(
                     names,
-                    Some(format!("Invalid range for {}: {}", name, value)),
+                    Some(format!("Invalid range for {name}: {value}")),
                 );
             }
             ArgRange {
@@ -87,18 +87,18 @@ fn parse_one(names: &[&str], name: &str, value: &str) -> ArgRange {
             if start > end {
                 print_usage(
                     names,
-                    Some(format!("Invalid range for {}: {}", name, value)),
+                    Some(format!("Invalid range for {name}: {value}")),
                 );
             }
             ArgRange {
                 current: start,
                 limit: end,
-                step: step,
+                step,
             }
         }
         _ => print_usage(
             names,
-            Some(format!("Invalid value for {}: {}", name, value)),
+            Some(format!("Invalid value for {name}: {value}")),
         ),
     }
 }

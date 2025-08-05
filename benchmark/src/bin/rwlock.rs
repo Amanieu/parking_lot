@@ -304,8 +304,8 @@ fn run_benchmark_iterations<M: RwLock<f64> + Send + Sync + 'static>(
     println!(
         "{:20} - [write] {:10.3} kHz [read] {:10.3} kHz",
         M::name(),
-        total_writers as f64 / seconds_per_test as f64 / 1000.0,
-        total_readers as f64 / seconds_per_test as f64 / 1000.0
+        total_writers / seconds_per_test as f64 / 1000.0,
+        total_readers / seconds_per_test as f64 / 1000.0
     );
 }
 
@@ -324,18 +324,16 @@ fn run_all(
     }
     if *first || !args[0].is_single() || !args[1].is_single() {
         println!(
-            "- Running with {} writer threads and {} reader threads",
-            num_writer_threads, num_reader_threads
+            "- Running with {num_writer_threads} writer threads and {num_reader_threads} reader threads"
         );
     }
     if *first || !args[2].is_single() || !args[3].is_single() {
         println!(
-            "- {} iterations inside lock, {} iterations outside lock",
-            work_per_critical_section, work_between_critical_sections
+            "- {work_per_critical_section} iterations inside lock, {work_between_critical_sections} iterations outside lock"
         );
     }
     if *first || !args[4].is_single() {
-        println!("- {} seconds per test", seconds_per_test);
+        println!("- {seconds_per_test} seconds per test");
     }
     *first = false;
 
