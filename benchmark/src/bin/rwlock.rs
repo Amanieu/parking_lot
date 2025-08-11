@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-mod args;
-use crate::args::ArgRange;
+use parking_lot_benchmark::args;
+use parking_lot_benchmark::args::ArgRange;
 
 #[cfg(any(windows, unix))]
 use std::cell::UnsafeCell;
@@ -107,15 +107,14 @@ unsafe impl<T: Send> Send for SrwLock<T> {}
 #[cfg(windows)]
 impl<T> RwLock<T> for SrwLock<T> {
     fn new(v: T) -> Self {
-        let mut h: synchapi::SRWLOCK = synchapi::SRWLOCK { Ptr: std::ptr::null_mut() };
+        let mut h: synchapi::SRWLOCK = synchapi::SRWLOCK {
+            Ptr: std::ptr::null_mut(),
+        };
 
         unsafe {
             synchapi::InitializeSRWLock(&mut h);
         }
-        SrwLock(
-            UnsafeCell::new(v),
-            UnsafeCell::new(h),
-        )
+        SrwLock(UnsafeCell::new(v), UnsafeCell::new(h))
     }
     fn read<F, R>(&self, f: F) -> R
     where
@@ -164,7 +163,7 @@ impl<T> RwLock<T> for PthreadRwLock<T> {
         F: FnOnce(&T) -> R,
     {
         unsafe {
-            libc::pthread_rwlock_wrlock(self.1.get());
+            libc::pthread_rwlock_rdlock(self.1.get());
             let res = f(&*self.0.get());
             libc::pthread_rwlock_unlock(self.1.get());
             res
@@ -304,8 +303,8 @@ fn run_benchmark_iterations<M: RwLock<f64> + Send + Sync + 'static>(
     println!(
         "{:20} - [write] {:10.3} kHz [read] {:10.3} kHz",
         M::name(),
-        total_writers as f64 / seconds_per_test as f64 / 1000.0,
-        total_readers as f64 / seconds_per_test as f64 / 1000.0
+        total_writers / seconds_per_test as f64 / 1000.0,
+        total_readers / seconds_per_test as f64 / 1000.0
     );
 }
 
@@ -324,18 +323,16 @@ fn run_all(
     }
     if *first || !args[0].is_single() || !args[1].is_single() {
         println!(
-            "- Running with {} writer threads and {} reader threads",
-            num_writer_threads, num_reader_threads
+            "- Running with {num_writer_threads} writer threads and {num_reader_threads} reader threads"
         );
     }
     if *first || !args[2].is_single() || !args[3].is_single() {
         println!(
-            "- {} iterations inside lock, {} iterations outside lock",
-            work_per_critical_section, work_between_critical_sections
+            "- {work_per_critical_section} iterations inside lock, {work_between_critical_sections} iterations outside lock"
         );
     }
     if *first || !args[4].is_single() {
-        println!("- {} seconds per test", seconds_per_test);
+        println!("- {seconds_per_test} seconds per test");
     }
     *first = false;
 
@@ -355,8 +352,16 @@ fn run_all(
         seconds_per_test,
         test_iterations,
     );
+    run_benchmark_iterations::<std::sync::RwLock<f64>>(
+        num_writer_threads,
+        num_reader_threads,
+        work_per_critical_section,
+        work_between_critical_sections,
+        seconds_per_test,
+        test_iterations,
+    );
     if cfg!(windows) {
-        run_benchmark_iterations::<std::sync::RwLock<f64>>(
+        run_benchmark_iterations::<SrwLock<f64>>(
             num_writer_threads,
             num_reader_threads,
             work_per_critical_section,

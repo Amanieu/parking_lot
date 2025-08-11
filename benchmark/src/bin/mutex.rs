@@ -5,8 +5,8 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-mod args;
-use crate::args::ArgRange;
+use parking_lot_benchmark::args;
+use parking_lot_benchmark::args::ArgRange;
 
 #[cfg(any(windows, unix))]
 use std::cell::UnsafeCell;
@@ -71,15 +71,14 @@ unsafe impl<T: Send> Send for SrwLock<T> {}
 #[cfg(windows)]
 impl<T> Mutex<T> for SrwLock<T> {
     fn new(v: T) -> Self {
-        let mut h: synchapi::SRWLOCK = synchapi::SRWLOCK { Ptr: std::ptr::null_mut() };
+        let mut h: synchapi::SRWLOCK = synchapi::SRWLOCK {
+            Ptr: std::ptr::null_mut(),
+        };
 
         unsafe {
             synchapi::InitializeSRWLock(&mut h);
         }
-        SrwLock(
-            UnsafeCell::new(v),
-            UnsafeCell::new(h),
-        )
+        SrwLock(UnsafeCell::new(v), UnsafeCell::new(h))
     }
     fn lock<F, R>(&self, f: F) -> R
     where
@@ -227,16 +226,15 @@ fn run_all(
         return;
     }
     if *first || !args[0].is_single() {
-        println!("- Running with {} threads", num_threads);
+        println!("- Running with {num_threads} threads");
     }
     if *first || !args[1].is_single() || !args[2].is_single() {
         println!(
-            "- {} iterations inside lock, {} iterations outside lock",
-            work_per_critical_section, work_between_critical_sections
+            "- {work_per_critical_section} iterations inside lock, {work_between_critical_sections} iterations outside lock"
         );
     }
     if *first || !args[3].is_single() {
-        println!("- {} seconds per test", seconds_per_test);
+        println!("- {seconds_per_test} seconds per test");
     }
     *first = false;
 
