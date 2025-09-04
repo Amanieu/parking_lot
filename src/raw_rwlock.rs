@@ -870,7 +870,10 @@ impl RawRwLock {
 
     #[cold]
     fn upgrade_slow(&self, timeout: Option<Instant>) -> bool {
-        self.wait_for_readers(timeout, ONE_READER | UPGRADABLE_BIT)
+        self.deadlock_release();
+        let result = self.wait_for_readers(timeout, ONE_READER | UPGRADABLE_BIT);
+        self.deadlock_acquire();
+        result
     }
 
     #[cold]
