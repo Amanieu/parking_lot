@@ -9,7 +9,7 @@ readme = "README.md"
 keywords = ["mutex", "condvar", "rwlock", "once", "thread"]
 categories = ["concurrency"]
 edition = "2021"
-rust-version = "1.64"
+rust-version = "1.71"
 
 [package.metadata.docs.rs]
 features = ["arc_lock", "serde", "deadlock_detection"]
