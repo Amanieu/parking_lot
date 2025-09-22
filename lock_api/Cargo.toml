@@ -8,7 +8,7 @@ repository = "https://github.com/Amanieu/parking_lot"
 keywords = ["mutex", "rwlock", "lock", "no_std"]
 categories = ["concurrency", "no-std"]
 edition = "2021"
-rust-version = "1.64.0"
+rust-version = "1.71.0"
 
 [package.metadata.docs.rs]
 all-features = true
