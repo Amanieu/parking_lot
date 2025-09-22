@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## `parking_lot` - [0.12.5](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.4...parking_lot-v0.12.5) - 2025-09-22
+
+### Other
+- Update MSRV to 1.71
+- Switch from `windows-targets` to `windows-link`
+- do not use elision on Miri even if feature is enabled
+- Replace winapi with windows-sys in benchmark crate
+- Cargo fmt
+- Clippy fix
+- Move sources for binaries to a conventional location
+- Always benchmark std RwLock for comparison
+- Fix PthreadRwLock calling the wrong function for read lock
+- Merge pull request #456 from SFBdragon/track_caller-for-fallible-mutexes
+- place `#[track_caller]` on all wrapper functions
+- add #[track_caller] where locking implementations could feasibly need to panic
+
+## `parking_lot_core` - [0.10.0](https://github.com/Amanieu/parking_lot/compare/parking_lot_core-v0.9.11...parking_lot_core-v0.10.0) - 2025-09-22
+
+### Other
+- Update MSRV to 1.71
+- Switch from `windows-targets` to `windows-link`
+- Replace `thread-id` with `std::thread::ThreadId`
+- Correct timeout_nanos calculation in SGX ThreadParker.park_until
+- Check for timedout before returning false
+- Fix EV_UNPARK could come from sources other than parking_lot.
+- Adding SGX implementation for ThreadParker.park_until
+- Update build.rs
+
+## `lock_api` - [0.4.14](https://github.com/Amanieu/parking_lot/compare/lock_api-v0.4.13...lock_api-v0.4.14) - 2025-09-22
+
+### Other
+- Update MSRV to 1.71
+- Merge pull request #456 from SFBdragon/track_caller-for-fallible-mutexes
+- place `#[track_caller]` on all wrapper functions
+- add #[track_caller] where locking implementations could feasibly need to panic
+
 ## `parking_lot` - [0.12.4](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.3...parking_lot-v0.12.4) - 2025-05-29
 
 - Fix parked upgraders potentially not being woken up after a write lock
