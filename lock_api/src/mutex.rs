@@ -768,7 +768,6 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     pub fn map<U: ?Sized, F>(mut s: Self, f: F) -> MappedArcMutexGuard<R, U>
     where
         F: FnOnce(&mut T) -> &mut U,
-        R: 'static,
         T: 'static,
     {
         let mutex: Box<dyn AnyCloneable> = Box::new(Arc::clone(&s.mutex));
