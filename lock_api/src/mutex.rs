@@ -773,7 +773,7 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     {
         let mutex: Box<dyn AnyCloneable> = Box::new(Arc::clone(&s.mutex));
         // Safety: this reference is outlived by the Arc itself, which ensures it stays valid.
-        let raw = unsafe { core::mem::transmute(&s.mutex.raw) };
+        let raw = unsafe { mem::transmute(&s.mutex.raw) };
         let data = f(unsafe { &mut *s.mutex.data.get() });
         // We want to run the entire destructor, except the unlocking.
         // Safety: we're about to forget `s`, so `s.mutex` is never accessed.
@@ -800,7 +800,7 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     {
         let mutex: Box<dyn AnyCloneable> = Box::new(Arc::clone(&s.mutex));
         // Safety: this reference is outlived by the Arc itself, which ensures it stays valid.
-        let raw = unsafe { core::mem::transmute(&s.mutex.raw) };
+        let raw = unsafe { mem::transmute(&s.mutex.raw) };
         let data = match f(unsafe { &mut *s.mutex.data.get() }) {
             Some(data) => data,
             None => return Err(s),
