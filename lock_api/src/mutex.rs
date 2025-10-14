@@ -751,6 +751,7 @@ unsafe impl<R: RawMutex + Sync, T: Sync + ?Sized> Sync for ArcMutexGuard<R, T> w
 #[cfg(feature = "arc_lock")]
 impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     /// Drop the content (mostly the Arc) without unlocking the mutex.
+    #[inline]
     fn forget(s: Self) {
         // SAFETY: make sure the Arc gets it reference decremented
         let mut s = ManuallyDrop::new(s);
@@ -1137,6 +1138,7 @@ unsafe impl<R: RawMutex, U: ?Sized + Sync> Send for MappedArcMutexGuard<R, U> wh
 #[cfg(feature = "arc_lock")]
 impl<R: RawMutex, U: ?Sized> MappedArcMutexGuard<R, U> {
     /// Drop the content (mostly the Arc) without unlocking the mutex.
+    #[inline]
     fn forget(s: Self) {
         // SAFETY: make sure the Arc gets it reference decremented
         let mut s = ManuallyDrop::new(s);
