@@ -116,7 +116,7 @@ pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawMutex, T>;
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
 #[cfg(feature = "arc_lock")]
-pub type MappedArcMutexGuard<T, U> = lock_api::MappedArcMutexGuard<RawMutex, T, U>;
+pub type MappedArcMutexGuard<U> = lock_api::MappedArcMutexGuard<RawMutex, U>;
 
 #[cfg(test)]
 mod tests {
