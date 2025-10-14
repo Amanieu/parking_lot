@@ -750,6 +750,13 @@ unsafe impl<R: RawMutex + Sync, T: Sync + ?Sized> Sync for ArcMutexGuard<R, T> w
 
 #[cfg(feature = "arc_lock")]
 impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
+    /// Drop the content (mostly the Arc) without unlocking the mutex.
+    fn forget(s: Self) {
+        // SAFETY: make sure the Arc gets it reference decremented
+        let mut s = ManuallyDrop::new(s);
+        unsafe { ptr::drop_in_place(&mut s.mutex) };
+    }
+
     /// Returns a reference to the `Mutex` this is guarding, contained in its `Arc`.
     #[inline]
     pub fn mutex(s: &Self) -> &Arc<Mutex<R, T>> {
@@ -765,7 +772,7 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     /// used as `ArcMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(mut s: Self, f: F) -> MappedArcMutexGuard<R, U>
+    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedArcMutexGuard<R, U>
     where
         F: FnOnce(&mut T) -> &mut U,
         T: 'static,
@@ -775,9 +782,7 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
         let raw = unsafe { mem::transmute(&s.mutex.raw) };
         let data = f(unsafe { &mut *s.mutex.data.get() });
         // We want to run the entire destructor, except the unlocking.
-        // Safety: we're about to forget `s`, so `s.mutex` is never accessed.
-        unsafe { ptr::drop_in_place(&mut s.mutex) };
-        mem::forget(s);
+        Self::forget(s);
 
         MappedArcMutexGuard { mutex, raw, data }
     }
@@ -797,14 +802,14 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
         F: FnOnce(&mut T) -> Option<&mut U>,
         T: 'static,
     {
-        let mutex: Box<dyn AnyCloneable> = Box::new(Arc::clone(&s.mutex));
         // Safety: this reference is outlived by the Arc itself, which ensures it stays valid.
-        let raw = unsafe { mem::transmute(&s.mutex.raw) };
         let data = match f(unsafe { &mut *s.mutex.data.get() }) {
             Some(data) => data,
             None => return Err(s),
         };
-        mem::forget(s);
+        let mutex: Box<dyn AnyCloneable> = Box::new(Arc::clone(&s.mutex));
+        let raw = unsafe { mem::transmute(&s.mutex.raw) };
+        Self::forget(s);
         Ok(MappedArcMutexGuard { mutex, raw, data })
     }
 
@@ -1175,12 +1180,12 @@ impl<R: RawMutex, U: ?Sized> MappedArcMutexGuard<R, U> {
     where
         F: FnOnce(&mut U) -> Option<&mut V>,
     {
-        let mutex: Box<dyn AnyCloneable> = s.mutex.any_clone();
-        let raw = s.raw;
         let data = match f(unsafe { &mut *s.data }) {
             Some(data) => data,
             None => return Err(s),
         };
+        let mutex: Box<dyn AnyCloneable> = s.mutex.any_clone();
+        let raw = s.raw;
         // Can't drop `s` or it will unlock the mutex.
         Self::forget(s);
         Ok(MappedArcMutexGuard { mutex, raw, data })
