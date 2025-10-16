@@ -321,6 +321,23 @@ mod tests {
         assert_eq!(contents, *(deserialized.lock()));
     }
 
+    #[cfg(feature = "arc_lock")]
+    #[test]
+    fn test_arc_map() {
+        use lock_api::ArcMutexGuard;
+        use std::sync::Arc;
+
+        let contents: Vec<u8> = vec![0, 1, 2];
+        let mutex = Arc::new(Mutex::new(contents));
+
+        let guard = mutex.lock_arc();
+        let mapped_guard = ArcMutexGuard::map(guard, |contents: &mut Vec<u8>| &mut contents[1]);
+        // The point of the ArcMutexGuard is that we don't borrow the mutex.
+        drop(mutex);
+
+        assert_eq!(*mapped_guard, 1);
+    }
+
     #[test]
     fn test_map_or_err_not_mapped() {
         let mut map = HashMap::new();
