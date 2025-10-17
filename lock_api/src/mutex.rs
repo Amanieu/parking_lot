@@ -767,7 +767,7 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     /// used as `ArcMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn map<U: ?Sized, F>(mut s: Self, f: F) -> MappedArcMutexGuard<R, U>
+    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedArcMutexGuard<R, U>
     where
         F: FnOnce(&mut T) -> &mut U,
         T: 'static,
@@ -796,7 +796,7 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     /// used as `ArcMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(mut s: Self, f: F) -> Result<MappedArcMutexGuard<R, U>, Self>
+    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedArcMutexGuard<R, U>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut U>,
         T: 'static,
@@ -1184,11 +1184,11 @@ impl<R: RawMutex, U: ?Sized> MappedArcMutexGuard<R, U> {
         };
         let raw = s.raw;
 
-        // Can't drop `s` or it will unlock the mutex.
-        let mut s = ManuallyDrop::new(s);
         // Safety: we are about to forget `s.mutex` along with `s`, so making a copy here can be
         // considered a "move".
         let mutex: Box<dyn Any> = unsafe { ptr::read(&s.mutex) };
+        // Can't drop `s` or it will unlock the mutex.
+        mem::forget(s);
 
         Ok(MappedArcMutexGuard { mutex, raw, data })
     }
