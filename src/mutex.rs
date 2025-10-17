@@ -325,17 +325,26 @@ mod tests {
     #[test]
     fn test_arc_map() {
         use lock_api::ArcMutexGuard;
+        use lock_api::MappedArcMutexGuard;
+        use std::any::Any;
         use std::sync::Arc;
 
         let contents: Vec<u8> = vec![0, 1, 2];
-        let mutex = Arc::new(Mutex::new(contents));
+        let mutex: Arc<Mutex<dyn Any>> = Arc::new(Mutex::new(contents));
 
+        // Lock the `dyn Any` value.
         let guard = mutex.lock_arc();
-        let mapped_guard = ArcMutexGuard::map(guard, |contents: &mut Vec<u8>| &mut contents[1]);
+
+        // Downcast it
+        let guard = ArcMutexGuard::map(guard, |contents| {
+            contents.downcast_mut::<Vec<u8>>().unwrap()
+        });
+        // Access a field in it.
+        let guard = MappedArcMutexGuard::map(guard, |contents: &mut Vec<u8>| &mut contents[1]);
         // The point of the ArcMutexGuard is that we don't borrow the mutex.
         drop(mutex);
 
-        assert_eq!(*mapped_guard, 1);
+        assert_eq!(*guard, 1);
     }
 
     #[test]
