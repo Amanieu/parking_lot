@@ -325,21 +325,20 @@ mod tests {
     #[test]
     fn test_arc_map() {
         use lock_api::{ArcMutexGuard, MappedArcMutexGuard};
-        use std::{any::Any, sync::Arc};
+        use std::sync::Arc;
 
         let contents: Vec<u8> = vec![0, 1, 2];
-        let mutex: Arc<Mutex<dyn Any>> = Arc::new(Mutex::new(contents));
+        let mutex: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(contents));
 
-        // Lock the `dyn Any` value.
         let guard = mutex.lock_arc();
 
-        // Example of a failible mapping function: downcasting
-        let guard = ArcMutexGuard::try_map(guard, |contents| contents.downcast_mut::<Vec<u8>>())
+        // Example of a failible mapping function: getting a chunk
+        let guard = ArcMutexGuard::try_map(guard, |contents| contents.first_chunk_mut::<3>())
             .ok()
-            .expect("Could not downcast to the original type");
+            .expect("Could not get the first 3 elements as a chunk.");
 
         // Example of chained mapping: accessing a value.
-        let guard = MappedArcMutexGuard::map(guard, |contents: &mut Vec<u8>| &mut contents[1]);
+        let guard = MappedArcMutexGuard::map(guard, |contents| &mut contents[1]);
 
         // The point of the ArcMutexGuard is that we don't borrow the mutex, so we can drop it.
         drop(mutex);

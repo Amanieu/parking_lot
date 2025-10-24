@@ -12,8 +12,6 @@ use core::mem;
 use core::ops::{Deref, DerefMut};
 
 #[cfg(feature = "arc_lock")]
-use alloc::boxed::Box;
-#[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
 #[cfg(feature = "arc_lock")]
 use core::any::Any;
@@ -770,14 +768,14 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedArcMutexGuard<R, U>
     where
         F: FnOnce(&mut T) -> &mut U,
-        T: 'static,
+        T: Sized + 'static,
     {
         let data = f(unsafe { &mut *s.mutex.data.get() });
         // Safety: this reference is outlived by the Arc itself, which ensures it stays valid.
         let raw = unsafe { mem::transmute(&s.mutex.raw) };
         // Safety: we are "cloning" the Arc without bumping the refcount,
         // because we're about to forget the original along with `s`.
-        let mutex: Box<dyn Any> = Box::new(unsafe { ptr::read(&s.mutex) });
+        let mutex: Arc<_> = unsafe { ptr::read(&s.mutex) };
 
         // We do not want to unlock the mutex, and we do not want to drop s.mutex, so just forget
         // the entire thing.
@@ -799,7 +797,7 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedArcMutexGuard<R, U>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut U>,
-        T: 'static,
+        T: Sized + 'static,
     {
         let data = match f(unsafe { &mut *s.mutex.data.get() }) {
             Some(data) => data,
@@ -809,7 +807,7 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
         let raw = unsafe { mem::transmute(&s.mutex.raw) };
         // Safety: we are "cloning" the Arc without bumping the refcount,
         // because we're about to forget the original along with `s`.
-        let mutex: Box<dyn Any> = Box::new(unsafe { ptr::read(&s.mutex) });
+        let mutex: Arc<_> = unsafe { ptr::read(&s.mutex) };
         mem::forget(s);
         Ok(MappedArcMutexGuard { mutex, raw, data })
     }
@@ -1113,7 +1111,7 @@ pub struct MappedArcMutexGuard<R: RawMutex + 'static, U: ?Sized> {
     // This actually stores a `Arc<Mutex<R, T>>` for some `T`.
     // We don't _really_ care about it, but we need it to stay alive so the raw reference below
     // stays valid.
-    mutex: Box<dyn Any>,
+    mutex: Arc<dyn Any>,
 
     // Note: the `&'static` is a lie.
     // It should be outlived by the mutex right above.
@@ -1159,7 +1157,7 @@ impl<R: RawMutex, U: ?Sized> MappedArcMutexGuard<R, U> {
         let raw = s.raw;
         // Safety: we are about to forget `s.mutex` along with `s`, so making a copy here can be
         // considered a "move".
-        let mutex: Box<dyn Any> = unsafe { ptr::read(&s.mutex) };
+        let mutex: Arc<dyn Any> = unsafe { ptr::read(&s.mutex) };
 
         MappedArcMutexGuard { mutex, raw, data }
     }
@@ -1186,7 +1184,7 @@ impl<R: RawMutex, U: ?Sized> MappedArcMutexGuard<R, U> {
 
         // Safety: we are about to forget `s.mutex` along with `s`, so making a copy here can be
         // considered a "move".
-        let mutex: Box<dyn Any> = unsafe { ptr::read(&s.mutex) };
+        let mutex: Arc<dyn Any> = unsafe { ptr::read(&s.mutex) };
         // Can't drop `s` or it will unlock the mutex.
         mem::forget(s);
 
