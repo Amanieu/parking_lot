@@ -10,8 +10,37 @@ use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use core::{
     cell::Cell,
     mem, ptr,
-    sync::atomic::{fence, AtomicUsize, Ordering},
+    sync::atomic::{fence, AtomicPtr, Ordering},
 };
+
+// Polyfill for compatibility with older Rust versions.
+#[cfg(not(miri))]
+fn atomic_ptr_fetch_byte_sub<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
+    use core::sync::atomic::AtomicUsize;
+    let p = ptr::from_ref(p).cast::<AtomicUsize>();
+    // Very strictly speaking, this is not provenance-correct: we are loading the pointer stored in
+    // `p` at integer type, which discards provenance, and then storing that back, thus erasing the
+    // provenance in memory. However, LLVM's provenance model is not defined yet, and Rust already
+    // relies on its integer type being able to hold provenance under some circumstances. So it
+    // seems fine for us to rely on this as well.
+    (unsafe { (*p).fetch_sub(val, order) }) as *mut T
+}
+#[cfg(not(miri))]
+fn atomic_ptr_fetch_and<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
+    use core::sync::atomic::AtomicUsize;
+    let p = ptr::from_ref(p).cast::<AtomicUsize>();
+    (unsafe { (*p).fetch_and(val, order) }) as *mut T
+}
+// Use provenance-aware versions on Miri
+// FIXME: use this everywhere once we can depend on Rust 1.91
+#[cfg(miri)]
+fn atomic_ptr_fetch_byte_sub<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
+    p.fetch_byte_sub(val, order)
+}
+#[cfg(miri)]
+fn atomic_ptr_fetch_and<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
+    p.fetch_and(val, order)
+}
 
 struct ThreadData {
     parker: ThreadParker,
@@ -74,14 +103,14 @@ const QUEUE_MASK: usize = !3;
 // Word-sized lock that is used to implement the parking_lot API. Since this
 // can't use parking_lot, it instead manages its own queue of waiting threads.
 pub struct WordLock {
-    state: AtomicUsize,
+    state: AtomicPtr<ThreadData>,
 }
 
 impl WordLock {
     /// Returns a new, unlocked, `WordLock`.
     pub const fn new() -> Self {
         WordLock {
-            state: AtomicUsize::new(0),
+            state: AtomicPtr::new(ptr::null_mut()),
         }
     }
 
@@ -89,7 +118,12 @@ impl WordLock {
     pub fn lock(&self) {
         if self
             .state
-            .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
+            .compare_exchange_weak(
+                ptr::null_mut(),
+                ptr::without_provenance_mut(LOCKED_BIT),
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            )
             .is_ok()
         {
             return;
@@ -100,7 +134,7 @@ impl WordLock {
     /// Must not be called on an already unlocked `WordLock`!
     #[inline]
     pub unsafe fn unlock(&self) {
-        let state = self.state.fetch_sub(LOCKED_BIT, Ordering::Release);
+        let state = atomic_ptr_fetch_byte_sub(&self.state, LOCKED_BIT, Ordering::Release);
         if state.is_queue_locked() || state.queue_head().is_null() {
             return;
         }
@@ -116,7 +150,7 @@ impl WordLock {
             if !state.is_locked() {
                 match self.state.compare_exchange_weak(
                     state,
-                    state | LOCKED_BIT,
+                    state.map_addr(|a| a | LOCKED_BIT),
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 ) {
@@ -153,7 +187,7 @@ impl WordLock {
                 }
                 if let Err(x) = self.state.compare_exchange_weak(
                     state,
-                    state.with_queue_head(thread_data),
+                    state.with_queue_head(thread_data).cast_mut(),
                     Ordering::AcqRel,
                     Ordering::Relaxed,
                 ) {
@@ -188,7 +222,7 @@ impl WordLock {
             // Try to grab the queue lock
             match self.state.compare_exchange_weak(
                 state,
-                state | QUEUE_LOCKED_BIT,
+                state.map_addr(|a| a | QUEUE_LOCKED_BIT),
                 Ordering::Acquire,
                 Ordering::Relaxed,
             ) {
@@ -229,7 +263,7 @@ impl WordLock {
             if state.is_locked() {
                 match self.state.compare_exchange_weak(
                     state,
-                    state & !QUEUE_LOCKED_BIT,
+                    state.map_addr(|a| a & !QUEUE_LOCKED_BIT),
                     Ordering::Release,
                     Ordering::Relaxed,
                 ) {
@@ -248,7 +282,7 @@ impl WordLock {
                 loop {
                     match self.state.compare_exchange_weak(
                         state,
-                        state & LOCKED_BIT,
+                        state.map_addr(|a| a & LOCKED_BIT),
                         Ordering::Release,
                         Ordering::Relaxed,
                     ) {
@@ -271,7 +305,7 @@ impl WordLock {
                 unsafe {
                     (*queue_head).queue_tail.set(new_tail);
                 }
-                self.state.fetch_and(!QUEUE_LOCKED_BIT, Ordering::Release);
+                atomic_ptr_fetch_and(&self.state, !QUEUE_LOCKED_BIT, Ordering::Release);
             }
 
             // Finally, wake up the thread we removed from the queue. Note that
@@ -289,7 +323,7 @@ impl WordLock {
 // Thread-Sanitizer only has partial fence support, so when running under it, we
 // try and avoid false positives by using a discarded acquire load instead.
 #[inline]
-fn fence_acquire(a: &AtomicUsize) {
+fn fence_acquire<T>(a: &AtomicPtr<T>) {
     if cfg!(tsan_enabled) {
         let _ = a.load(Ordering::Acquire);
     } else {
@@ -304,24 +338,25 @@ trait LockState {
     fn with_queue_head(self, thread_data: *const ThreadData) -> Self;
 }
 
-impl LockState for usize {
+impl LockState for *const ThreadData {
     #[inline]
     fn is_locked(self) -> bool {
-        self & LOCKED_BIT != 0
+        self.addr() & LOCKED_BIT != 0
     }
 
     #[inline]
     fn is_queue_locked(self) -> bool {
-        self & QUEUE_LOCKED_BIT != 0
+        self.addr() & QUEUE_LOCKED_BIT != 0
     }
 
     #[inline]
     fn queue_head(self) -> *const ThreadData {
-        (self & QUEUE_MASK) as *const ThreadData
+        self.map_addr(|a| a & QUEUE_MASK)
     }
 
     #[inline]
     fn with_queue_head(self, thread_data: *const ThreadData) -> Self {
-        (self & !QUEUE_MASK) | thread_data as *const _ as usize
+        // The provenance should come from `thread_data`, *not* `self`!
+        thread_data.with_addr((self.addr() & !QUEUE_MASK) | thread_data.addr())
     }
 }
