@@ -108,9 +108,13 @@ impl ThreadParker {
             .as_ref()
             .map(|ts_ref| ts_ref as *const _)
             .unwrap_or(ptr::null());
+        #[cfg(not(all(target_arch = "riscv32", target_env = "musl")))]
+        let futex_num = libc::SYS_futex;
+        #[cfg(all(target_arch = "riscv32", target_env = "musl"))]
+        let futex_num = libc::SYS_futex_time64;
         let r = unsafe {
             libc::syscall(
-                libc::SYS_futex,
+                futex_num,
                 &self.futex,
                 libc::FUTEX_WAIT | libc::FUTEX_PRIVATE_FLAG,
                 1,
@@ -137,8 +141,13 @@ impl super::UnparkHandleT for UnparkHandle {
     unsafe fn unpark(self) {
         // The thread data may have been freed at this point, but it doesn't
         // matter since the syscall will just return EFAULT in that case.
+        #[cfg(not(all(target_arch = "riscv32", target_env = "musl",)))]
+        let futex_num = libc::SYS_futex;
+        #[cfg(all(target_arch = "riscv32", target_env = "musl",))]
+        let futex_num = libc::SYS_futex_time64;
+
         let r = libc::syscall(
-            libc::SYS_futex,
+            futex_num,
             self.futex,
             libc::FUTEX_WAKE | libc::FUTEX_PRIVATE_FLAG,
             1,
