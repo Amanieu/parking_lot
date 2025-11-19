@@ -886,7 +886,7 @@ mod tests {
 
     #[test]
     fn test_issue_129() {
-        let locks = Arc::new((Mutex::new(()), Condvar::new()));
+        let locks = Arc::new((Mutex::new(0), Condvar::new()));
 
         let (tx, rx) = channel();
         for _ in 0..4 {
@@ -894,6 +894,7 @@ mod tests {
             let tx = tx.clone();
             thread::spawn(move || {
                 let mut guard = locks.0.lock();
+                *guard += 1;
                 locks.1.wait(&mut guard);
                 locks.1.wait_for(&mut guard, Duration::from_millis(1));
                 locks.1.notify_one();
@@ -901,7 +902,9 @@ mod tests {
             });
         }
 
-        thread::sleep(Duration::from_millis(100));
+        while *locks.0.lock() != 4 {
+            thread::sleep(Duration::from_millis(100));
+        }
         locks.1.notify_one();
 
         for _ in 0..4 {
