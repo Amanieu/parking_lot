@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn frob() {
         const N: u32 = 10;
-        const M: u32 = 1000;
+        const M: u32 = if cfg!(miri) { 100 } else { 1000 };
 
         let r = Arc::new(RwLock::new(()));
 

@@ -916,6 +916,7 @@ mod tests {
 /// This module contains an integration test that is heavily inspired from WebKit's own integration
 /// tests for it's own Condvar.
 #[cfg(test)]
+#[cfg(not(miri))] // Miri is too slow
 mod webkit_queue_test {
     use crate::{Condvar, Mutex, MutexGuard};
     use std::{collections::VecDeque, sync::Arc, thread, time::Duration};

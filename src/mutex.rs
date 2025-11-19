@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn lots_and_lots() {
-        const J: u32 = 1000;
+        const J: u32 = if cfg!(miri) { 200 } else { 1000 };
         const K: u32 = 3;
 
         let m = Arc::new(Mutex::new(0));
