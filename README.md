@@ -132,7 +132,7 @@ changes to the core API do not cause breaking changes for users of `parking_lot`
 
 ## Minimum Rust version
 
-The current minimum required Rust version is 1.71, but this may change at any time.
+The current minimum required Rust version is 1.84, but this may change at any time.
 
 ## License
 
