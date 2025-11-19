@@ -66,3 +66,8 @@ jobs:
           cd benchmark
           cargo run --release --bin mutex -- 2 1 0 1 2
           cargo run --release --bin rwlock -- 1 1 1 0 1 2
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - run: bash ci/miri.sh
