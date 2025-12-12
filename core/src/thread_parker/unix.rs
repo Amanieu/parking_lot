@@ -15,12 +15,16 @@ use libc;
 use std::time::Instant;
 use std::{thread, time::Duration};
 
+// AIX: libc::timespec.tv_nsec is a 32-bit c_int in both 32- and 64-bit modes.
+#[cfg(target_os = "aix")]
+#[allow(non_camel_case_types)]
+type tv_nsec_t = libc::c_int;
 // x32 Linux uses a non-standard type for tv_nsec in timespec.
 // See https://sourceware.org/bugzilla/show_bug.cgi?id=16437
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "32"))]
 #[allow(non_camel_case_types)]
 type tv_nsec_t = i64;
-#[cfg(not(all(target_arch = "x86_64", target_pointer_width = "32")))]
+#[cfg(not(any(all(target_arch = "x86_64", target_pointer_width = "32"), target_os = "aix")))]
 #[allow(non_camel_case_types)]
 type tv_nsec_t = libc::c_long;
 
