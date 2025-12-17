@@ -135,7 +135,7 @@ mod tests {
     use std::time::Duration;
 
     #[cfg(feature = "serde")]
-    use bincode::{deserialize, serialize};
+    use postcard::{from_bytes, to_stdvec};
 
     #[derive(Eq, PartialEq, Debug)]
     struct NonCopy(i32);
@@ -590,8 +590,8 @@ mod tests {
         let contents: Vec<u8> = vec![0, 1, 2];
         let mutex = RwLock::new(contents.clone());
 
-        let serialized = serialize(&mutex).unwrap();
-        let deserialized: RwLock<Vec<u8>> = deserialize(&serialized).unwrap();
+        let serialized = to_stdvec(&mutex).unwrap();
+        let deserialized: RwLock<Vec<u8>> = from_bytes(&serialized).unwrap();
 
         assert_eq!(*(mutex.read()), *(deserialized.read()));
         assert_eq!(contents, *(deserialized.read()));

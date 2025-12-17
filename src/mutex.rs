@@ -119,7 +119,7 @@ mod tests {
     use std::thread;
 
     #[cfg(feature = "serde")]
-    use bincode::{deserialize, serialize};
+    use postcard::{from_bytes, to_stdvec};
 
     struct Packet<T>(Arc<(Mutex<T>, Condvar)>);
 
@@ -304,8 +304,8 @@ mod tests {
         let contents: Vec<u8> = vec![0, 1, 2];
         let mutex = Mutex::new(contents.clone());
 
-        let serialized = serialize(&mutex).unwrap();
-        let deserialized: Mutex<Vec<u8>> = deserialize(&serialized).unwrap();
+        let serialized = to_stdvec(&mutex).unwrap();
+        let deserialized: Mutex<Vec<u8>> = from_bytes(&serialized).unwrap();
 
         assert_eq!(*(mutex.lock()), *(deserialized.lock()));
         assert_eq!(contents, *(deserialized.lock()));

@@ -108,7 +108,7 @@ mod tests {
     use std::thread;
 
     #[cfg(feature = "serde")]
-    use bincode::{deserialize, serialize};
+    use postcard::{from_bytes, to_stdvec};
 
     #[derive(Eq, PartialEq, Debug)]
     struct NonCopy(i32);
@@ -265,8 +265,8 @@ mod tests {
         let contents: Vec<u8> = vec![0, 1, 2];
         let mutex = FairMutex::new(contents.clone());
 
-        let serialized = serialize(&mutex).unwrap();
-        let deserialized: FairMutex<Vec<u8>> = deserialize(&serialized).unwrap();
+        let serialized = to_stdvec(&mutex).unwrap();
+        let deserialized: FairMutex<Vec<u8>> = from_bytes(&serialized).unwrap();
 
         assert_eq!(*(mutex.lock()), *(deserialized.lock()));
         assert_eq!(contents, *(deserialized.lock()));
