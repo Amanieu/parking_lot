@@ -378,10 +378,13 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ///
     /// # Safety
     ///
-    /// This method is unsafe because it allows unlocking a mutex while
-    /// still holding a reference to a `ReentrantMutexGuard`.
+    /// If the returned mutex is manually unlocked via [`RawMutex::unlock`], it
+    /// is your responsibility to avoid double unlocks and data races with alive
+    /// `ReentrantMutexGuard`s. For example, it is sufficient to ensure that the
+    /// current thread logically owns a `ReentrantMutexGuard`, but that guard
+    /// has been discarded using `mem::forget`.
     #[inline]
-    pub unsafe fn raw(&self) -> &R {
+    pub fn raw(&self) -> &R {
         &self.raw.mutex
     }
 

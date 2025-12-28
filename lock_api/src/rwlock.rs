@@ -577,9 +577,13 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     ///
     /// # Safety
     ///
-    /// This method is unsafe because it allows unlocking a mutex while
-    /// still holding a reference to a lock guard.
-    pub unsafe fn raw(&self) -> &R {
+    /// If the returned mutex is manually unlocked via
+    /// [`RawRwLock::unlock_shared`] or [`RawRwLock::unlock_exclusive`], it is
+    /// your responsibility to avoid double unlocks and data races with alive
+    /// lock guards. For example, it is sufficient to ensure that the current
+    /// thread logically owns a guard of the type corresponding to the unlock
+    /// method, but that guard has been discarded using `mem::forget`.
+    pub fn raw(&self) -> &R {
         &self.raw
     }
 

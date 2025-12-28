@@ -273,10 +273,13 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     ///
     /// # Safety
     ///
-    /// This method is unsafe because it allows unlocking a mutex while
-    /// still holding a reference to a `MutexGuard`.
+    /// If the returned mutex is manually unlocked via [`RawMutex::unlock`], it
+    /// is your responsibility to avoid double unlocks and data races with alive
+    /// `MutexGuard`s. For example, it is sufficient to ensure that the current
+    /// thread logically owns a `MutexGuard`, but that guard has been discarded
+    /// using `mem::forget`.
     #[inline]
-    pub unsafe fn raw(&self) -> &R {
+    pub fn raw(&self) -> &R {
         &self.raw
     }
 
