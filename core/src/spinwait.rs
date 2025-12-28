@@ -38,8 +38,8 @@ impl SpinWait {
 
     /// Spins until the sleep threshold has been reached.
     ///
-    /// This function returns whether the sleep threshold has been reached, at
-    /// which point further spinning has diminishing returns and the thread
+    /// This function returns `false` if the sleep threshold has been reached,
+    /// at which point further spinning has diminishing returns and the thread
     /// should be parked instead.
     ///
     /// The spin strategy will initially use a CPU-bound loop but will fall back
