@@ -1,6 +1,6 @@
 [package]
 name = "parking_lot"
-version = "0.12.5"
+version = "0.12.6"
 authors = ["Amanieu d'Antras <amanieu@gmail.com>"]
 description = "More compact and efficient implementations of the standard synchronization primitives."
 license = "MIT OR Apache-2.0"
@@ -19,7 +19,7 @@ rustdoc-args = ["--generate-link-to-definition"]
 features = ["arc_lock", "serde", "deadlock_detection"]
 
 [dependencies]
-parking_lot_core = { path = "core", version = "0.9.12" }
+parking_lot_core = { path = "core", version = "0.9.13" }
 lock_api = { path = "lock_api", version = "0.4.14" }
 
 [dev-dependencies]
