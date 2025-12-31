@@ -538,6 +538,7 @@ impl RawRwLock {
     #[cold]
     fn try_lock_shared_slow(&self, recursive: bool) -> bool {
         let mut state = self.state.load(Ordering::Relaxed);
+        let mut spinwait_shared = SpinWait::new();
         loop {
             // This mirrors the condition in try_lock_shared_fast
             #[allow(clippy::collapsible_if)]
@@ -547,23 +548,35 @@ impl RawRwLock {
                 }
             }
             if have_elision() && state == 0 {
-                match self.state.elision_compare_exchange_acquire(0, ONE_READER) {
-                    Ok(_) => return true,
-                    Err(x) => state = x,
+                if self
+                    .state
+                    .elision_compare_exchange_acquire(0, ONE_READER)
+                    .is_ok()
+                {
+                    return true;
                 }
             } else {
-                match self.state.compare_exchange_weak(
-                    state,
-                    state
-                        .checked_add(ONE_READER)
-                        .expect("RwLock reader count overflow"),
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => return true,
-                    Err(x) => state = x,
+                if self
+                    .state
+                    .compare_exchange_weak(
+                        state,
+                        state
+                            .checked_add(ONE_READER)
+                            .expect("RwLock reader count overflow"),
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    return true;
                 }
             }
+
+            // If there is high contention on the reader count then we want
+            // to leave some time between attempts to acquire the lock to
+            // let other threads make progress.
+            spinwait_shared.spin_no_yield();
+            state = self.state.load(Ordering::Relaxed);
         }
     }
 
