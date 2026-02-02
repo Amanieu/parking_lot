@@ -65,3 +65,5 @@ pub use self::parking_lot::{
 };
 pub use self::parking_lot::{DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 pub use self::spinwait::SpinWait;
+#[cfg(unix)]
+pub use self::parking_lot::reinit_after_fork;

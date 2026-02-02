@@ -28,6 +28,10 @@ redox_syscall = "0.5"
 [target.'cfg(windows)'.dependencies]
 windows-link = "0.2.0"
 
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2.95"
+
 [features]
 nightly = []
 deadlock_detection = ["petgraph", "backtrace"]
+fork = []

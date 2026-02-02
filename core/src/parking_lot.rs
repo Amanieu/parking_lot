@@ -243,7 +243,11 @@ fn create_hashtable() -> &'static HashTable {
         Ordering::AcqRel,
         Ordering::Acquire,
     ) {
-        Ok(_) => new_table,
+        Ok(_) => {
+            #[cfg(all(unix, feature = "fork"))]
+            register_atfork();
+            new_table
+        }
         Err(old_table) => {
             // Free the table we created
             // SAFETY: `new_table` is created from `Box::into_raw` above and only freed here.
@@ -1696,5 +1700,36 @@ mod tests {
         fn semaphore_addr(&self) -> usize {
             &self.semaphore as *const _ as usize
         }
+    }
+}
+
+/// Reset the global parking lot state after `fork()`.
+///
+/// After `fork()`, the child process inherits the parent's hash table which
+/// contains stale pointers to [`ThreadData`] from threads that no longer exist
+/// in the child. Any attempt to [`park`] on a contended lock will dereference
+/// these stale pointers, causing a segfault.
+///
+/// This function resets [`HASHTABLE`] to null and [`NUM_THREADS`] to 0, so the
+/// next `park`/`unpark` call will lazily allocate a fresh, clean hash table.
+///
+/// When the `fork` feature is enabled, a `pthread_atfork(3)` handler that
+/// calls this function is automatically registered when the hash table is
+/// first created, so most users do not need to call this manually.
+#[cfg(unix)]
+pub fn reinit_after_fork() {
+    HASHTABLE.store(ptr::null_mut(), Ordering::Relaxed);
+    NUM_THREADS.store(0, Ordering::Relaxed);
+}
+
+#[cfg(all(unix, feature = "fork"))]
+fn register_atfork() {
+    unsafe extern "C" fn child_after_fork() {
+        reinit_after_fork();
+    }
+    // SAFETY: `child_after_fork` only resets two atomic globals to their
+    // initial values, which is safe in the single-threaded child after fork.
+    unsafe {
+        libc::pthread_atfork(None, None, Some(child_after_fork));
     }
 }
