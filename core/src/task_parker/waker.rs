@@ -126,11 +126,12 @@ static ROOSTER: LazyLock<(Sender<Sleeper>, Thread)> = LazyLock::new(|| {
     let (tx, rx) = channel();
     (tx, std::thread::spawn(|| rooster(rx)).thread().clone())
 });
-fn rooster(rx: Receiver<Sleeper>) -> ! {
+fn rooster(rx: Receiver<Sleeper>) {
     let mut heap = BinaryHeap::new();
-    loop {
+    while let Some(sleeper) = {
         heap.extend(rx.try_iter());
-        let sleeper = heap.pop().unwrap_or_else(|| rx.recv().unwrap());
+        heap.pop().or_else(|| rx.recv().ok())
+    } {
         match sleeper.until.saturating_duration_since(Instant::now()) {
             Duration::ZERO => sleeper.waker.wake(),
             dur => {
