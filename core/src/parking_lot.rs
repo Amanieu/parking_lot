@@ -8,6 +8,8 @@
 use crate::task_parker::{TaskParker, TaskParkerT};
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::util::UncheckedOptionExt;
+#[cfg(feature = "async")]
+use crate::util::{immediate, Immediate, ImmediateFuture};
 use crate::word_lock::WordLock;
 use core::{
     cell::{Cell, UnsafeCell},
@@ -16,7 +18,7 @@ use core::{
 };
 use smallvec::SmallVec;
 #[cfg(feature = "async")]
-use std::future::Future;
+use std::future::{poll_fn, Future};
 #[cfg(feature = "async")]
 use std::task::Context;
 use std::time::{Duration, Instant};
@@ -248,22 +250,24 @@ impl ParkData {
         }
     }
     #[cfg(feature = "async")]
-    fn task(cx: &mut Context<'_>) -> ParkData {
-        // Keep track of the total number of live ThreadData objects and resize
-        // the hash table accordingly.
-        let num_threads = NUM_THREADS.fetch_add(1, Ordering::Relaxed) + 1;
-        grow_hashtable(num_threads);
+    fn task() -> Immediate<fn(&mut Context<'_>) -> ParkData> {
+        immediate(|cx| {
+            // Keep track of the total number of live ThreadData objects and resize
+            // the hash table accordingly.
+            let num_threads = NUM_THREADS.fetch_add(1, Ordering::Relaxed) + 1;
+            grow_hashtable(num_threads);
 
-        ParkData {
-            parker: TaskParker::new(cx).into(),
-            key: AtomicUsize::new(0),
-            next_in_queue: Cell::new(ptr::null()),
-            unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
-            park_token: Cell::new(DEFAULT_PARK_TOKEN),
-            parked_with_timeout: Cell::new(false),
-            #[cfg(feature = "deadlock_detection")]
-            deadlock_data: deadlock::DeadlockData::new(),
-        }
+            ParkData {
+                parker: TaskParker::new(cx).into(),
+                key: AtomicUsize::new(0),
+                next_in_queue: Cell::new(ptr::null()),
+                unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
+                park_token: Cell::new(DEFAULT_PARK_TOKEN),
+                parked_with_timeout: Cell::new(false),
+                #[cfg(feature = "deadlock_detection")]
+                deadlock_data: deadlock::DeadlockData::new(),
+            }
+        })
     }
 }
 
@@ -815,15 +819,14 @@ pub unsafe fn park(
 #[inline]
 pub async unsafe fn park_task(
     key: usize,
-    validate: impl FnOnce() -> bool,
+    validate: impl ImmediateFuture<Output = bool>,
     before_sleep: impl Future<Output = ()>,
-    timed_out: impl FnOnce(usize, bool),
+    timed_out: impl ImmediateFuture<Output: FnOnce(usize, bool)>,
     park_token: ParkToken,
     timeout: Option<Instant>,
 ) -> ParkResult {
     // Grab our task data, this also ensures that the hash table exists
-    use std::{future::poll_fn, task::Poll};
-    let task_data = &poll_fn(|cx| Poll::Ready(ParkData::task(cx))).await;
+    let task_data = &ParkData::task().await;
     let Parker::Task(task_parker) = &task_data.parker else {
         crate::util::unreachable();
     };
@@ -831,7 +834,7 @@ pub async unsafe fn park_task(
     let bucket = lock_bucket(key);
 
     // If the validation function fails, just return
-    if !validate() {
+    if !validate.await {
         // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
         return ParkResult::Invalid;
@@ -842,7 +845,7 @@ pub async unsafe fn park_task(
     task_data.next_in_queue.set(ptr::null());
     task_data.key.store(key, Ordering::Relaxed);
     task_data.park_token.set(park_token);
-    poll_fn(|cx| Poll::Ready(task_parker.prepare_park(cx))).await;
+    immediate(|cx| task_parker.prepare_park(cx)).await;
     if !bucket.queue_head.get().is_null() {
         (*bucket.queue_tail.get()).next_in_queue.set(task_data);
     } else {
@@ -879,7 +882,7 @@ pub async unsafe fn park_task(
 
     // Now we need to check again if we were unparked or timed out. Unlike the
     // last check this is precise because we hold the bucket lock.
-    if !poll_fn(|cx| Poll::Ready(task_parker.timed_out(cx))).await {
+    if !immediate(|cx| task_parker.timed_out(cx)).await {
         // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
         return ParkResult::Unparked(task_data.unpark_token.get());
@@ -911,7 +914,7 @@ pub async unsafe fn park_task(
 
             // Callback to indicate that we timed out, and whether we were the
             // last entry on the queue.
-            timed_out(key, was_last_thread);
+            timed_out.await(key, was_last_thread);
             break;
         } else {
             if (*current).key.load(Ordering::Relaxed) == key {

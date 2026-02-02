@@ -9,6 +9,7 @@
 //! parking facilities available.
 
 use crate::thread_parker::UnparkHandleT;
+use crate::util::{current_waker, ImmediateFuture};
 use core::sync::atomic::{AtomicBool, Ordering};
 use std::collections::BinaryHeap;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -30,7 +31,7 @@ impl super::TaskParkerT for TaskParker {
     fn new(cx: &mut Context<'_>) -> TaskParker {
         TaskParker {
             parked: AtomicBool::new(false),
-            waker: cx.waker().clone(),
+            waker: current_waker().poll_ready(cx),
         }
     }
 
