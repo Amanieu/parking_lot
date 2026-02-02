@@ -4,6 +4,8 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
+#[cfg(feature = "async")]
+use crate::task_parker::{TaskParker, TaskParkerT};
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::util::UncheckedOptionExt;
 use crate::word_lock::WordLock;
@@ -92,8 +94,8 @@ struct Bucket {
     mutex: WordLock,
 
     // Linked list of threads waiting on this bucket
-    queue_head: Cell<*const ThreadData>,
-    queue_tail: Cell<*const ThreadData>,
+    queue_head: Cell<*const ParkData>,
+    queue_tail: Cell<*const ParkData>,
 
     // Next time at which point be_fair should be set
     fair_timeout: UnsafeCell<FairTimeout>,
@@ -148,15 +150,66 @@ impl FairTimeout {
     }
 }
 
-struct ThreadData {
-    parker: ThreadParker,
+enum Parker {
+    Thread(ThreadParker),
+    #[cfg(feature = "async")]
+    Task(TaskParker),
+}
+
+impl From<ThreadParker> for Parker {
+    fn from(v: ThreadParker) -> Self {
+        Self::Thread(v)
+    }
+}
+#[cfg(feature = "async")]
+impl From<TaskParker> for Parker {
+    fn from(v: TaskParker) -> Self {
+        Self::Task(v)
+    }
+}
+impl Parker {
+    unsafe fn unpark_lock(&self) -> UnparkHandle {
+        match self {
+            Parker::Thread(thread_parker) => thread_parker.unpark_lock().into(),
+            Parker::Task(task_parker) => task_parker.unpark_lock().into(),
+        }
+    }
+}
+enum UnparkHandle {
+    Thread(<ThreadParker as ThreadParkerT>::UnparkHandle),
+    #[cfg(feature = "async")]
+    Task(<TaskParker as TaskParkerT>::UnparkHandle),
+}
+
+impl From<<ThreadParker as ThreadParkerT>::UnparkHandle> for UnparkHandle {
+    fn from(v: <ThreadParker as ThreadParkerT>::UnparkHandle) -> Self {
+        Self::Thread(v)
+    }
+}
+#[cfg(feature = "async")]
+impl From<<TaskParker as TaskParkerT>::UnparkHandle> for UnparkHandle {
+    fn from(v: <TaskParker as TaskParkerT>::UnparkHandle) -> Self {
+        Self::Task(v)
+    }
+}
+impl UnparkHandle {
+    unsafe fn unpark(self) {
+        match self {
+            UnparkHandle::Thread(handle) => handle.unpark(),
+            UnparkHandle::Task(handle) => handle.unpark(),
+        }
+    }
+}
+
+struct ParkData {
+    parker: Parker,
 
     // Key that this thread is sleeping on. This may change if the thread is
     // requeued to a different key.
     key: AtomicUsize,
 
     // Linked list of parked threads in a bucket
-    next_in_queue: Cell<*const ThreadData>,
+    next_in_queue: Cell<*const ParkData>,
 
     // UnparkToken passed to this thread when it is unparked
     unpark_token: Cell<UnparkToken>,
@@ -172,15 +225,15 @@ struct ThreadData {
     deadlock_data: deadlock::DeadlockData,
 }
 
-impl ThreadData {
-    fn new() -> ThreadData {
+impl ParkData {
+    fn thread() -> ParkData {
         // Keep track of the total number of live ThreadData objects and resize
         // the hash table accordingly.
         let num_threads = NUM_THREADS.fetch_add(1, Ordering::Relaxed) + 1;
         grow_hashtable(num_threads);
 
-        ThreadData {
-            parker: ThreadParker::new(),
+        ParkData {
+            parker: ThreadParker::new().into(),
             key: AtomicUsize::new(0),
             next_in_queue: Cell::new(ptr::null()),
             unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
@@ -194,20 +247,23 @@ impl ThreadData {
 
 // Invokes the given closure with a reference to the current thread `ThreadData`.
 #[inline(always)]
-fn with_thread_data<T>(f: impl FnOnce(&ThreadData) -> T) -> T {
+fn with_thread_data<T>(f: impl FnOnce(&ParkData, &ThreadParker) -> T) -> T {
     // Unlike word_lock::ThreadData, parking_lot::ThreadData is always expensive
     // to construct. Try to use a thread-local version if possible. Otherwise just
     // create a ThreadData on the stack
     let mut thread_data_storage = None;
-    thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
+    thread_local!(static THREAD_DATA: ParkData = ParkData::thread());
     let thread_data_ptr = THREAD_DATA
-        .try_with(|x| x as *const ThreadData)
-        .unwrap_or_else(|_| thread_data_storage.get_or_insert_with(ThreadData::new));
-
-    f(unsafe { &*thread_data_ptr })
+        .try_with(|x| x as *const ParkData)
+        .unwrap_or_else(|_| thread_data_storage.get_or_insert_with(ParkData::thread));
+    let park_data = unsafe { &*thread_data_ptr };
+    let Parker::Thread(thread_parker) = &park_data.parker else {
+        unreachable!()
+    };
+    f(park_data, thread_parker)
 }
 
-impl Drop for ThreadData {
+impl Drop for ParkData {
     fn drop(&mut self) {
         NUM_THREADS.fetch_sub(1, Ordering::Relaxed);
     }
@@ -323,7 +379,7 @@ fn grow_hashtable(num_threads: usize) {
 ///
 /// The given `table` must only contain buckets with correctly constructed linked lists.
 unsafe fn rehash_bucket_into(bucket: &'static Bucket, table: &mut HashTable) {
-    let mut current: *const ThreadData = bucket.queue_head.get();
+    let mut current: *const ParkData = bucket.queue_head.get();
     while !current.is_null() {
         let next = (*current).next_in_queue.get();
         let hash = hash((*current).key.load(Ordering::Relaxed), table.hash_bits);
@@ -597,7 +653,7 @@ pub unsafe fn park(
     timeout: Option<Instant>,
 ) -> ParkResult {
     // Grab our thread data, this also ensures that the hash table exists
-    with_thread_data(|thread_data| {
+    with_thread_data(|thread_data, thread_parker| {
         // Lock the bucket for the given key
         let bucket = lock_bucket(key);
 
@@ -613,7 +669,7 @@ pub unsafe fn park(
         thread_data.next_in_queue.set(ptr::null());
         thread_data.key.store(key, Ordering::Relaxed);
         thread_data.park_token.set(park_token);
-        thread_data.parker.prepare_park();
+        thread_parker.prepare_park();
         if !bucket.queue_head.get().is_null() {
             (*bucket.queue_tail.get()).next_in_queue.set(thread_data);
         } else {
@@ -630,9 +686,9 @@ pub unsafe fn park(
         // or by our timeout. Note that this isn't precise: we can still be
         // unparked since we are still in the queue.
         let unparked = match timeout {
-            Some(timeout) => thread_data.parker.park_until(timeout),
+            Some(timeout) => thread_parker.park_until(timeout),
             None => {
-                thread_data.parker.park();
+                thread_parker.park();
                 // call deadlock detection on_unpark hook
                 deadlock::on_unpark(thread_data);
                 true
@@ -650,7 +706,7 @@ pub unsafe fn park(
 
         // Now we need to check again if we were unparked or timed out. Unlike the
         // last check this is precise because we hold the bucket lock.
-        if !thread_data.parker.timed_out() {
+        if !thread_parker.timed_out() {
             // SAFETY: We hold the lock here, as required
             bucket.mutex.unlock();
             return ParkResult::Unparked(thread_data.unpark_token.get());
@@ -907,8 +963,8 @@ pub unsafe fn unpark_requeue(
     let mut link = &bucket_from.queue_head;
     let mut current = bucket_from.queue_head.get();
     let mut previous = ptr::null();
-    let mut requeue_threads: *const ThreadData = ptr::null();
-    let mut requeue_threads_tail: *const ThreadData = ptr::null();
+    let mut requeue_threads: *const ParkData = ptr::null();
+    let mut requeue_threads_tail: *const ParkData = ptr::null();
     let mut wakeup_thread = None;
     while !current.is_null() {
         if (*current).key.load(Ordering::Relaxed) == key_from {
@@ -1139,7 +1195,7 @@ pub mod deadlock {
     }
 
     #[inline]
-    pub(super) unsafe fn on_unpark(_td: &super::ThreadData) {
+    pub(super) unsafe fn on_unpark(_td: &super::ParkData) {
         #[cfg(feature = "deadlock_detection")]
         deadlock_impl::on_unpark(_td);
     }
@@ -1202,7 +1258,7 @@ mod deadlock_impl {
         }
     }
 
-    pub(super) unsafe fn on_unpark(td: &ThreadData) {
+    pub(super) unsafe fn on_unpark(td: &ParkData) {
         if td.deadlock_data.deadlocked.get() {
             let sender = (*td.deadlock_data.backtrace_sender.get()).take().unwrap();
             sender
@@ -1286,7 +1342,7 @@ mod deadlock_impl {
 
     #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
     enum WaitGraphNode {
-        Thread(*const ThreadData),
+        Thread(*const ParkData),
         Resource(usize),
     }
 
@@ -1398,7 +1454,7 @@ mod deadlock_impl {
     }
 
     // returns all thread cycles in the wait graph
-    fn graph_cycles(g: &DiGraphMap<WaitGraphNode, ()>) -> Vec<Vec<*const ThreadData>> {
+    fn graph_cycles(g: &DiGraphMap<WaitGraphNode, ()>) -> Vec<Vec<*const ParkData>> {
         use petgraph::visit::depth_first_search;
         use petgraph::visit::DfsEvent;
         use petgraph::visit::NodeIndexable;
@@ -1428,7 +1484,7 @@ mod deadlock_impl {
 
 #[cfg(test)]
 mod tests {
-    use super::{ThreadData, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+    use super::{ParkData, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
     use std::{
         ptr,
         sync::{
@@ -1440,10 +1496,10 @@ mod tests {
     };
 
     /// Calls a closure for every `ThreadData` currently parked on a given key
-    fn for_each(key: usize, mut f: impl FnMut(&ThreadData)) {
+    fn for_each(key: usize, mut f: impl FnMut(&ParkData)) {
         let bucket = super::lock_bucket(key);
 
-        let mut current: *const ThreadData = bucket.queue_head.get();
+        let mut current: *const ParkData = bucket.queue_head.get();
         while !current.is_null() {
             let current_ref = unsafe { &*current };
             if current_ref.key.load(Ordering::Relaxed) == key {
@@ -1550,7 +1606,7 @@ mod tests {
         semaphore: AtomicIsize,
         num_awake: AtomicUsize,
         /// Holds the pointer to the last *unprocessed* woken up thread.
-        last_awoken: AtomicPtr<ThreadData>,
+        last_awoken: AtomicPtr<ParkData>,
         /// Total number of threads participating in this test.
         num_threads: usize,
     }
@@ -1571,7 +1627,7 @@ mod tests {
             self.down();
 
             // Report back to the test verification code that this thread woke up
-            let this_thread_ptr = super::with_thread_data(|t| t as *const _ as *mut _);
+            let this_thread_ptr = super::with_thread_data(|t, _p| t as *const _ as *mut _);
             self.last_awoken.store(this_thread_ptr, Ordering::SeqCst);
             self.num_awake.fetch_add(1, Ordering::SeqCst);
         }
@@ -1581,7 +1637,7 @@ mod tests {
             // of this method where it's reset to null again
             assert!(self.last_awoken.load(Ordering::SeqCst).is_null());
 
-            let mut queue: Vec<*mut ThreadData> = Vec::with_capacity(self.num_threads);
+            let mut queue: Vec<*mut ParkData> = Vec::with_capacity(self.num_threads);
             for_each(self.semaphore_addr(), |thread_data| {
                 queue.push(thread_data as *const _ as *mut _);
             });

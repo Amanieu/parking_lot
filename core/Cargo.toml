@@ -29,5 +29,7 @@ redox_syscall = "0.5"
 windows-link = "0.2.0"
 
 [features]
+default = ["async"]
 nightly = []
+async = []
 deadlock_detection = ["petgraph", "backtrace"]

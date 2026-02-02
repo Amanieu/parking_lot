@@ -54,6 +54,8 @@
 
 mod parking_lot;
 mod spinwait;
+#[cfg(feature = "async")]
+mod task_parker;
 mod thread_parker;
 mod util;
 mod word_lock;
