@@ -1,26 +1,23 @@
-#[cfg(feature = "async")]
+use crate::thread_parker::UnparkHandleT;
 use std::{
     task::{Context, Poll},
     time::Instant,
 };
 
-#[cfg(feature = "async")]
 /// Trait for the platform task parker implementation.
 ///
 /// All unsafe methods are unsafe to mirror the [ThreadParkerT] methods.
 pub trait TaskParkerT {
     type UnparkHandle: UnparkHandleT;
 
-    const IS_CHEAP_TO_CONSTRUCT: bool;
-
     fn new(cx: &mut Context<'_>) -> Self;
 
     /// Prepares the parker. This should be called before adding it to the queue.
-    unsafe fn prepare_park(&self);
+    unsafe fn prepare_park(&self, cx: &mut Context<'_>);
 
     /// Checks if the park timed out. This should be called while holding the
     /// queue lock after `park_until` has returned false.
-    unsafe fn timed_out(&self) -> bool;
+    unsafe fn timed_out(&self, cx: &mut Context<'_>) -> bool;
 
     /// Parks the thread until it is unparked. This should be called after it has
     /// been added to the queue, after unlocking the queue.
@@ -36,10 +33,5 @@ pub trait TaskParkerT {
     /// This should be called while holding the queue lock.
     unsafe fn unpark_lock(&self) -> Self::UnparkHandle;
 }
-#[cfg(feature = "async")]
 mod waker;
-#[cfg(feature = "async")]
-pub use waker::{task_yield, TaskParker};
-
-#[cfg(feature = "async")]
-use crate::thread_parker::UnparkHandleT;
+pub use waker::TaskParker;

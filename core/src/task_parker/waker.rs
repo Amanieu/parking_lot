@@ -8,14 +8,10 @@
 //! A simple spin lock based thread parker. Used on platforms without better
 //! parking facilities available.
 
+use crate::thread_parker::UnparkHandleT;
 use core::sync::atomic::{AtomicBool, Ordering};
-use std::future::Future;
-use std::mem::take;
-use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
 use std::time::Instant;
-
-use crate::thread_parker::UnparkHandleT;
 
 // Helper type for putting a thread to sleep until some other thread wakes it up
 pub struct TaskParker {
@@ -26,8 +22,6 @@ pub struct TaskParker {
 impl super::TaskParkerT for TaskParker {
     type UnparkHandle = UnparkHandle;
 
-    const IS_CHEAP_TO_CONSTRUCT: bool = true;
-
     #[inline]
     fn new(cx: &mut Context<'_>) -> TaskParker {
         TaskParker {
@@ -37,12 +31,20 @@ impl super::TaskParkerT for TaskParker {
     }
 
     #[inline]
-    unsafe fn prepare_park(&self) {
+    unsafe fn prepare_park(&self, cx: &mut Context<'_>) {
+        assert!(
+            self.waker.will_wake(cx.waker()),
+            "Called TaskParker::prepare_park with unrelated context."
+        );
         self.parked.store(true, Ordering::Relaxed);
     }
 
     #[inline]
-    unsafe fn timed_out(&self) -> bool {
+    unsafe fn timed_out(&self, cx: &mut Context<'_>) -> bool {
+        assert!(
+            self.waker.will_wake(cx.waker()),
+            "Called TaskParker::timed_out with unrelated context."
+        );
         self.parked.load(Ordering::Relaxed) != false
     }
 
@@ -61,6 +63,7 @@ impl super::TaskParkerT for TaskParker {
 
     #[inline]
     unsafe fn park_until(&self, cx: &mut Context<'_>, timeout: Instant) -> Poll<bool> {
+        // TODO: Schedule wake.
         match self.park(cx) {
             Poll::Ready(()) => Poll::Ready(true),
             Poll::Pending if Instant::now() >= timeout => Poll::Ready(false),
@@ -83,24 +86,4 @@ impl UnparkHandleT for UnparkHandle {
     unsafe fn unpark(self) {
         self.0.wake();
     }
-}
-
-#[derive(Debug)]
-pub struct Yield {
-    once: bool,
-}
-impl Future for Yield {
-    type Output = ();
-    fn poll(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Self::Output> {
-        if take(&mut self.once) {
-            Poll::Pending
-        } else {
-            Poll::Ready(())
-        }
-    }
-}
-
-#[inline]
-pub async fn task_yield() -> Yield {
-    Yield { once: true }
 }

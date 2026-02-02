@@ -61,7 +61,10 @@ mod util;
 mod word_lock;
 
 pub use self::parking_lot::deadlock;
+#[cfg(feature = "async")]
+pub use self::parking_lot::park_task;
 pub use self::parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
+
 pub use self::parking_lot::{
     FilterOp, ParkResult, ParkToken, RequeueOp, UnparkResult, UnparkToken,
 };

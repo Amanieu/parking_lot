@@ -22,7 +22,7 @@ impl<T> UncheckedOptionExt<T> for Option<T> {
 
 // hint::unreachable_unchecked() in release mode
 #[inline]
-unsafe fn unreachable() -> ! {
+pub unsafe fn unreachable() -> ! {
     if cfg!(debug_assertions) {
         unreachable!();
     } else {
