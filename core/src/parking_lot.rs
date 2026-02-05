@@ -808,21 +808,21 @@ pub unsafe fn park(
         ParkResult::TimedOut
     })
 }
-/// Parks the current thread in the queue associated with the given key.
+/// Parks the current task in the queue associated with the given key.
 ///
-/// The `validate` function is called while the queue is locked and can abort
+/// The `validate` future is called while the queue is locked and can abort
 /// the operation by returning false. If `validate` returns true then the
-/// current thread is appended to the queue and the queue is unlocked.
+/// current task is appended to the queue and the queue is unlocked.
 ///
-/// The `before_sleep` function is called after the queue is unlocked but before
-/// the thread is put to sleep. The thread will then sleep until it is unparked
+/// The `before_sleep` future is called after the queue is unlocked but before
+/// the task is put to sleep. The task will then sleep until it is unparked
 /// or the given timeout is reached.
 ///
-/// The `timed_out` function is also called while the queue is locked, but only
+/// The `timed_out` future is also called while the queue is locked, but only
 /// if the timeout was reached. It is passed the key of the queue it was in when
 /// it timed out, which may be different from the original key if
 /// `unpark_requeue` was called. It is also passed a bool which indicates
-/// whether it was the last thread in the queue.
+/// whether it was the last entry in the queue.
 ///
 /// # Safety
 ///
@@ -830,7 +830,7 @@ pub unsafe fn park(
 /// you could otherwise interfere with the operation of other synchronization
 /// primitives.
 ///
-/// The `validate` and `timed_out` functions are called while the queue is
+/// The `validate` and `timed_out` futures are called while the queue is
 /// locked and must not panic or call into any function in `parking_lot`.
 ///
 /// The `before_sleep` future is run outside the queue lock and is allowed
@@ -855,7 +855,9 @@ pub async unsafe fn park_task(
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
-    // If the validation function fails, just return
+    // If the validation function fails, just return.
+    // Awaiting an ImmediateFuture is guaranteed not to stall progress
+    // and therefore fine to do even while the bucket remains locked.
     if !validate.await {
         // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
@@ -864,12 +866,16 @@ pub async unsafe fn park_task(
 
     // Append our task data to the queue and unlock the bucket
     task_data.prepare_insert(key, park_token, &timeout);
+    // Awaiting an ImmediateFuture is guaranteed not to stall progress
+    // and therefore fine to do even while the bucket remains locked.
     immediate(|cx| task_parker.prepare_park(cx)).await;
     bucket_insert_tail(bucket, task_data);
     // SAFETY: We hold the lock here, as required
     bucket.mutex.unlock();
 
     // Invoke the pre-sleep callback
+    // Note that this is the only non-immediate future of the different callbacks.
+    // As such we only invoke it when the bucket is unlocked to not stall progress.
     before_sleep.await;
 
     // Park our task and determine whether we were woken up by an unpark
@@ -896,6 +902,8 @@ pub async unsafe fn park_task(
 
     // Now we need to check again if we were unparked or timed out. Unlike the
     // last check this is precise because we hold the bucket lock.
+    // Awaiting an ImmediateFuture is guaranteed not to stall progress
+    // and therefore fine to do even while the bucket remains locked.
     if !immediate(|cx| task_parker.timed_out(cx)).await {
         // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
@@ -911,6 +919,8 @@ pub async unsafe fn park_task(
 
     // Callback to indicate that we timed out, and whether we were the
     // last entry on the queue.
+    // Awaiting an ImmediateFuture is guaranteed not to stall progress
+    // and therefore fine to do even while the bucket remains locked.
     timed_out.await(key, was_last_entry);
 
     // Unlock the bucket, we are done
