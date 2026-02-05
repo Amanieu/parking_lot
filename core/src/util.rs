@@ -51,39 +51,19 @@ mod immediate {
             Self(Some(value))
         }
     }
-    impl<F> Unpin for Immediate<F> {}
-    impl<T, F: FnOnce(&mut Context<'_>) -> T> Future for Immediate<F> {
+    impl<T, F: Unpin + FnOnce(&mut Context<'_>) -> T> Future for Immediate<F> {
         type Output = T;
         fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
             Poll::Ready(self.0.take().expect("polled twice")(cx))
         }
     }
-    impl<T, F: FnOnce(&mut Context<'_>) -> T> ImmediateFuture for Immediate<F> {
+    impl<T, F: Unpin + FnOnce(&mut Context<'_>) -> T> ImmediateFuture for Immediate<F> {
         fn poll_ready(self, cx: &mut Context<'_>) -> Self::Output {
             self.0.expect("polled twice")(cx)
         }
     }
-    impl<T, U, F: FnOnce(T, &mut Context<'_>) -> U> Future for Immediate<(T, F)> {
-        type Output = U;
-        fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-            let (t, f) = self.0.take().expect("polled twice");
-            Poll::Ready(f(t, cx))
-        }
-    }
-    impl<T, U, F: FnOnce(T, &mut Context<'_>) -> U> ImmediateFuture for Immediate<(T, F)> {
-        fn poll_ready(self, cx: &mut Context<'_>) -> Self::Output {
-            let (t, f) = self.0.expect("polled twice");
-            f(t, cx)
-        }
-    }
     pub fn immediate<T, F: FnOnce(&mut Context<'_>) -> T>(f: F) -> Immediate<F> {
         Immediate::from(f)
-    }
-    pub fn immediate_with<T, U, F: FnOnce(T, &mut Context<'_>) -> U>(
-        t: T,
-        f: F,
-    ) -> Immediate<(T, F)> {
-        Immediate::from((t, f))
     }
     pub fn current_waker() -> Immediate<fn(&mut Context<'_>) -> Waker> {
         immediate(|cx| cx.waker().clone())

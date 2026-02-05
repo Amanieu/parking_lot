@@ -269,6 +269,12 @@ impl ParkData {
             }
         })
     }
+    fn prepare_insert(&self, key: usize, park_token: ParkToken, timeout: &Option<Instant>) {
+        self.parked_with_timeout.set(timeout.is_some());
+        self.next_in_queue.set(ptr::null());
+        self.key.store(key, Ordering::Relaxed);
+        self.park_token.set(park_token);
+    }
 }
 
 // Invokes the given closure with a reference to the current thread `ThreadData`.
@@ -536,6 +542,61 @@ fn lock_bucket_pair(key1: usize, key2: usize) -> (&'static Bucket, &'static Buck
     }
 }
 
+/// Inserts onto the tail of the bucket
+///
+/// # Safety
+///
+/// Bucket must be locked and value must remain alive until removed.
+#[inline]
+unsafe fn bucket_insert_tail(bucket: &Bucket, park_data: &ParkData) {
+    if bucket.queue_head.get().is_null() {
+        bucket.queue_head.set(park_data);
+    } else {
+        (*bucket.queue_tail.get()).next_in_queue.set(park_data);
+    }
+    bucket.queue_tail.set(park_data);
+}
+
+unsafe fn bucket_find_remove(
+    key: usize,
+    bucket: &Bucket,
+    park_data: &ParkData,
+) -> (*const ParkData, bool) {
+    let mut link = &bucket.queue_head;
+    let mut current = bucket.queue_head.get();
+    let mut previous = ptr::null();
+    let mut was_last_thread = true;
+    while !current.is_null() {
+        if current == park_data {
+            let next = (*current).next_in_queue.get();
+            link.set(next);
+            if bucket.queue_tail.get() == current {
+                bucket.queue_tail.set(previous);
+            } else {
+                // Scan the rest of the queue to see if there are any other
+                // entries with the given key.
+                let mut scan = next;
+                while !scan.is_null() {
+                    if (*scan).key.load(Ordering::Relaxed) == key {
+                        was_last_thread = false;
+                        break;
+                    }
+                    scan = (*scan).next_in_queue.get();
+                }
+            }
+            break;
+        } else {
+            if (*current).key.load(Ordering::Relaxed) == key {
+                was_last_thread = false;
+            }
+            link = &(*current).next_in_queue;
+            previous = current;
+            current = link.get();
+        }
+    }
+    (current, was_last_thread)
+}
+
 /// Unlock a pair of buckets
 ///
 /// # Safety
@@ -692,17 +753,9 @@ pub unsafe fn park(
         }
 
         // Append our thread data to the queue and unlock the bucket
-        thread_data.parked_with_timeout.set(timeout.is_some());
-        thread_data.next_in_queue.set(ptr::null());
-        thread_data.key.store(key, Ordering::Relaxed);
-        thread_data.park_token.set(park_token);
+        thread_data.prepare_insert(key, park_token, &timeout);
         thread_parker.prepare_park();
-        if !bucket.queue_head.get().is_null() {
-            (*bucket.queue_tail.get()).next_in_queue.set(thread_data);
-        } else {
-            bucket.queue_head.set(thread_data);
-        }
-        bucket.queue_tail.set(thread_data);
+        bucket_insert_tail(bucket, thread_data);
         // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
 
@@ -739,47 +792,15 @@ pub unsafe fn park(
             return ParkResult::Unparked(thread_data.unpark_token.get());
         }
 
-        // We timed out, so we now need to remove our thread from the queue
-        let mut link = &bucket.queue_head;
-        let mut current = bucket.queue_head.get();
-        let mut previous = ptr::null();
-        let mut was_last_thread = true;
-        while !current.is_null() {
-            if current == thread_data {
-                let next = (*current).next_in_queue.get();
-                link.set(next);
-                if bucket.queue_tail.get() == current {
-                    bucket.queue_tail.set(previous);
-                } else {
-                    // Scan the rest of the queue to see if there are any other
-                    // entries with the given key.
-                    let mut scan = next;
-                    while !scan.is_null() {
-                        if (*scan).key.load(Ordering::Relaxed) == key {
-                            was_last_thread = false;
-                            break;
-                        }
-                        scan = (*scan).next_in_queue.get();
-                    }
-                }
-
-                // Callback to indicate that we timed out, and whether we were the
-                // last thread on the queue.
-                timed_out(key, was_last_thread);
-                break;
-            } else {
-                if (*current).key.load(Ordering::Relaxed) == key {
-                    was_last_thread = false;
-                }
-                link = &(*current).next_in_queue;
-                previous = current;
-                current = link.get();
-            }
-        }
+        let (removed, was_last_entry) = bucket_find_remove(key, bucket, thread_data);
 
         // There should be no way for our thread to have been removed from the queue
         // if we timed out.
-        debug_assert!(!current.is_null());
+        debug_assert!(ptr::eq(removed, thread_data));
+
+        // Callback to indicate that we timed out, and whether we were the
+        // last thread on the queue.
+        timed_out(key, was_last_entry);
 
         // Unlock the bucket, we are done
         // SAFETY: We hold the lock here, as required
@@ -828,6 +849,7 @@ pub async unsafe fn park_task(
     // Grab our task data, this also ensures that the hash table exists
     let task_data = &ParkData::task().await;
     let Parker::Task(task_parker) = &task_data.parker else {
+        // SAFETY: Constructed with `ParkData::task`.
         crate::util::unreachable();
     };
     // Lock the bucket for the given key
@@ -841,17 +863,9 @@ pub async unsafe fn park_task(
     }
 
     // Append our task data to the queue and unlock the bucket
-    task_data.parked_with_timeout.set(timeout.is_some());
-    task_data.next_in_queue.set(ptr::null());
-    task_data.key.store(key, Ordering::Relaxed);
-    task_data.park_token.set(park_token);
+    task_data.prepare_insert(key, park_token, &timeout);
     immediate(|cx| task_parker.prepare_park(cx)).await;
-    if !bucket.queue_head.get().is_null() {
-        (*bucket.queue_tail.get()).next_in_queue.set(task_data);
-    } else {
-        bucket.queue_head.set(task_data);
-    }
-    bucket.queue_tail.set(task_data);
+    bucket_insert_tail(bucket, task_data);
     // SAFETY: We hold the lock here, as required
     bucket.mutex.unlock();
 
@@ -889,46 +903,15 @@ pub async unsafe fn park_task(
     }
 
     // We timed out, so we now need to remove our task from the queue
-    let mut link = &bucket.queue_head;
-    let mut current = bucket.queue_head.get();
-    let mut previous = ptr::null();
-    let mut was_last_thread = true;
-    while !current.is_null() {
-        if current == task_data {
-            let next = (*current).next_in_queue.get();
-            link.set(next);
-            if bucket.queue_tail.get() == current {
-                bucket.queue_tail.set(previous);
-            } else {
-                // Scan the rest of the queue to see if there are any other
-                // entries with the given key.
-                let mut scan = next;
-                while !scan.is_null() {
-                    if (*scan).key.load(Ordering::Relaxed) == key {
-                        was_last_thread = false;
-                        break;
-                    }
-                    scan = (*scan).next_in_queue.get();
-                }
-            }
-
-            // Callback to indicate that we timed out, and whether we were the
-            // last entry on the queue.
-            timed_out.await(key, was_last_thread);
-            break;
-        } else {
-            if (*current).key.load(Ordering::Relaxed) == key {
-                was_last_thread = false;
-            }
-            link = &(*current).next_in_queue;
-            previous = current;
-            current = link.get();
-        }
-    }
+    let (removed, was_last_entry) = bucket_find_remove(key, bucket, task_data);
 
     // There should be no way for our task to have been removed from the queue
     // if we timed out.
-    debug_assert!(!current.is_null());
+    debug_assert!(ptr::eq(removed, task_data));
+
+    // Callback to indicate that we timed out, and whether we were the
+    // last entry on the queue.
+    timed_out.await(key, was_last_entry);
 
     // Unlock the bucket, we are done
     // SAFETY: We hold the lock here, as required

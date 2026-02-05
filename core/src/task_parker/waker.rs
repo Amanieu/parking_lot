@@ -5,8 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-//! A simple spin lock based thread parker. Used on platforms without better
-//! parking facilities available.
+//! A simple Waker based task parker.
 
 use crate::thread_parker::UnparkHandleT;
 use crate::util::{current_waker, ImmediateFuture};
@@ -15,12 +14,13 @@ use std::collections::BinaryHeap;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::LazyLock;
 use std::task::{Context, Poll, Waker};
-use std::thread::Thread;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-// Helper type for putting a thread to sleep until some other thread wakes it up
+// Helper type for putting a task to sleep until some other thread/task wakes it up
 pub struct TaskParker {
     parked: AtomicBool,
+    wake_scheduled: AtomicBool,
     waker: Waker,
 }
 
@@ -31,31 +31,33 @@ impl super::TaskParkerT for TaskParker {
     fn new(cx: &mut Context<'_>) -> TaskParker {
         TaskParker {
             parked: AtomicBool::new(false),
+            wake_scheduled: AtomicBool::new(true),
             waker: current_waker().poll_ready(cx),
         }
     }
 
     #[inline]
     unsafe fn prepare_park(&self, cx: &mut Context<'_>) {
-        assert!(
+        debug_assert!(
             self.waker.will_wake(cx.waker()),
             "Called TaskParker::prepare_park with unrelated context."
         );
         self.parked.store(true, Ordering::Relaxed);
+        self.wake_scheduled.store(false, Ordering::Relaxed);
     }
 
     #[inline]
     unsafe fn timed_out(&self, cx: &mut Context<'_>) -> bool {
-        assert!(
+        debug_assert!(
             self.waker.will_wake(cx.waker()),
             "Called TaskParker::timed_out with unrelated context."
         );
-        self.parked.load(Ordering::Relaxed) != false
+        self.parked.load(Ordering::Relaxed)
     }
 
     #[inline]
     unsafe fn park(&self, cx: &mut Context<'_>) -> Poll<()> {
-        assert!(
+        debug_assert!(
             self.waker.will_wake(cx.waker()),
             "Called TaskParker::park with unrelated context."
         );
@@ -68,11 +70,22 @@ impl super::TaskParkerT for TaskParker {
 
     #[inline]
     unsafe fn park_until(&self, cx: &mut Context<'_>, timeout: Instant) -> Poll<bool> {
+        debug_assert!(
+            self.waker.will_wake(cx.waker()),
+            "Called TaskParker::park_until with unrelated context."
+        );
         match self.park(cx) {
             Poll::Ready(()) => Poll::Ready(true),
             Poll::Pending if Instant::now() >= timeout => Poll::Ready(false),
             Poll::Pending => {
-                schedule_wake(timeout, self.waker.clone());
+                if !self.wake_scheduled.swap(true, Ordering::Acquire) {
+                    schedule_wake(timeout, self.waker.clone());
+                } else {
+                    debug_assert!(
+                        false,
+                        "TaskParker::park_until was called again prematurely."
+                    );
+                }
                 Poll::Pending
             }
         }
@@ -82,6 +95,7 @@ impl super::TaskParkerT for TaskParker {
     unsafe fn unpark_lock(&self) -> UnparkHandle {
         // We don't need to lock anything, just clear the state
         self.parked.store(false, Ordering::Release);
+        self.wake_scheduled.store(true, Ordering::Release);
         UnparkHandle(self.waker.clone())
     }
 }
@@ -101,7 +115,7 @@ fn schedule_wake(instant: Instant, waker: Waker) {
         waker,
     })
     .unwrap();
-    rooster.unpark();
+    rooster.thread().unpark();
 }
 struct Sleeper {
     until: Instant,
@@ -123,9 +137,9 @@ impl Ord for Sleeper {
         other.until.cmp(&self.until)
     }
 }
-static ROOSTER: LazyLock<(Sender<Sleeper>, Thread)> = LazyLock::new(|| {
+static ROOSTER: LazyLock<(Sender<Sleeper>, JoinHandle<()>)> = LazyLock::new(|| {
     let (tx, rx) = channel();
-    (tx, std::thread::spawn(|| rooster(rx)).thread().clone())
+    (tx, std::thread::spawn(|| rooster(rx)))
 });
 fn rooster(rx: Receiver<Sleeper>) {
     let mut heap = BinaryHeap::new();
