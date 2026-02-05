@@ -177,6 +177,7 @@ impl Parker {
     unsafe fn unpark_lock(&self) -> UnparkHandle {
         match self {
             Parker::Thread(thread_parker) => thread_parker.unpark_lock().into(),
+            #[cfg(feature = "async")]
             Parker::Task(task_parker) => task_parker.unpark_lock().into(),
         }
     }
@@ -202,6 +203,7 @@ impl UnparkHandle {
     unsafe fn unpark(self) {
         match self {
             UnparkHandle::Thread(handle) => handle.unpark(),
+            #[cfg(feature = "async")]
             UnparkHandle::Task(handle) => handle.unpark(),
         }
     }
@@ -289,7 +291,12 @@ fn with_thread_data<T>(f: impl FnOnce(&ParkData, &ThreadParker) -> T) -> T {
         .try_with(|x| x as *const ParkData)
         .unwrap_or_else(|_| thread_data_storage.get_or_insert_with(ParkData::thread));
     let park_data = unsafe { &*thread_data_ptr };
-    let Parker::Thread(thread_parker) = &park_data.parker else {
+    #[allow(
+        irrefutable_let_patterns,
+        reason = "If async is disabled Parker becomes a single variant enum."
+    )]
+    let Parker::Thread(thread_parker) = &park_data.parker
+    else {
         // SAFETY: Constructed with `ParkData::thread`.
         unsafe { crate::util::unreachable() };
     };
@@ -845,6 +852,8 @@ pub async unsafe fn park_task(
     timed_out: impl ImmediateFuture<Output: FnOnce(usize, bool)>,
     park_token: ParkToken,
     timeout: Option<Instant>,
+    // ugly hack needed for testing
+    #[cfg(test)] inspect_data: impl FnOnce(*const ()),
 ) -> ParkResult {
     // Grab our task data, this also ensures that the hash table exists
     let task_data = &ParkData::task().await;
@@ -852,6 +861,12 @@ pub async unsafe fn park_task(
         // SAFETY: Constructed with `ParkData::task`.
         crate::util::unreachable();
     };
+
+    #[cfg(test)]
+    {
+        inspect_data(task_data as *const _ as *const ());
+    }
+
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -1653,6 +1668,8 @@ mod deadlock_impl {
 #[cfg(test)]
 mod tests {
     use super::{ParkData, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+    #[cfg(feature = "async")]
+    use std::future::ready;
     use std::{
         ptr,
         sync::{
@@ -1692,7 +1709,13 @@ mod tests {
             fn $name() {
                 let delay = Duration::from_micros($delay);
                 for _ in 0..$repeats {
-                    run_parking_test($latches, delay, $threads, $single_unparks);
+                    run_thread_parking_test($latches, delay, $threads, $single_unparks);
+                    #[cfg(feature="async")]
+                    {
+                        futures::executor::block_on(run_task_parking_test($latches, delay, $threads, $single_unparks));
+                        futures::executor::block_on(run_mixed_parking_test($latches, delay, $threads, $single_unparks));
+
+                    }
                 }
             })*
         };
@@ -1737,7 +1760,7 @@ mod tests {
         );
     }
 
-    fn run_parking_test(
+    fn run_thread_parking_test(
         num_latches: usize,
         delay: Duration,
         num_threads: usize,
@@ -1770,6 +1793,96 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "async")]
+    async fn run_task_parking_test(
+        num_latches: usize,
+        delay: Duration,
+        num_threads: usize,
+        num_single_unparks: usize,
+    ) {
+        let mut tests = Vec::with_capacity(num_latches);
+
+        for _ in 0..num_latches {
+            let test = Arc::new(SingleLatchTest::new(num_threads));
+            let thread = thread::spawn({
+                let test = test.clone();
+                move || {
+                    use futures::{executor::block_on, future::join_all};
+
+                    let mut tasks = Vec::with_capacity(num_threads);
+                    for _ in 0..num_threads {
+                        let test = test.clone();
+                        tasks.push(async move { test.run_task().await });
+                    }
+                    block_on(join_all(tasks))
+                }
+            });
+            tests.push((test, thread));
+        }
+
+        for unpark_index in 0..num_single_unparks {
+            thread::sleep(delay);
+            for (test, _) in &tests {
+                test.unpark_one(unpark_index);
+            }
+        }
+
+        for (test, thread) in tests {
+            test.finish(num_single_unparks);
+            thread.join().unwrap();
+        }
+    }
+    #[cfg(feature = "async")]
+    async fn run_mixed_parking_test(
+        num_latches: usize,
+        delay: Duration,
+        num_threads: usize,
+        num_single_unparks: usize,
+    ) {
+        let mut tests = Vec::with_capacity(num_latches);
+
+        for _ in 0..num_latches {
+            let test = Arc::new(SingleLatchTest::new(num_threads));
+            use futures::{executor::block_on, future::join_all};
+            let mut threads = Vec::with_capacity(num_threads.isqrt());
+            let mut i = 0;
+            while i < num_threads {
+                let start = i;
+                i += num_threads.isqrt().max(1);
+                let len = i.min(num_threads) - start;
+                threads.push(thread::spawn({
+                    let test = test.clone();
+                    move || {
+                        let mut tasks = Vec::with_capacity(num_threads.isqrt());
+                        for _ in 0..len - 1 {
+                            let test = test.clone();
+                            tasks.push(async move { test.run_task().await });
+                        }
+                        thread::scope(|s| {
+                            s.spawn(|| test.run());
+                            block_on(join_all(tasks));
+                        })
+                    }
+                }));
+            }
+            tests.push((test, threads));
+        }
+
+        for unpark_index in 0..num_single_unparks {
+            thread::sleep(delay);
+            for (test, _) in &tests {
+                test.unpark_one(unpark_index);
+            }
+        }
+
+        for (test, threads) in tests {
+            test.finish(num_single_unparks);
+            for thread in threads {
+                thread.join().unwrap();
+            }
+        }
+    }
+
     struct SingleLatchTest {
         semaphore: AtomicIsize,
         num_awake: AtomicUsize,
@@ -1792,11 +1905,21 @@ mod tests {
 
         pub fn run(&self) {
             // Get one slot from the semaphore
-            self.down();
+            self.down_thread();
 
             // Report back to the test verification code that this thread woke up
             let this_thread_ptr = super::with_thread_data(|t, _p| t as *const _ as *mut _);
             self.last_awoken.store(this_thread_ptr, Ordering::SeqCst);
+            self.num_awake.fetch_add(1, Ordering::SeqCst);
+        }
+
+        #[cfg(feature = "async")]
+        pub async fn run_task(&self) {
+            // Get one slot from the semaphore
+            let this_task_ptr = self.down_task().await as *mut _;
+
+            // Report back to the test verification code that this thread woke up
+            self.last_awoken.store(this_task_ptr, Ordering::SeqCst);
             self.num_awake.fetch_add(1, Ordering::SeqCst);
         }
 
@@ -1872,7 +1995,7 @@ mod tests {
             assert_eq!(num_waiting_on_address, 0);
         }
 
-        pub fn down(&self) {
+        pub fn down_thread(&self) {
             let old_semaphore_value = self.semaphore.fetch_sub(1, Ordering::SeqCst);
 
             if old_semaphore_value > 0 {
@@ -1894,6 +2017,33 @@ mod tests {
                     None,
                 );
             }
+        }
+        #[cfg(feature = "async")]
+        pub async fn down_task(&self) -> *const ParkData {
+            let old_semaphore_value = self.semaphore.fetch_sub(1, Ordering::SeqCst);
+
+            let mut park_data: *const ParkData = ptr::null();
+
+            // We need to wait.
+            // unlike the threaded version we must enter park_task
+            // to gain access to the park data address
+            // expected by the test verification
+            let validate = ready(old_semaphore_value <= 0);
+            let before_sleep = ready(());
+            let timed_out = ready(|_, _| {});
+            unsafe {
+                super::park_task(
+                    self.semaphore_addr(),
+                    validate,
+                    before_sleep,
+                    timed_out,
+                    DEFAULT_PARK_TOKEN,
+                    None,
+                    |data| park_data = data as *const _,
+                )
+                .await;
+            }
+            park_data
         }
 
         pub fn up(&self) {
