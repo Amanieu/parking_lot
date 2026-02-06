@@ -5,7 +5,7 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-//! A simple Waker based task parker.
+//! A simple Context/Waker based task parker.
 
 use crate::thread_parker::UnparkHandleT;
 use crate::util::{current_waker, ImmediateFuture};
@@ -37,9 +37,14 @@ impl super::TaskParkerT for TaskParker {
     }
 
     #[inline]
+    fn is_from(&self, cx: &mut Context<'_>) -> bool {
+        self.waker.will_wake(cx.waker())
+    }
+
+    #[inline]
     unsafe fn prepare_park(&self, cx: &mut Context<'_>) {
         debug_assert!(
-            self.waker.will_wake(cx.waker()),
+            self.is_from(cx),
             "Called TaskParker::prepare_park with unrelated context."
         );
         self.parked.store(true, Ordering::Relaxed);
@@ -49,7 +54,7 @@ impl super::TaskParkerT for TaskParker {
     #[inline]
     unsafe fn timed_out(&self, cx: &mut Context<'_>) -> bool {
         debug_assert!(
-            self.waker.will_wake(cx.waker()),
+            self.is_from(cx),
             "Called TaskParker::timed_out with unrelated context."
         );
         self.parked.load(Ordering::Relaxed)
@@ -58,7 +63,7 @@ impl super::TaskParkerT for TaskParker {
     #[inline]
     unsafe fn park(&self, cx: &mut Context<'_>) -> Poll<()> {
         debug_assert!(
-            self.waker.will_wake(cx.waker()),
+            self.is_from(cx),
             "Called TaskParker::park with unrelated context."
         );
         if self.parked.load(Ordering::Acquire) {
@@ -71,7 +76,7 @@ impl super::TaskParkerT for TaskParker {
     #[inline]
     unsafe fn park_until(&self, cx: &mut Context<'_>, timeout: Instant) -> Poll<bool> {
         debug_assert!(
-            self.waker.will_wake(cx.waker()),
+            self.is_from(cx),
             "Called TaskParker::park_until with unrelated context."
         );
         match self.park(cx) {
@@ -117,6 +122,7 @@ fn schedule_wake(instant: Instant, waker: Waker) {
     .unwrap();
     rooster.thread().unpark();
 }
+#[derive(Debug)]
 struct Sleeper {
     until: Instant,
     waker: Waker,
@@ -155,4 +161,34 @@ fn rooster(rx: Receiver<Sleeper>) {
             }
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn sanity() {
+    use futures::executor::block_on;
+    block_on(async {
+        let waker = current_waker().await;
+        let now = Instant::now();
+        let next = now + Duration::from_secs(1);
+        let mut heap = BinaryHeap::from_iter([
+            Sleeper {
+                until: now,
+                waker: waker.clone(),
+            },
+            Sleeper {
+                until: next,
+                waker: waker.clone(),
+            },
+        ]);
+        assert_eq!(
+            heap.pop(),
+            Some(Sleeper {
+                until: now,
+                waker: waker.clone()
+            })
+        );
+        assert_eq!(heap.pop(), Some(Sleeper { until: next, waker }));
+        assert_eq!(heap.pop(), None);
+    });
 }

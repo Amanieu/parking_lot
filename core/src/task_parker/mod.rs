@@ -12,6 +12,8 @@ pub trait TaskParkerT {
 
     fn new(cx: &mut Context<'_>) -> Self;
 
+    fn is_from(&self, cx: &mut Context<'_>) -> bool;
+
     /// Prepares the parker. This should be called before adding it to the queue.
     unsafe fn prepare_park(&self, cx: &mut Context<'_>);
 
