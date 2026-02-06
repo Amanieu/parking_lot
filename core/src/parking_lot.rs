@@ -178,7 +178,12 @@ impl From<TaskParker> for Parker {
 impl Parker {
     #[inline]
     fn get_thread(&self) -> Option<&ThreadParker> {
-        let Parker::Thread(thread_parker) = &self else {
+        #[allow(
+            irrefutable_let_patterns,
+            reason = "If async is disabled, Parker becomes a single variant enum."
+        )]
+        let Parker::Thread(thread_parker) = &self
+        else {
             return None;
         };
         Some(thread_parker)
@@ -577,16 +582,24 @@ fn lock_bucket_pair(key1: usize, key2: usize) -> (&'static Bucket, &'static Buck
 ///
 /// Bucket must be locked and value must remain alive until removed.
 #[inline]
-unsafe fn bucket_insert_tail(bucket: &Bucket, park_data: &ParkData) {
-    if bucket.queue_head.get().is_null() {
-        bucket.queue_head.set(park_data);
+unsafe fn queue_insert_tail(
+    dst_head: &Cell<*const ParkData>,
+    dst_tail: &Cell<*const ParkData>,
+    src_head: &ParkData,
+    src_tail: &ParkData,
+) {
+    if dst_head.get().is_null() {
+        dst_head.set(src_head);
+        debug_assert!(dst_tail.get().is_null());
+        dst_tail.set(src_tail);
     } else {
-        (*bucket.queue_tail.get()).next_in_queue.set(park_data);
+        (*dst_tail.get()).next_in_queue.set(src_head);
     }
-    bucket.queue_tail.set(park_data);
+    dst_tail.set(src_tail);
+    src_tail.next_in_queue.set(ptr::null());
 }
 
-/// Removes that ParkData from the bucket
+/// Removes the first entry matching the predicate from the bucket
 /// Returns the removed entry, or null when it failed to find it,
 /// as well wether the key is now empty.
 ///
@@ -594,44 +607,79 @@ unsafe fn bucket_insert_tail(bucket: &Bucket, park_data: &ParkData) {
 ///
 /// Bucket must be locked.
 #[inline]
-unsafe fn bucket_find_remove(
+unsafe fn queue_remove_first(
     key: usize,
-    bucket: &Bucket,
-    park_data: &ParkData,
+    head: &Cell<*const ParkData>,
+    tail: &Cell<*const ParkData>,
+    mut predicate: impl FnMut(&ParkData) -> bool,
 ) -> (*const ParkData, bool) {
-    let mut link = &bucket.queue_head;
-    let mut current = bucket.queue_head.get();
-    let mut previous = ptr::null();
-    let mut is_empty = true;
-    while !current.is_null() {
-        if current == park_data {
-            let next = (*current).next_in_queue.get();
-            link.set(next);
-            if bucket.queue_tail.get() == current {
-                bucket.queue_tail.set(previous);
-            } else if is_empty {
-                // Scan the rest of the queue to see if there are any other
-                // entries with the given key.
-                let mut scan = next;
-                while !scan.is_null() {
-                    if (*scan).key.load(Ordering::Relaxed) == key {
-                        is_empty = false;
-                        break;
-                    }
-                    scan = (*scan).next_in_queue.get();
-                }
+    let removed: Cell<*const ParkData> = Cell::new(ptr::null());
+    let (n, is_empty) = queue_remove_all(
+        key,
+        head,
+        tail,
+        |park_data| {
+            if removed.get().is_null() && predicate(park_data) {
+                FilterOp::Unpark
+            } else if removed.get().is_null() {
+                FilterOp::Skip
+            } else {
+                FilterOp::Stop
             }
-            break;
-        } else {
-            if (*current).key.load(Ordering::Relaxed) == key {
+        },
+        |park_data| removed.set(park_data),
+    );
+    debug_assert!(n == !removed.get().is_null() as usize);
+    (removed.get(), is_empty)
+}
+
+/// Removes all entries matching the filter from the queue
+/// Returns the number of removed entries
+/// as well wether the key is now empty.
+///
+/// # Safety
+///
+/// Bucket must be locked.
+#[inline]
+unsafe fn queue_remove_all(
+    key: usize,
+    head: &Cell<*const ParkData>,
+    tail: &Cell<*const ParkData>,
+    mut filter: impl FnMut(&ParkData) -> FilterOp,
+    mut on_removed: impl FnMut(&ParkData),
+) -> (usize, bool) {
+    let mut count = 0;
+    let mut is_empty = true;
+    let mut link = head;
+    let mut current = head.get();
+    let mut previous = ptr::null();
+    let mut op = FilterOp::Skip;
+    while let Some(park_data) = current.as_ref() {
+        if op != FilterOp::Stop {
+            op = filter(park_data);
+        }
+        if op == FilterOp::Unpark {
+            // Remove the thread from the queue
+            let next = park_data.next_in_queue.get();
+            link.set(next);
+            if tail.get() == current {
+                tail.set(previous);
+            }
+            count += 1;
+            on_removed(park_data);
+            current = next;
+        } else if is_empty || op != FilterOp::Stop {
+            if park_data.key.load(Ordering::Relaxed) == key {
                 is_empty = false;
             }
             link = &(*current).next_in_queue;
             previous = current;
             current = link.get();
+        } else {
+            break;
         }
     }
-    (current, is_empty)
+    (count, is_empty)
 }
 
 /// Unlock a pair of buckets
@@ -805,7 +853,12 @@ pub unsafe fn park(
         // Append our thread data to the queue and unlock the bucket
         thread_data.prepare_insert(key, park_token, &timeout);
         thread_parker.prepare_park();
-        bucket_insert_tail(bucket, thread_data);
+        queue_insert_tail(
+            &bucket.queue_head,
+            &bucket.queue_tail,
+            thread_data,
+            thread_data,
+        );
         // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
 
@@ -842,7 +895,10 @@ pub unsafe fn park(
             return ParkResult::Unparked(thread_data.unpark_token.get());
         }
 
-        let (removed, was_last_entry) = bucket_find_remove(key, bucket, thread_data);
+        let (removed, was_last_entry) =
+            queue_remove_first(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+                ptr::eq(data, thread_data)
+            });
 
         // There should be no way for our thread to have been removed from the queue
         // if we timed out.
@@ -923,7 +979,7 @@ pub async unsafe fn park_task(
     // Awaiting an ImmediateFuture is guaranteed not to stall progress
     // and therefore fine to do even while the bucket remains locked.
     immediate(|cx| task_parker.prepare_park(cx)).await;
-    bucket_insert_tail(bucket, task_data);
+    queue_insert_tail(&bucket.queue_head, &bucket.queue_tail, task_data, task_data);
     // SAFETY: We hold the lock here, as required
     bucket.mutex.unlock();
 
@@ -965,7 +1021,10 @@ pub async unsafe fn park_task(
     }
 
     // We timed out, so we now need to remove our task from the queue
-    let (removed, was_last_entry) = bucket_find_remove(key, bucket, task_data);
+    let (removed, was_last_entry) =
+        queue_remove_first(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+            ptr::eq(data, task_data)
+        });
 
     // There should be no way for our task to have been removed from the queue
     // if we timed out.
@@ -1013,62 +1072,35 @@ pub unsafe fn unpark_one(
 ) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
-
     // Find a thread with a matching key and remove it from the queue
-    let mut link = &bucket.queue_head;
-    let mut current = bucket.queue_head.get();
-    let mut previous = ptr::null();
     let mut result = UnparkResult::default();
-    while !current.is_null() {
-        if (*current).key.load(Ordering::Relaxed) == key {
-            // Remove the thread from the queue
-            let next = (*current).next_in_queue.get();
-            link.set(next);
-            if bucket.queue_tail.get() == current {
-                bucket.queue_tail.set(previous);
-            } else {
-                // Scan the rest of the queue to see if there are any other
-                // entries with the given key.
-                let mut scan = next;
-                while !scan.is_null() {
-                    if (*scan).key.load(Ordering::Relaxed) == key {
-                        result.have_more_threads = true;
-                        break;
-                    }
-                    scan = (*scan).next_in_queue.get();
-                }
-            }
-
-            // Invoke the callback before waking up the thread
-            result.unparked_threads = 1;
-            result.be_fair = (*bucket.fair_timeout.get()).should_timeout();
-            let token = callback(result);
-
-            // Set the token for the target thread
-            (*current).unpark_token.set(token);
-
-            // This is a bit tricky: we first lock the ThreadParker to prevent
-            // the thread from exiting and freeing its ThreadData if its wait
-            // times out. Then we unlock the queue since we don't want to keep
-            // the queue locked while we perform a system call. Finally we wake
-            // up the parked thread.
-            let handle = (*current).parker.unpark_lock();
-            // SAFETY: We hold the lock here, as required
-            bucket.mutex.unlock();
-            handle.unpark();
-
-            return result;
-        } else {
-            link = &(*current).next_in_queue;
-            previous = current;
-            current = link.get();
-        }
+    let (removed, was_last_entry) =
+        queue_remove_first(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+            data.key.load(Ordering::Relaxed) == key
+        });
+    if let Some(removed) = removed.as_ref() {
+        // Invoke the callback before waking up the thread
+        result.unparked_threads = 1;
+        result.have_more_threads = !was_last_entry;
+        result.be_fair = (*bucket.fair_timeout.get()).should_timeout();
+        let token = callback(result);
+        // Set the token for the target thread
+        removed.unpark_token.set(token);
+        // This is a bit tricky: we first lock the ThreadParker to prevent
+        // the thread from exiting and freeing its ThreadData if its wait
+        // times out. Then we unlock the queue since we don't want to keep
+        // the queue locked while we perform a system call. Finally we wake
+        // up the parked thread.
+        let handle = removed.parker.unpark_lock();
+        // SAFETY: We hold the lock here, as required
+        bucket.mutex.unlock();
+        handle.unpark();
+    } else {
+        // No threads with a matching key were found in the bucket
+        callback(result);
+        // SAFETY: We hold the lock here, as required
+        bucket.mutex.unlock();
     }
-
-    // No threads with a matching key were found in the bucket
-    callback(result);
-    // SAFETY: We hold the lock here, as required
-    bucket.mutex.unlock();
     result
 }
 
@@ -1093,46 +1125,37 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
     let bucket = lock_bucket(key);
 
     // Remove all threads with the given key in the bucket
-    let mut link = &bucket.queue_head;
-    let mut current = bucket.queue_head.get();
-    let mut previous = ptr::null();
     let mut threads = SmallVec::<[_; 8]>::new();
-    while !current.is_null() {
-        if (*current).key.load(Ordering::Relaxed) == key {
-            // Remove the thread from the queue
-            let next = (*current).next_in_queue.get();
-            link.set(next);
-            if bucket.queue_tail.get() == current {
-                bucket.queue_tail.set(previous);
+    let (removed, _is_empty) = queue_remove_all(
+        key,
+        &bucket.queue_head,
+        &bucket.queue_tail,
+        |park_data| {
+            if park_data.key.load(Ordering::Relaxed) == key {
+                FilterOp::Unpark
+            } else {
+                FilterOp::Skip
             }
-
+        },
+        |park_data| {
             // Set the token for the target thread
-            (*current).unpark_token.set(unpark_token);
-
+            park_data.unpark_token.set(unpark_token);
             // Don't wake up threads while holding the queue lock. See comment
             // in unpark_one. For now just record which threads we need to wake
             // up.
-            threads.push((*current).parker.unpark_lock());
-            current = next;
-        } else {
-            link = &(*current).next_in_queue;
-            previous = current;
-            current = link.get();
-        }
-    }
-
+            threads.push(park_data.parker.unpark_lock());
+        },
+    );
+    debug_assert_eq!(removed, threads.len());
     // Unlock the bucket
     // SAFETY: We hold the lock here, as required
     bucket.mutex.unlock();
-
     // Now that we are outside the lock, wake up all the threads that we removed
     // from the queue.
-    let num_threads = threads.len();
     for handle in threads.into_iter() {
         handle.unpark();
     }
-
-    num_threads
+    removed
 }
 
 /// Removes all threads from the queue associated with `key_from`, optionally
@@ -1180,83 +1203,59 @@ pub unsafe fn unpark_requeue(
         unlock_bucket_pair(bucket_from, bucket_to);
         return result;
     }
-
     // Remove all threads with the given key in the source bucket
-    let mut link = &bucket_from.queue_head;
-    let mut current = bucket_from.queue_head.get();
-    let mut previous = ptr::null();
-    let mut requeue_threads: *const ParkData = ptr::null();
-    let mut requeue_threads_tail: *const ParkData = ptr::null();
-    let mut wakeup_thread = None;
-    while !current.is_null() {
-        if (*current).key.load(Ordering::Relaxed) == key_from {
-            // Remove the thread from the queue
-            let next = (*current).next_in_queue.get();
-            link.set(next);
-            if bucket_from.queue_tail.get() == current {
-                bucket_from.queue_tail.set(previous);
-            }
-
-            // Prepare the first thread for wakeup and requeue the rest.
-            if (op == RequeueOp::UnparkOneRequeueRest || op == RequeueOp::UnparkOne)
-                && wakeup_thread.is_none()
+    let wakeup_thread: Cell<*const ParkData> = Cell::new(ptr::null());
+    let requeue_head: Cell<*const ParkData> = Cell::new(ptr::null());
+    let requeue_tail: Cell<*const ParkData> = Cell::new(ptr::null());
+    let (removed, is_empty) = queue_remove_all(
+        key_from,
+        &bucket_from.queue_head,
+        &bucket_from.queue_tail,
+        |park_data| {
+            if !wakeup_thread.get().is_null()
+                && matches!(op, RequeueOp::UnparkOne | RequeueOp::RequeueOne)
             {
-                wakeup_thread = Some(current);
+                FilterOp::Stop
+            } else if park_data.key.load(Ordering::Relaxed) == key_from {
+                FilterOp::Unpark
+            } else {
+                FilterOp::Skip
+            }
+        },
+        |park_data| {
+            if matches!(op, RequeueOp::UnparkOneRequeueRest | RequeueOp::UnparkOne)
+                && wakeup_thread.get().is_null()
+            {
+                wakeup_thread.set(park_data);
                 result.unparked_threads = 1;
             } else {
-                if !requeue_threads.is_null() {
-                    (*requeue_threads_tail).next_in_queue.set(current);
-                } else {
-                    requeue_threads = current;
-                }
-                requeue_threads_tail = current;
-                (*current).key.store(key_to, Ordering::Relaxed);
+                park_data.key.store(key_to, Ordering::Relaxed);
+                queue_insert_tail(&requeue_head, &requeue_tail, park_data, park_data);
                 result.requeued_threads += 1;
             }
-            if op == RequeueOp::UnparkOne || op == RequeueOp::RequeueOne {
-                // Scan the rest of the queue to see if there are any other
-                // entries with the given key.
-                let mut scan = next;
-                while !scan.is_null() {
-                    if (*scan).key.load(Ordering::Relaxed) == key_from {
-                        result.have_more_threads = true;
-                        break;
-                    }
-                    scan = (*scan).next_in_queue.get();
-                }
-                break;
-            }
-            current = next;
-        } else {
-            link = &(*current).next_in_queue;
-            previous = current;
-            current = link.get();
-        }
-    }
-
+        },
+    );
+    debug_assert_eq!(removed, result.unparked_threads + result.requeued_threads);
     // Add the requeued threads to the destination bucket
-    if !requeue_threads.is_null() {
-        (*requeue_threads_tail).next_in_queue.set(ptr::null());
-        if !bucket_to.queue_head.get().is_null() {
-            (*bucket_to.queue_tail.get())
-                .next_in_queue
-                .set(requeue_threads);
-        } else {
-            bucket_to.queue_head.set(requeue_threads);
-        }
-        bucket_to.queue_tail.set(requeue_threads_tail);
+    if let Some(requeue_head) = requeue_head.get().as_ref() {
+        let requeue_tail = requeue_tail.get().as_ref().unchecked_unwrap();
+        queue_insert_tail(
+            &bucket_to.queue_head,
+            &bucket_to.queue_tail,
+            requeue_head,
+            requeue_tail,
+        );
     }
-
     // Invoke the callback before waking up the thread
     if result.unparked_threads != 0 {
+        result.have_more_threads = !is_empty;
         result.be_fair = (*bucket_from.fair_timeout.get()).should_timeout();
     }
     let token = callback(op, result);
-
     // See comment in unpark_one for why we mess with the locking
-    if let Some(wakeup_thread) = wakeup_thread {
-        (*wakeup_thread).unpark_token.set(token);
-        let handle = (*wakeup_thread).parker.unpark_lock();
+    if let Some(wakeup_thread) = wakeup_thread.get().as_ref() {
+        wakeup_thread.unpark_token.set(token);
+        let handle = wakeup_thread.parker.unpark_lock();
         // SAFETY: Both buckets are locked, as required.
         unlock_bucket_pair(bucket_from, bucket_to);
         handle.unpark();
@@ -1264,7 +1263,6 @@ pub unsafe fn unpark_requeue(
         // SAFETY: Both buckets are locked, as required.
         unlock_bucket_pair(bucket_from, bucket_to);
     }
-
     result
 }
 
@@ -1304,49 +1302,26 @@ pub unsafe fn unpark_filter(
     let bucket = lock_bucket(key);
 
     // Go through the queue looking for threads with a matching key
-    let mut link = &bucket.queue_head;
-    let mut current = bucket.queue_head.get();
-    let mut previous = ptr::null();
-    let mut threads = SmallVec::<[_; 8]>::new();
     let mut result = UnparkResult::default();
-    while !current.is_null() {
-        if (*current).key.load(Ordering::Relaxed) == key {
-            // Call the filter function with the thread's ParkToken
-            let next = (*current).next_in_queue.get();
-            match filter((*current).park_token.get()) {
-                FilterOp::Unpark => {
-                    // Remove the thread from the queue
-                    link.set(next);
-                    if bucket.queue_tail.get() == current {
-                        bucket.queue_tail.set(previous);
-                    }
-
-                    // Add the thread to our list of threads to unpark
-                    threads.push((current, None));
-
-                    current = next;
-                }
-                FilterOp::Skip => {
-                    result.have_more_threads = true;
-                    link = &(*current).next_in_queue;
-                    previous = current;
-                    current = link.get();
-                }
-                FilterOp::Stop => {
-                    result.have_more_threads = true;
-                    break;
-                }
+    let mut threads = SmallVec::<[(*const _, _); 8]>::new();
+    let (removed, is_empty) = queue_remove_all(
+        key,
+        &bucket.queue_head,
+        &bucket.queue_tail,
+        |park_data| {
+            if park_data.key.load(Ordering::Relaxed) == key {
+                filter(park_data.park_token.get())
+            } else {
+                FilterOp::Skip
             }
-        } else {
-            link = &(*current).next_in_queue;
-            previous = current;
-            current = link.get();
-        }
-    }
-
+        },
+        |park_data| threads.push((park_data, None)),
+    );
     // Invoke the callback before waking up the threads
-    result.unparked_threads = threads.len();
+    debug_assert_eq!(removed, threads.len());
+    result.unparked_threads = removed;
     if result.unparked_threads != 0 {
+        result.have_more_threads = !is_empty;
         result.be_fair = (*bucket.fair_timeout.get()).should_timeout();
     }
     let token = callback(result);

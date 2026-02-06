@@ -25,6 +25,7 @@ pub struct TaskParker {
 }
 
 impl super::TaskParkerT for TaskParker {
+    type Context<'a> = Context<'a>;
     type UnparkHandle = UnparkHandle;
 
     #[inline]
@@ -37,14 +38,14 @@ impl super::TaskParkerT for TaskParker {
     }
 
     #[inline]
-    fn is_from(&self, cx: &mut Context<'_>) -> bool {
+    fn is_valid_context(&self, cx: &mut Context<'_>) -> bool {
         self.waker.will_wake(cx.waker())
     }
 
     #[inline]
     unsafe fn prepare_park(&self, cx: &mut Context<'_>) {
         debug_assert!(
-            self.is_from(cx),
+            self.is_valid_context(cx),
             "Called TaskParker::prepare_park with unrelated context."
         );
         self.parked.store(true, Ordering::Relaxed);
@@ -54,7 +55,7 @@ impl super::TaskParkerT for TaskParker {
     #[inline]
     unsafe fn timed_out(&self, cx: &mut Context<'_>) -> bool {
         debug_assert!(
-            self.is_from(cx),
+            self.is_valid_context(cx),
             "Called TaskParker::timed_out with unrelated context."
         );
         self.parked.load(Ordering::Relaxed)
@@ -63,7 +64,7 @@ impl super::TaskParkerT for TaskParker {
     #[inline]
     unsafe fn park(&self, cx: &mut Context<'_>) -> Poll<()> {
         debug_assert!(
-            self.is_from(cx),
+            self.is_valid_context(cx),
             "Called TaskParker::park with unrelated context."
         );
         if self.parked.load(Ordering::Acquire) {
@@ -76,7 +77,7 @@ impl super::TaskParkerT for TaskParker {
     #[inline]
     unsafe fn park_until(&self, cx: &mut Context<'_>, timeout: Instant) -> Poll<bool> {
         debug_assert!(
-            self.is_from(cx),
+            self.is_valid_context(cx),
             "Called TaskParker::park_until with unrelated context."
         );
         match self.park(cx) {
@@ -165,7 +166,7 @@ fn rooster(rx: Receiver<Sleeper>) {
 
 #[cfg(test)]
 #[test]
-fn sanity() {
+fn sanity_sleeper_heap_order() {
     use futures::executor::block_on;
     block_on(async {
         let waker = current_waker().await;
@@ -173,11 +174,11 @@ fn sanity() {
         let next = now + Duration::from_secs(1);
         let mut heap = BinaryHeap::from_iter([
             Sleeper {
-                until: now,
+                until: next,
                 waker: waker.clone(),
             },
             Sleeper {
-                until: next,
+                until: now,
                 waker: waker.clone(),
             },
         ]);
