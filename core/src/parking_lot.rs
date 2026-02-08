@@ -4,8 +4,12 @@
 // http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
+#[cfg(feature = "async")]
+use crate::task_parker::{TaskParker, TaskParkerT};
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::util::UncheckedOptionExt;
+#[cfg(feature = "async")]
+use crate::util::{immediate, Immediate, ImmediateFuture};
 use crate::word_lock::WordLock;
 use core::{
     cell::{Cell, UnsafeCell},
@@ -13,6 +17,10 @@ use core::{
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
 use smallvec::SmallVec;
+#[cfg(feature = "async")]
+use std::future::{poll_fn, Future};
+#[cfg(feature = "async")]
+use std::task::Context;
 use std::time::{Duration, Instant};
 
 // Don't use Instant on wasm32-unknown-unknown, it just panics.
@@ -92,8 +100,8 @@ struct Bucket {
     mutex: WordLock,
 
     // Linked list of threads waiting on this bucket
-    queue_head: Cell<*const ThreadData>,
-    queue_tail: Cell<*const ThreadData>,
+    queue_head: Cell<*const ParkData>,
+    queue_tail: Cell<*const ParkData>,
 
     // Next time at which point be_fair should be set
     fair_timeout: UnsafeCell<FairTimeout>,
@@ -148,15 +156,94 @@ impl FairTimeout {
     }
 }
 
-struct ThreadData {
-    parker: ThreadParker,
+enum Parker {
+    Thread(ThreadParker),
+    #[cfg(feature = "async")]
+    Task(TaskParker),
+}
+
+impl From<ThreadParker> for Parker {
+    #[inline]
+    fn from(v: ThreadParker) -> Self {
+        Self::Thread(v)
+    }
+}
+#[cfg(feature = "async")]
+impl From<TaskParker> for Parker {
+    #[inline]
+    fn from(v: TaskParker) -> Self {
+        Self::Task(v)
+    }
+}
+impl Parker {
+    #[inline]
+    fn get_thread(&self) -> Option<&ThreadParker> {
+        #[allow(
+            irrefutable_let_patterns,
+            reason = "If async is disabled, Parker becomes a single variant enum."
+        )]
+        let Parker::Thread(thread_parker) = &self
+        else {
+            return None;
+        };
+        Some(thread_parker)
+    }
+    #[cfg(feature = "async")]
+    #[inline]
+    fn get_task(&self) -> Option<&TaskParker> {
+        let Parker::Task(task_parker) = &self else {
+            return None;
+        };
+        Some(task_parker)
+    }
+    #[inline]
+    unsafe fn unpark_lock(&self) -> UnparkHandle {
+        match self {
+            Parker::Thread(thread_parker) => thread_parker.unpark_lock().into(),
+            #[cfg(feature = "async")]
+            Parker::Task(task_parker) => task_parker.unpark_lock().into(),
+        }
+    }
+}
+enum UnparkHandle {
+    Thread(<ThreadParker as ThreadParkerT>::UnparkHandle),
+    #[cfg(feature = "async")]
+    Task(<TaskParker as TaskParkerT>::UnparkHandle),
+}
+
+impl From<<ThreadParker as ThreadParkerT>::UnparkHandle> for UnparkHandle {
+    #[inline]
+    fn from(v: <ThreadParker as ThreadParkerT>::UnparkHandle) -> Self {
+        Self::Thread(v)
+    }
+}
+#[cfg(feature = "async")]
+impl From<<TaskParker as TaskParkerT>::UnparkHandle> for UnparkHandle {
+    #[inline]
+    fn from(v: <TaskParker as TaskParkerT>::UnparkHandle) -> Self {
+        Self::Task(v)
+    }
+}
+impl UnparkHandle {
+    #[inline]
+    unsafe fn unpark(self) {
+        match self {
+            UnparkHandle::Thread(handle) => handle.unpark(),
+            #[cfg(feature = "async")]
+            UnparkHandle::Task(handle) => handle.unpark(),
+        }
+    }
+}
+
+struct ParkData {
+    parker: Parker,
 
     // Key that this thread is sleeping on. This may change if the thread is
     // requeued to a different key.
     key: AtomicUsize,
 
     // Linked list of parked threads in a bucket
-    next_in_queue: Cell<*const ThreadData>,
+    next_in_queue: Cell<*const ParkData>,
 
     // UnparkToken passed to this thread when it is unparked
     unpark_token: Cell<UnparkToken>,
@@ -172,15 +259,16 @@ struct ThreadData {
     deadlock_data: deadlock::DeadlockData,
 }
 
-impl ThreadData {
-    fn new() -> ThreadData {
+impl ParkData {
+    #[inline]
+    fn thread() -> ParkData {
         // Keep track of the total number of live ThreadData objects and resize
         // the hash table accordingly.
         let num_threads = NUM_THREADS.fetch_add(1, Ordering::Relaxed) + 1;
         grow_hashtable(num_threads);
 
-        ThreadData {
-            parker: ThreadParker::new(),
+        ParkData {
+            parker: ThreadParker::new().into(),
             key: AtomicUsize::new(0),
             next_in_queue: Cell::new(ptr::null()),
             unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
@@ -190,24 +278,55 @@ impl ThreadData {
             deadlock_data: deadlock::DeadlockData::new(),
         }
     }
+
+    #[cfg(feature = "async")]
+    #[inline]
+    fn task() -> Immediate<fn(&mut Context<'_>) -> ParkData> {
+        immediate(|cx| {
+            // Keep track of the total number of live ThreadData objects and resize
+            // the hash table accordingly.
+            let num_threads = NUM_THREADS.fetch_add(1, Ordering::Relaxed) + 1;
+            grow_hashtable(num_threads);
+
+            ParkData {
+                parker: TaskParker::new(cx).into(),
+                key: AtomicUsize::new(0),
+                next_in_queue: Cell::new(ptr::null()),
+                unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
+                park_token: Cell::new(DEFAULT_PARK_TOKEN),
+                parked_with_timeout: Cell::new(false),
+                #[cfg(feature = "deadlock_detection")]
+                deadlock_data: deadlock::DeadlockData::new(),
+            }
+        })
+    }
+    #[inline]
+    fn prepare_insert(&self, key: usize, park_token: ParkToken, timeout: &Option<Instant>) {
+        self.parked_with_timeout.set(timeout.is_some());
+        self.next_in_queue.set(ptr::null());
+        self.key.store(key, Ordering::Relaxed);
+        self.park_token.set(park_token);
+    }
 }
 
 // Invokes the given closure with a reference to the current thread `ThreadData`.
 #[inline(always)]
-fn with_thread_data<T>(f: impl FnOnce(&ThreadData) -> T) -> T {
+fn with_thread_data<T>(f: impl FnOnce(&ParkData, &ThreadParker) -> T) -> T {
     // Unlike word_lock::ThreadData, parking_lot::ThreadData is always expensive
     // to construct. Try to use a thread-local version if possible. Otherwise just
     // create a ThreadData on the stack
     let mut thread_data_storage = None;
-    thread_local!(static THREAD_DATA: ThreadData = ThreadData::new());
+    thread_local!(static THREAD_DATA: ParkData = ParkData::thread());
     let thread_data_ptr = THREAD_DATA
-        .try_with(|x| x as *const ThreadData)
-        .unwrap_or_else(|_| thread_data_storage.get_or_insert_with(ThreadData::new));
-
-    f(unsafe { &*thread_data_ptr })
+        .try_with(|x| x as *const ParkData)
+        .unwrap_or_else(|_| thread_data_storage.get_or_insert_with(ParkData::thread));
+    let park_data = unsafe { &*thread_data_ptr };
+    // SAFETY: Constructed with `ParkData::thread`.
+    let thread_parker = unsafe { park_data.parker.get_thread().unchecked_unwrap() };
+    f(park_data, thread_parker)
 }
 
-impl Drop for ThreadData {
+impl Drop for ParkData {
     fn drop(&mut self) {
         NUM_THREADS.fetch_sub(1, Ordering::Relaxed);
     }
@@ -323,7 +442,7 @@ fn grow_hashtable(num_threads: usize) {
 ///
 /// The given `table` must only contain buckets with correctly constructed linked lists.
 unsafe fn rehash_bucket_into(bucket: &'static Bucket, table: &mut HashTable) {
-    let mut current: *const ThreadData = bucket.queue_head.get();
+    let mut current: *const ParkData = bucket.queue_head.get();
     while !current.is_null() {
         let next = (*current).next_in_queue.get();
         let hash = hash((*current).key.load(Ordering::Relaxed), table.hash_bits);
@@ -453,6 +572,132 @@ fn lock_bucket_pair(key1: usize, key2: usize) -> (&'static Bucket, &'static Buck
     }
 }
 
+/// Appends one value onto the tail of the queue.
+///
+/// # Safety
+///
+/// Queue must be intact and the value must remain alive until removed.
+#[inline]
+unsafe fn queue_append_one(
+    dst_head: &Cell<*const ParkData>,
+    dst_tail: &Cell<*const ParkData>,
+    src: &ParkData,
+) {
+    queue_append_all(dst_head, dst_tail, src, src);
+}
+
+/// Appends one queue onto the tail of the other.
+///
+/// # Safety
+///
+/// Both queues must be intact and the values must remain alive until removed.
+#[inline]
+unsafe fn queue_append_all(
+    dst_head: &Cell<*const ParkData>,
+    dst_tail: &Cell<*const ParkData>,
+    src_head: &ParkData,
+    src_tail: &ParkData,
+) {
+    debug_assert_eq!(dst_head.get().is_null(), dst_tail.get().is_null());
+    debug_assert!(src_tail.next_in_queue.get().is_null());
+    if let Some(dst_tail) = dst_tail.get().as_ref() {
+        &dst_tail.next_in_queue
+    } else {
+        &dst_head
+    }
+    .set(src_head);
+    dst_tail.set(src_tail);
+}
+
+/// Removes the first entry matching the predicate from the queue.
+/// Returns the removed entry, or null when it failed to find it,
+/// as well wether the key is now empty.
+///
+/// # Safety
+///
+/// Queue must be intact.
+#[inline]
+unsafe fn queue_remove_one(
+    key: usize,
+    head: &Cell<*const ParkData>,
+    tail: &Cell<*const ParkData>,
+    mut predicate: impl FnMut(&ParkData) -> bool,
+) -> (*const ParkData, bool) {
+    let removed: Cell<*const ParkData> = Cell::new(ptr::null());
+    let (n, is_empty) = queue_remove_all(
+        key,
+        head,
+        tail,
+        |park_data| {
+            if removed.get().is_null() && predicate(park_data) {
+                FilterOp::Unpark
+            } else if removed.get().is_null() {
+                FilterOp::Skip
+            } else {
+                FilterOp::Stop
+            }
+        },
+        |park_data| removed.set(park_data),
+    );
+    debug_assert_eq!(n, !removed.get().is_null() as usize);
+    (removed.get(), is_empty)
+}
+
+/// Removes all entries matching the filter from the queue.
+/// Returns the number of removed entries
+/// as well wether the key is now empty.
+///
+/// # Safety
+///
+/// Queue must be intact.
+#[inline]
+unsafe fn queue_remove_all(
+    key: usize,
+    head: &Cell<*const ParkData>,
+    tail: &Cell<*const ParkData>,
+    mut filter: impl FnMut(&ParkData) -> FilterOp,
+    mut on_removed: impl FnMut(&ParkData),
+) -> (usize, bool) {
+    let mut count = 0;
+    let mut is_empty = true;
+    let mut link = head;
+    let mut current = head.get();
+    let mut previous = ptr::null();
+    let mut op = FilterOp::Skip;
+    while let Some(park_data) = current.as_ref() {
+        // FilterOp::Stop is persistent.
+        if op != FilterOp::Stop {
+            op = filter(park_data);
+        }
+        if op == FilterOp::Unpark {
+            // Remove the thread from the queue
+            let next = park_data.next_in_queue.get();
+            link.set(next);
+            if tail.get() == current {
+                tail.set(previous);
+            }
+            count += 1;
+            on_removed(park_data);
+            current = next;
+        } else if op == FilterOp::Skip || is_empty {
+            // `|| is_empty` because even when stopped,
+            // we still need to determin if the key is empty.
+            if park_data.key.load(Ordering::Relaxed) == key {
+                is_empty = false;
+            }
+            link = &(*current).next_in_queue;
+            previous = current;
+            current = link.get();
+        } else {
+            // We are stopped and know the key is not empty.
+            debug_assert_eq!(op, FilterOp::Stop);
+            debug_assert!(!is_empty);
+            break;
+        }
+    }
+    (count, is_empty)
+}
+
 /// Unlock a pair of buckets
 ///
 /// # Safety
@@ -559,6 +804,16 @@ pub const DEFAULT_UNPARK_TOKEN: UnparkToken = UnparkToken(0);
 /// A default park token to use.
 pub const DEFAULT_PARK_TOKEN: ParkToken = ParkToken(0);
 
+#[cfg(test)]
+thread_local! {
+    /// Ugly hack needed for testing.
+    /// A pointer to the `ParkData` most recently used on this thread.
+    /// Note that while refreshed when calling `park(_task)`, this value
+    /// potentially becomes dirty as soon as `validate` finishes and
+    /// its correctness and validity is unreliable beyond that point.
+    static CURRENT_PARK_DATA: Cell<*const ParkData> = Cell::new(ptr::null());
+}
+
 /// Parks the current thread in the queue associated with the given key.
 ///
 /// The `validate` function is called while the queue is locked and can abort
@@ -586,7 +841,7 @@ pub const DEFAULT_PARK_TOKEN: ParkToken = ParkToken(0);
 ///
 /// The `before_sleep` function is called outside the queue lock and is allowed
 /// to call `unpark_one`, `unpark_all`, `unpark_requeue` or `unpark_filter`, but
-/// it is not allowed to call `park` or panic.
+/// it is not allowed to call `park`, `park_task` or panic.
 #[inline]
 pub unsafe fn park(
     key: usize,
@@ -597,7 +852,10 @@ pub unsafe fn park(
     timeout: Option<Instant>,
 ) -> ParkResult {
     // Grab our thread data, this also ensures that the hash table exists
-    with_thread_data(|thread_data| {
+    with_thread_data(|thread_data, thread_parker| {
+        #[cfg(test)]
+        CURRENT_PARK_DATA.set(thread_data);
+
         // Lock the bucket for the given key
         let bucket = lock_bucket(key);
 
@@ -609,17 +867,9 @@ pub unsafe fn park(
         }
 
         // Append our thread data to the queue and unlock the bucket
-        thread_data.parked_with_timeout.set(timeout.is_some());
-        thread_data.next_in_queue.set(ptr::null());
-        thread_data.key.store(key, Ordering::Relaxed);
-        thread_data.park_token.set(park_token);
-        thread_data.parker.prepare_park();
-        if !bucket.queue_head.get().is_null() {
-            (*bucket.queue_tail.get()).next_in_queue.set(thread_data);
-        } else {
-            bucket.queue_head.set(thread_data);
-        }
-        bucket.queue_tail.set(thread_data);
+        thread_data.prepare_insert(key, park_token, &timeout);
+        thread_parker.prepare_park();
+        queue_append_one(&bucket.queue_head, &bucket.queue_tail, thread_data);
         // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
 
@@ -630,9 +880,9 @@ pub unsafe fn park(
         // or by our timeout. Note that this isn't precise: we can still be
         // unparked since we are still in the queue.
         let unparked = match timeout {
-            Some(timeout) => thread_data.parker.park_until(timeout),
+            Some(timeout) => thread_parker.park_until(timeout),
             None => {
-                thread_data.parker.park();
+                thread_parker.park();
                 // call deadlock detection on_unpark hook
                 deadlock::on_unpark(thread_data);
                 true
@@ -650,59 +900,161 @@ pub unsafe fn park(
 
         // Now we need to check again if we were unparked or timed out. Unlike the
         // last check this is precise because we hold the bucket lock.
-        if !thread_data.parker.timed_out() {
+        if !thread_parker.timed_out() {
             // SAFETY: We hold the lock here, as required
             bucket.mutex.unlock();
             return ParkResult::Unparked(thread_data.unpark_token.get());
         }
 
-        // We timed out, so we now need to remove our thread from the queue
-        let mut link = &bucket.queue_head;
-        let mut current = bucket.queue_head.get();
-        let mut previous = ptr::null();
-        let mut was_last_thread = true;
-        while !current.is_null() {
-            if current == thread_data {
-                let next = (*current).next_in_queue.get();
-                link.set(next);
-                if bucket.queue_tail.get() == current {
-                    bucket.queue_tail.set(previous);
-                } else {
-                    // Scan the rest of the queue to see if there are any other
-                    // entries with the given key.
-                    let mut scan = next;
-                    while !scan.is_null() {
-                        if (*scan).key.load(Ordering::Relaxed) == key {
-                            was_last_thread = false;
-                            break;
-                        }
-                        scan = (*scan).next_in_queue.get();
-                    }
-                }
-
-                // Callback to indicate that we timed out, and whether we were the
-                // last thread on the queue.
-                timed_out(key, was_last_thread);
-                break;
-            } else {
-                if (*current).key.load(Ordering::Relaxed) == key {
-                    was_last_thread = false;
-                }
-                link = &(*current).next_in_queue;
-                previous = current;
-                current = link.get();
-            }
-        }
+        let (removed, was_last_entry) =
+            queue_remove_one(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+                ptr::eq(data, thread_data)
+            });
 
         // There should be no way for our thread to have been removed from the queue
         // if we timed out.
-        debug_assert!(!current.is_null());
+        debug_assert!(ptr::eq(removed, thread_data));
+
+        // Callback to indicate that we timed out, and whether we were the
+        // last thread on the queue.
+        timed_out(key, was_last_entry);
 
         // Unlock the bucket, we are done
         // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
         ParkResult::TimedOut
     })
+}
+/// Parks the current task in the queue associated with the given key.
+///
+/// The `validate` future is called while the queue is locked and can abort
+/// the operation by returning false. If `validate` returns true then the
+/// current task is appended to the queue and the queue is unlocked.
+///
+/// The `before_sleep` future is called after the queue is unlocked but before
+/// the task is put to sleep. The task will then sleep until it is unparked
+/// or the given timeout is reached.
+///
+/// The `timed_out` future is also called while the queue is locked, but only
+/// if the timeout was reached. It is passed the key of the queue it was in when
+/// it timed out, which may be different from the original key if
+/// `unpark_requeue` was called. It is also passed a bool which indicates
+/// whether it was the last entry in the queue.
+///
+/// # Safety
+///
+/// You should only call this function with an address that you control, since
+/// you could otherwise interfere with the operation of other synchronization
+/// primitives.
+///
+/// The `validate` and `timed_out` futures are called while the queue is
+/// locked and must not panic or call into any function in `parking_lot`.
+///
+/// The `before_sleep` future is run outside the queue lock and is allowed
+/// to call `unpark_one`, `unpark_all`, `unpark_requeue` or `unpark_filter`, but
+/// it is not allowed to call `park`, `park_task` or panic.
+///
+/// Once polled this future must be run to completion before being dropped or forgotten,
+/// to ensure its data in the queue actually lives until its removal,
+/// but leaking it is fine as the queue never remains locked across yielding await points.
+#[cfg(feature = "async")]
+#[inline]
+pub async unsafe fn park_task(
+    key: usize,
+    validate: impl ImmediateFuture<Output = bool>,
+    before_sleep: impl Future<Output = ()>,
+    timed_out: impl ImmediateFuture<Output: FnOnce(usize, bool)>,
+    park_token: ParkToken,
+    timeout: Option<Instant>,
+) -> ParkResult {
+    // Grab our task data, this also ensures that the hash table exists.
+    // Because `park_task` is a future we can't use a hypothetical
+    // `with_task_data` scoped callback here.
+    let task_data = &ParkData::task().await;
+    // SAFETY: Constructed with `ParkData::task`.
+    let task_parker = unsafe { task_data.parker.get_task().unchecked_unwrap() };
+
+    #[cfg(test)]
+    CURRENT_PARK_DATA.set(task_data);
+
+    // Lock the bucket for the given key
+    let bucket = lock_bucket(key);
+
+    // If the validation function fails, just return.
+    // Awaiting an ImmediateFuture is guaranteed not to stall progress
+    // and therefore fine to do even while the bucket remains locked.
+    if !validate.await {
+        // SAFETY: We hold the lock here, as required
+        bucket.mutex.unlock();
+        return ParkResult::Invalid;
+    }
+
+    // Append our task data to the queue and unlock the bucket
+    task_data.prepare_insert(key, park_token, &timeout);
+    // Awaiting an ImmediateFuture is guaranteed not to stall progress
+    // and therefore fine to do even while the bucket remains locked.
+    immediate(|cx| task_parker.prepare_park(cx)).await;
+    queue_append_one(&bucket.queue_head, &bucket.queue_tail, task_data);
+    // SAFETY: We hold the lock here, as required
+    bucket.mutex.unlock();
+
+    // Invoke the pre-sleep callback
+    // Note that this is the only non-immediate future among the different callbacks.
+    // As such we only invoke it when the bucket is unlocked to not stall progress.
+    before_sleep.await;
+
+    // Park our task and determine whether we were woken up by an unpark
+    // or by our timeout. Note that this isn't precise: we can still be
+    // unparked since we are still in the queue.
+    let unparked = match timeout {
+        Some(timeout) => poll_fn(|cx| task_parker.park_until(cx, timeout)).await,
+        None => {
+            poll_fn(|cx| task_parker.park(cx)).await;
+            // call deadlock detection on_unpark hook
+            deadlock::on_unpark(task_data);
+            true
+        }
+    };
+
+    // If we were unparked, return now
+    if unparked {
+        return ParkResult::Unparked(task_data.unpark_token.get());
+    }
+
+    // Lock our bucket again. Note that the hashtable may have been rehashed in
+    // the meantime. Our key may also have changed if we were requeued.
+    let (key, bucket) = lock_bucket_checked(&task_data.key);
+
+    // Now we need to check again if we were unparked or timed out. Unlike the
+    // last check this is precise because we hold the bucket lock.
+    // Awaiting an ImmediateFuture is guaranteed not to stall progress
+    // and therefore fine to do even while the bucket remains locked.
+    if !immediate(|cx| task_parker.timed_out(cx)).await {
+        // SAFETY: We hold the lock here, as required
+        bucket.mutex.unlock();
+        return ParkResult::Unparked(task_data.unpark_token.get());
+    }
+
+    // We timed out, so we now need to remove our task from the queue
+    let (removed, was_last_entry) =
+        queue_remove_one(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+            ptr::eq(data, task_data)
+        });
+
+    // There should be no way for our task to have been removed from the queue
+    // if we timed out.
+    debug_assert!(ptr::eq(removed, task_data));
+
+    // Callback to indicate that we timed out, and whether we were the
+    // last entry on the queue.
+    // Awaiting an ImmediateFuture is guaranteed not to stall progress
+    // and therefore fine to do even while the bucket remains locked.
+    timed_out.await(key, was_last_entry);
+
+    // Unlock the bucket, we are done
+    // SAFETY: We hold the lock here, as required
+    bucket.mutex.unlock();
+    ParkResult::TimedOut
 }
 
 /// Unparks one thread from the queue associated with the given key.
@@ -735,62 +1087,35 @@ pub unsafe fn unpark_one(
 ) -> UnparkResult {
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
-
     // Find a thread with a matching key and remove it from the queue
-    let mut link = &bucket.queue_head;
-    let mut current = bucket.queue_head.get();
-    let mut previous = ptr::null();
     let mut result = UnparkResult::default();
-    while !current.is_null() {
-        if (*current).key.load(Ordering::Relaxed) == key {
-            // Remove the thread from the queue
-            let next = (*current).next_in_queue.get();
-            link.set(next);
-            if bucket.queue_tail.get() == current {
-                bucket.queue_tail.set(previous);
-            } else {
-                // Scan the rest of the queue to see if there are any other
-                // entries with the given key.
-                let mut scan = next;
-                while !scan.is_null() {
-                    if (*scan).key.load(Ordering::Relaxed) == key {
-                        result.have_more_threads = true;
-                        break;
-                    }
-                    scan = (*scan).next_in_queue.get();
-                }
-            }
-
-            // Invoke the callback before waking up the thread
-            result.unparked_threads = 1;
-            result.be_fair = (*bucket.fair_timeout.get()).should_timeout();
-            let token = callback(result);
-
-            // Set the token for the target thread
-            (*current).unpark_token.set(token);
-
-            // This is a bit tricky: we first lock the ThreadParker to prevent
-            // the thread from exiting and freeing its ThreadData if its wait
-            // times out. Then we unlock the queue since we don't want to keep
-            // the queue locked while we perform a system call. Finally we wake
-            // up the parked thread.
-            let handle = (*current).parker.unpark_lock();
-            // SAFETY: We hold the lock here, as required
-            bucket.mutex.unlock();
-            handle.unpark();
-
-            return result;
-        } else {
-            link = &(*current).next_in_queue;
-            previous = current;
-            current = link.get();
-        }
+    let (removed, was_last_entry) =
+        queue_remove_one(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+            data.key.load(Ordering::Relaxed) == key
+        });
+    if let Some(removed) = removed.as_ref() {
+        // Invoke the callback before waking up the thread
+        result.unparked_threads = 1;
+        result.have_more_threads = !was_last_entry;
+        result.be_fair = (*bucket.fair_timeout.get()).should_timeout();
+        let token = callback(result);
+        // Set the token for the target thread
+        removed.unpark_token.set(token);
+        // This is a bit tricky: we first lock the ThreadParker to prevent
+        // the thread from exiting and freeing its ThreadData if its wait
+        // times out. Then we unlock the queue since we don't want to keep
+        // the queue locked while we perform a system call. Finally we wake
+        // up the parked thread.
+        let handle = removed.parker.unpark_lock();
+        // SAFETY: We hold the lock here, as required
+        bucket.mutex.unlock();
+        handle.unpark();
+    } else {
+        // No threads with a matching key were found in the bucket
+        callback(result);
+        // SAFETY: We hold the lock here, as required
+        bucket.mutex.unlock();
     }
-
-    // No threads with a matching key were found in the bucket
-    callback(result);
-    // SAFETY: We hold the lock here, as required
-    bucket.mutex.unlock();
     result
 }
 
@@ -815,46 +1140,37 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
     let bucket = lock_bucket(key);
 
     // Remove all threads with the given key in the bucket
-    let mut link = &bucket.queue_head;
-    let mut current = bucket.queue_head.get();
-    let mut previous = ptr::null();
     let mut threads = SmallVec::<[_; 8]>::new();
-    while !current.is_null() {
-        if (*current).key.load(Ordering::Relaxed) == key {
-            // Remove the thread from the queue
-            let next = (*current).next_in_queue.get();
-            link.set(next);
-            if bucket.queue_tail.get() == current {
-                bucket.queue_tail.set(previous);
+    let (removed, _is_empty) = queue_remove_all(
+        key,
+        &bucket.queue_head,
+        &bucket.queue_tail,
+        |park_data| {
+            if park_data.key.load(Ordering::Relaxed) == key {
+                FilterOp::Unpark
+            } else {
+                FilterOp::Skip
             }
-
+        },
+        |park_data| {
             // Set the token for the target thread
-            (*current).unpark_token.set(unpark_token);
-
+            park_data.unpark_token.set(unpark_token);
             // Don't wake up threads while holding the queue lock. See comment
             // in unpark_one. For now just record which threads we need to wake
             // up.
-            threads.push((*current).parker.unpark_lock());
-            current = next;
-        } else {
-            link = &(*current).next_in_queue;
-            previous = current;
-            current = link.get();
-        }
-    }
-
+            threads.push(park_data.parker.unpark_lock());
+        },
+    );
+    debug_assert_eq!(removed, threads.len());
     // Unlock the bucket
     // SAFETY: We hold the lock here, as required
     bucket.mutex.unlock();
-
     // Now that we are outside the lock, wake up all the threads that we removed
     // from the queue.
-    let num_threads = threads.len();
     for handle in threads.into_iter() {
         handle.unpark();
     }
-
-    num_threads
+    removed
 }
 
 /// Removes all threads from the queue associated with `key_from`, optionally
@@ -902,83 +1218,61 @@ pub unsafe fn unpark_requeue(
         unlock_bucket_pair(bucket_from, bucket_to);
         return result;
     }
-
     // Remove all threads with the given key in the source bucket
-    let mut link = &bucket_from.queue_head;
-    let mut current = bucket_from.queue_head.get();
-    let mut previous = ptr::null();
-    let mut requeue_threads: *const ThreadData = ptr::null();
-    let mut requeue_threads_tail: *const ThreadData = ptr::null();
-    let mut wakeup_thread = None;
-    while !current.is_null() {
-        if (*current).key.load(Ordering::Relaxed) == key_from {
-            // Remove the thread from the queue
-            let next = (*current).next_in_queue.get();
-            link.set(next);
-            if bucket_from.queue_tail.get() == current {
-                bucket_from.queue_tail.set(previous);
-            }
-
-            // Prepare the first thread for wakeup and requeue the rest.
-            if (op == RequeueOp::UnparkOneRequeueRest || op == RequeueOp::UnparkOne)
-                && wakeup_thread.is_none()
+    let wakeup_thread: Cell<*const ParkData> = Cell::new(ptr::null());
+    let requeue_head: Cell<*const ParkData> = Cell::new(ptr::null());
+    let requeue_tail: Cell<*const ParkData> = Cell::new(ptr::null());
+    let (removed, is_empty) = queue_remove_all(
+        key_from,
+        &bucket_from.queue_head,
+        &bucket_from.queue_tail,
+        |park_data| {
+            if !wakeup_thread.get().is_null()
+                && matches!(op, RequeueOp::UnparkOne | RequeueOp::RequeueOne)
             {
-                wakeup_thread = Some(current);
+                FilterOp::Stop
+            } else if park_data.key.load(Ordering::Relaxed) == key_from {
+                FilterOp::Unpark
+            } else {
+                FilterOp::Skip
+            }
+        },
+        |park_data| {
+            if matches!(op, RequeueOp::UnparkOneRequeueRest | RequeueOp::UnparkOne)
+                && wakeup_thread.get().is_null()
+            {
+                wakeup_thread.set(park_data);
                 result.unparked_threads = 1;
             } else {
-                if !requeue_threads.is_null() {
-                    (*requeue_threads_tail).next_in_queue.set(current);
-                } else {
-                    requeue_threads = current;
-                }
-                requeue_threads_tail = current;
-                (*current).key.store(key_to, Ordering::Relaxed);
+                park_data.key.store(key_to, Ordering::Relaxed);
+                park_data.next_in_queue.set(ptr::null());
+                queue_append_one(&requeue_head, &requeue_tail, park_data);
                 result.requeued_threads += 1;
             }
-            if op == RequeueOp::UnparkOne || op == RequeueOp::RequeueOne {
-                // Scan the rest of the queue to see if there are any other
-                // entries with the given key.
-                let mut scan = next;
-                while !scan.is_null() {
-                    if (*scan).key.load(Ordering::Relaxed) == key_from {
-                        result.have_more_threads = true;
-                        break;
-                    }
-                    scan = (*scan).next_in_queue.get();
-                }
-                break;
-            }
-            current = next;
-        } else {
-            link = &(*current).next_in_queue;
-            previous = current;
-            current = link.get();
-        }
-    }
-
+        },
+    );
+    debug_assert_eq!(removed, result.unparked_threads + result.requeued_threads);
     // Add the requeued threads to the destination bucket
-    if !requeue_threads.is_null() {
-        (*requeue_threads_tail).next_in_queue.set(ptr::null());
-        if !bucket_to.queue_head.get().is_null() {
-            (*bucket_to.queue_tail.get())
-                .next_in_queue
-                .set(requeue_threads);
-        } else {
-            bucket_to.queue_head.set(requeue_threads);
-        }
-        bucket_to.queue_tail.set(requeue_threads_tail);
+    if let Some(requeue_head) = requeue_head.get().as_ref() {
+        let requeue_tail = requeue_tail.get().as_ref().unchecked_unwrap();
+        requeue_tail.next_in_queue.set(ptr::null());
+        queue_append_all(
+            &bucket_to.queue_head,
+            &bucket_to.queue_tail,
+            requeue_head,
+            requeue_tail,
+        );
     }
-
     // Invoke the callback before waking up the thread
     if result.unparked_threads != 0 {
+        result.have_more_threads = !is_empty;
         result.be_fair = (*bucket_from.fair_timeout.get()).should_timeout();
     }
     let token = callback(op, result);
-
     // See comment in unpark_one for why we mess with the locking
-    if let Some(wakeup_thread) = wakeup_thread {
-        (*wakeup_thread).unpark_token.set(token);
-        let handle = (*wakeup_thread).parker.unpark_lock();
+    if let Some(wakeup_thread) = wakeup_thread.get().as_ref() {
+        wakeup_thread.unpark_token.set(token);
+        let handle = wakeup_thread.parker.unpark_lock();
         // SAFETY: Both buckets are locked, as required.
         unlock_bucket_pair(bucket_from, bucket_to);
         handle.unpark();
@@ -986,7 +1280,6 @@ pub unsafe fn unpark_requeue(
         // SAFETY: Both buckets are locked, as required.
         unlock_bucket_pair(bucket_from, bucket_to);
     }
-
     result
 }
 
@@ -1026,49 +1319,26 @@ pub unsafe fn unpark_filter(
     let bucket = lock_bucket(key);
 
     // Go through the queue looking for threads with a matching key
-    let mut link = &bucket.queue_head;
-    let mut current = bucket.queue_head.get();
-    let mut previous = ptr::null();
-    let mut threads = SmallVec::<[_; 8]>::new();
     let mut result = UnparkResult::default();
-    while !current.is_null() {
-        if (*current).key.load(Ordering::Relaxed) == key {
-            // Call the filter function with the thread's ParkToken
-            let next = (*current).next_in_queue.get();
-            match filter((*current).park_token.get()) {
-                FilterOp::Unpark => {
-                    // Remove the thread from the queue
-                    link.set(next);
-                    if bucket.queue_tail.get() == current {
-                        bucket.queue_tail.set(previous);
-                    }
-
-                    // Add the thread to our list of threads to unpark
-                    threads.push((current, None));
-
-                    current = next;
-                }
-                FilterOp::Skip => {
-                    result.have_more_threads = true;
-                    link = &(*current).next_in_queue;
-                    previous = current;
-                    current = link.get();
-                }
-                FilterOp::Stop => {
-                    result.have_more_threads = true;
-                    break;
-                }
+    let mut threads = SmallVec::<[(*const _, _); 8]>::new();
+    let (removed, is_empty) = queue_remove_all(
+        key,
+        &bucket.queue_head,
+        &bucket.queue_tail,
+        |park_data| {
+            if park_data.key.load(Ordering::Relaxed) == key {
+                filter(park_data.park_token.get())
+            } else {
+                FilterOp::Skip
             }
-        } else {
-            link = &(*current).next_in_queue;
-            previous = current;
-            current = link.get();
-        }
-    }
-
+        },
+        |park_data| threads.push((park_data, None)),
+    );
     // Invoke the callback before waking up the threads
-    result.unparked_threads = threads.len();
+    debug_assert_eq!(removed, threads.len());
+    result.unparked_threads = removed;
     if result.unparked_threads != 0 {
+        result.have_more_threads = !is_empty;
         result.be_fair = (*bucket.fair_timeout.get()).should_timeout();
     }
     let token = callback(result);
@@ -1139,7 +1409,7 @@ pub mod deadlock {
     }
 
     #[inline]
-    pub(super) unsafe fn on_unpark(_td: &super::ThreadData) {
+    pub(super) unsafe fn on_unpark(_td: &super::ParkData) {
         #[cfg(feature = "deadlock_detection")]
         deadlock_impl::on_unpark(_td);
     }
@@ -1202,7 +1472,7 @@ mod deadlock_impl {
         }
     }
 
-    pub(super) unsafe fn on_unpark(td: &ThreadData) {
+    pub(super) unsafe fn on_unpark(td: &ParkData) {
         if td.deadlock_data.deadlocked.get() {
             let sender = (*td.deadlock_data.backtrace_sender.get()).take().unwrap();
             sender
@@ -1286,7 +1556,7 @@ mod deadlock_impl {
 
     #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
     enum WaitGraphNode {
-        Thread(*const ThreadData),
+        Thread(*const ParkData),
         Resource(usize),
     }
 
@@ -1398,7 +1668,7 @@ mod deadlock_impl {
     }
 
     // returns all thread cycles in the wait graph
-    fn graph_cycles(g: &DiGraphMap<WaitGraphNode, ()>) -> Vec<Vec<*const ThreadData>> {
+    fn graph_cycles(g: &DiGraphMap<WaitGraphNode, ()>) -> Vec<Vec<*const ParkData>> {
         use petgraph::visit::depth_first_search;
         use petgraph::visit::DfsEvent;
         use petgraph::visit::NodeIndexable;
@@ -1428,22 +1698,29 @@ mod deadlock_impl {
 
 #[cfg(test)]
 mod tests {
-    use super::{ThreadData, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+    use super::{ParkData, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+    use crate::parking_lot::CURRENT_PARK_DATA;
+    #[cfg(feature = "async")]
+    use crate::util::immediate;
+    #[cfg(feature = "async")]
+    use futures::{executor::block_on, future::join_all};
+    #[cfg(feature = "async")]
+    use std::future::ready;
     use std::{
         ptr,
         sync::{
             atomic::{AtomicIsize, AtomicPtr, AtomicUsize, Ordering},
             Arc,
         },
-        thread,
+        thread::{self, JoinHandle},
         time::Duration,
     };
 
     /// Calls a closure for every `ThreadData` currently parked on a given key
-    fn for_each(key: usize, mut f: impl FnMut(&ThreadData)) {
+    fn for_each(key: usize, mut f: impl FnMut(&ParkData)) {
         let bucket = super::lock_bucket(key);
 
-        let mut current: *const ThreadData = bucket.queue_head.get();
+        let mut current: *const ParkData = bucket.queue_head.get();
         while !current.is_null() {
             let current_ref = unsafe { &*current };
             if current_ref.key.load(Ordering::Relaxed) == key {
@@ -1468,7 +1745,15 @@ mod tests {
             fn $name() {
                 let delay = Duration::from_micros($delay);
                 for _ in 0..$repeats {
-                    run_parking_test($latches, delay, $threads, $single_unparks);
+                    for prepare_test in [
+                        prepare_thread_parking_test,
+                        #[cfg(feature = "async")]
+                        prepare_task_parking_test,
+                        #[cfg(feature = "async")]
+                        prepare_mixed_parking_test,
+                    ] {
+                        run_parking_test($latches, delay, $threads, $single_unparks, prepare_test);
+                    }
                 }
             })*
         };
@@ -1518,26 +1803,18 @@ mod tests {
         delay: Duration,
         num_threads: usize,
         num_single_unparks: usize,
+        mut prepare_test: impl FnMut(usize) -> (Arc<SingleLatchTest>, Vec<JoinHandle<()>>),
     ) {
         let mut tests = Vec::with_capacity(num_latches);
-
         for _ in 0..num_latches {
-            let test = Arc::new(SingleLatchTest::new(num_threads));
-            let mut threads = Vec::with_capacity(num_threads);
-            for _ in 0..num_threads {
-                let test = test.clone();
-                threads.push(thread::spawn(move || test.run()));
-            }
-            tests.push((test, threads));
+            tests.push(prepare_test(num_threads));
         }
-
         for unpark_index in 0..num_single_unparks {
             thread::sleep(delay);
             for (test, _) in &tests {
                 test.unpark_one(unpark_index);
             }
         }
-
         for (test, threads) in tests {
             test.finish(num_single_unparks);
             for thread in threads {
@@ -1546,11 +1823,70 @@ mod tests {
         }
     }
 
+    fn prepare_thread_parking_test(
+        num_threads: usize,
+    ) -> (Arc<SingleLatchTest>, Vec<JoinHandle<()>>) {
+        let test = Arc::new(SingleLatchTest::new(num_threads));
+        let mut threads = Vec::with_capacity(num_threads);
+        for _ in 0..num_threads {
+            let test = test.clone();
+            threads.push(thread::spawn(move || test.run()));
+        }
+        (test, threads)
+    }
+    #[cfg(feature = "async")]
+    fn prepare_task_parking_test(
+        num_threads: usize,
+    ) -> (Arc<SingleLatchTest>, Vec<JoinHandle<()>>) {
+        let test = Arc::new(SingleLatchTest::new(num_threads));
+        let thread = thread::spawn({
+            let test = test.clone();
+            move || {
+                let mut tasks = Vec::with_capacity(num_threads);
+                for _ in 0..num_threads {
+                    let test = test.clone();
+                    tasks.push(async move { test.run_task().await });
+                }
+                block_on(join_all(tasks));
+            }
+        });
+
+        (test, vec![thread])
+    }
+    #[cfg(feature = "async")]
+    fn prepare_mixed_parking_test(
+        num_threads: usize,
+    ) -> (Arc<SingleLatchTest>, Vec<JoinHandle<()>>) {
+        let test = Arc::new(SingleLatchTest::new(num_threads));
+        let mut threads = Vec::with_capacity(num_threads.isqrt());
+        let mut i = 0;
+        while i < num_threads {
+            let start = i;
+            i += num_threads.isqrt().max(1);
+            let len = i.min(num_threads) - start;
+            threads.push(thread::spawn({
+                let test = test.clone();
+                move || {
+                    let mut tasks = Vec::with_capacity(num_threads.isqrt());
+                    for _ in 0..len - 1 {
+                        let test = test.clone();
+                        tasks.push(async move { test.run_task().await });
+                    }
+                    thread::scope(|s| {
+                        s.spawn(|| test.run());
+                        block_on(join_all(tasks));
+                    })
+                }
+            }));
+        }
+        (test, threads)
+    }
+
     struct SingleLatchTest {
         semaphore: AtomicIsize,
         num_awake: AtomicUsize,
         /// Holds the pointer to the last *unprocessed* woken up thread.
-        last_awoken: AtomicPtr<ThreadData>,
+        last_awoken: AtomicPtr<ParkData>,
         /// Total number of threads participating in this test.
         num_threads: usize,
     }
@@ -1568,11 +1904,27 @@ mod tests {
 
         pub fn run(&self) {
             // Get one slot from the semaphore
-            self.down();
+            let this_thread_ptr = self.down_thread() as *mut _;
 
             // Report back to the test verification code that this thread woke up
-            let this_thread_ptr = super::with_thread_data(|t| t as *const _ as *mut _);
+            // FIXME: What happens if this returns a different address because it can't use the TLS?
+            // let this_thread_ptr = super::with_thread_data(|t, _p| t as *const _ as *mut ParkData);
+            // FIXME: Alternative that avoids this issue, value is still valid because
+            //          `down_thread` uses `park` instead of `park_task`.
+            //          For even more robustness this may be moved into `down_thread`>`park`>`validate`
+            // let this_thread_ptr = CURRENT_PARK_DATA.get() as *mut _;
+
             self.last_awoken.store(this_thread_ptr, Ordering::SeqCst);
+            self.num_awake.fetch_add(1, Ordering::SeqCst);
+        }
+
+        #[cfg(feature = "async")]
+        pub async fn run_task(&self) {
+            // Get one slot from the semaphore
+            let this_task_ptr = self.down_task().await as *mut _;
+
+            // Report back to the test verification code that this thread woke up
+            self.last_awoken.store(this_task_ptr, Ordering::SeqCst);
             self.num_awake.fetch_add(1, Ordering::SeqCst);
         }
 
@@ -1581,7 +1933,7 @@ mod tests {
             // of this method where it's reset to null again
             assert!(self.last_awoken.load(Ordering::SeqCst).is_null());
 
-            let mut queue: Vec<*mut ThreadData> = Vec::with_capacity(self.num_threads);
+            let mut queue: Vec<*mut ParkData> = Vec::with_capacity(self.num_threads);
             for_each(self.semaphore_addr(), |thread_data| {
                 queue.push(thread_data as *const _ as *mut _);
             });
@@ -1648,16 +2000,22 @@ mod tests {
             assert_eq!(num_waiting_on_address, 0);
         }
 
-        pub fn down(&self) {
+        pub fn down_thread(&self) -> *const ParkData {
             let old_semaphore_value = self.semaphore.fetch_sub(1, Ordering::SeqCst);
 
-            if old_semaphore_value > 0 {
-                // We acquired the semaphore. Done.
-                return;
-            }
+            //if old_semaphore_value > 0 {
+            //    // We acquired the semaphore. Done.
+            //    return;
+            //}
+
+            let mut park_data: *const ParkData = ptr::null();
 
             // We need to wait.
-            let validate = || true;
+            let validate = || {
+                park_data = CURRENT_PARK_DATA.get();
+                // We acquired the semaphore. Done.
+                old_semaphore_value <= 0
+            };
             let before_sleep = || {};
             let timed_out = |_, _| {};
             unsafe {
@@ -1670,6 +2028,37 @@ mod tests {
                     None,
                 );
             }
+            park_data
+        }
+        #[cfg(feature = "async")]
+        pub async fn down_task(&self) -> *const ParkData {
+            let old_semaphore_value = self.semaphore.fetch_sub(1, Ordering::SeqCst);
+
+            let mut park_data: *const ParkData = ptr::null();
+
+            // We need to wait.
+            // unlike the threaded version we must enter park_task
+            // to gain access to the park data address
+            // expected by the test verification
+            let validate = immediate(|_| {
+                park_data = CURRENT_PARK_DATA.get();
+                // We acquired the semaphore. Done.
+                old_semaphore_value <= 0
+            });
+            let before_sleep = ready(());
+            let timed_out = ready(|_, _| {});
+            unsafe {
+                super::park_task(
+                    self.semaphore_addr(),
+                    validate,
+                    before_sleep,
+                    timed_out,
+                    DEFAULT_PARK_TOKEN,
+                    None,
+                )
+                .await;
+            }
+            park_data
         }
 
         pub fn up(&self) {

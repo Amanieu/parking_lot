@@ -54,12 +54,23 @@
 
 mod parking_lot;
 mod spinwait;
+#[cfg(feature = "async")]
+mod task_parker;
 mod thread_parker;
 mod util;
 mod word_lock;
 
 pub use self::parking_lot::deadlock;
 pub use self::parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
+#[cfg(feature = "async")]
+pub use self::{
+    parking_lot::park_task,
+    util::{
+        assume_immediate, assume_immediate_unchecked, immediate, immediate_with, waker, Immediate,
+        ImmediateFuture,
+    },
+};
+
 pub use self::parking_lot::{
     FilterOp, ParkResult, ParkToken, RequeueOp, UnparkResult, UnparkToken,
 };
