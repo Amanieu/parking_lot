@@ -598,15 +598,15 @@ unsafe fn queue_append_all(
     src_head: &ParkData,
     src_tail: &ParkData,
 ) {
-    if dst_head.get().is_null() {
-        dst_head.set(src_head);
-        debug_assert!(dst_tail.get().is_null());
-        dst_tail.set(src_tail);
+    debug_assert_eq!(dst_head.get().is_null(), dst_tail.get().is_null());
+    debug_assert!(src_tail.next_in_queue.get().is_null());
+    if let Some(dst_tail) = dst_tail.get().as_ref() {
+        &dst_tail.next_in_queue
     } else {
-        (*dst_tail.get()).next_in_queue.set(src_head);
+        &dst_head
     }
+    .set(src_head);
     dst_tail.set(src_tail);
-    src_tail.next_in_queue.set(ptr::null());
 }
 
 /// Removes the first entry matching the predicate from the queue.
@@ -639,7 +639,7 @@ unsafe fn queue_remove_one(
         },
         |park_data| removed.set(park_data),
     );
-    debug_assert!(n == !removed.get().is_null() as usize);
+    debug_assert_eq!(n, !removed.get().is_null() as usize);
     (removed.get(), is_empty)
 }
 
@@ -665,6 +665,7 @@ unsafe fn queue_remove_all(
     let mut previous = ptr::null();
     let mut op = FilterOp::Skip;
     while let Some(park_data) = current.as_ref() {
+        // FilterOp::Stop is persistent.
         if op != FilterOp::Stop {
             op = filter(park_data);
         }
@@ -678,7 +679,9 @@ unsafe fn queue_remove_all(
             count += 1;
             on_removed(park_data);
             current = next;
-        } else if is_empty || op != FilterOp::Stop {
+        } else if op == FilterOp::Skip || is_empty {
+            // `|| is_empty` because even when stopped,
+            // we still need to determin if the key is empty.
             if park_data.key.load(Ordering::Relaxed) == key {
                 is_empty = false;
             }
@@ -686,6 +689,9 @@ unsafe fn queue_remove_all(
             previous = current;
             current = link.get();
         } else {
+            // We are stopped and know the key is not empty.
+            debug_assert_eq!(op, FilterOp::Stop);
+            debug_assert!(!is_empty);
             break;
         }
     }
@@ -804,7 +810,7 @@ thread_local! {
     /// A pointer to the `ParkData` most recently used on this thread.
     /// Note that while refreshed when calling `park(_task)`, this value
     /// potentially becomes dirty as soon as `validate` finishes and
-    /// its correctness is unreliable beyond that point.
+    /// its correctness and validity is unreliable beyond that point.
     static CURRENT_PARK_DATA: Cell<*const ParkData> = Cell::new(ptr::null());
 }
 
@@ -949,8 +955,8 @@ pub unsafe fn park(
 /// it is not allowed to call `park`, `park_task` or panic.
 ///
 /// Once polled this future must be run to completion before being dropped or forgotten,
-/// to ensure its data in the queue lives until its removal, but leaking it is fine
-/// as the queue never remains locked across yielding await points.
+/// to ensure its data in the queue actually lives until its removal,
+/// but leaking it is fine as the queue never remains locked across yielding await points.
 #[cfg(feature = "async")]
 #[inline]
 pub async unsafe fn park_task(
@@ -1239,6 +1245,7 @@ pub unsafe fn unpark_requeue(
                 result.unparked_threads = 1;
             } else {
                 park_data.key.store(key_to, Ordering::Relaxed);
+                park_data.next_in_queue.set(ptr::null());
                 queue_append_one(&requeue_head, &requeue_tail, park_data);
                 result.requeued_threads += 1;
             }
@@ -1248,6 +1255,7 @@ pub unsafe fn unpark_requeue(
     // Add the requeued threads to the destination bucket
     if let Some(requeue_head) = requeue_head.get().as_ref() {
         let requeue_tail = requeue_tail.get().as_ref().unchecked_unwrap();
+        requeue_tail.next_in_queue.set(ptr::null());
         queue_append_all(
             &bucket_to.queue_head,
             &bucket_to.queue_tail,

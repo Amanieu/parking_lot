@@ -44,9 +44,9 @@ mod immediate {
     /// and therefore can directly return its output without needing to wrap
     /// it in [Poll::Ready].
     ///
-    /// Usefull as a kind of halfway-point between sync and async execution,
-    /// where you do need to be inside of / building an asynchronous environment,
-    /// but don't actually need or want to be asynchronous yourself.
+    /// Usefull as a kind of halfway-point/intermediary between sync and async execution,
+    /// where you do need an asynchronous environment, but don't actually need or want
+    /// to be asynchronous yourself.
     pub trait ImmediateFuture: Future {
         /// Consumes this [Future] to immediately return
         /// its output without having to wrap it in [Poll].
@@ -96,8 +96,8 @@ mod immediate {
     /// the return value as its [Future::Output].
     ///
     /// Usefull as a kind of halfway-point/intermediary between sync and async execution,
-    /// where you do need to be inside of / building an asynchronous environment,
-    /// but don't actually need or want to be asynchronous yourself.
+    /// where you do need an asynchronous environment, but don't actually need or want
+    /// to be asynchronous yourself.
     pub fn immediate<T, F: FnOnce(&mut Context<'_>) -> T>(f: F) -> Immediate<F> {
         Immediate::from(f)
     }
@@ -106,8 +106,8 @@ mod immediate {
     /// and yielding the return value as its [Future::Output].
     ///
     /// Usefull as a kind of halfway-point/intermediary between sync and async execution,
-    /// where you do need to be inside of / building an asynchronous environment,
-    /// but don't actually need or want to be asynchronous yourself.
+    /// where you do need an asynchronous environment, but don't actually need or want
+    /// to be asynchronous yourself.
     pub fn immediate_with<T, F: FnOnce(T, &mut Context<'_>) -> U, U>(
         t: T,
         f: F,
@@ -135,7 +135,7 @@ mod immediate {
     ///
     /// # Safety
     ///
-    /// The underlying future must yield [Poll::Ready] on its first poll.
+    /// The underlying future must immediately yield [Poll::Ready].
     pub unsafe fn assume_immediate_unchecked<F: Future>(
         f: F,
     ) -> Immediate<(F, fn(F, &mut Context<'_>) -> F::Output)> {
