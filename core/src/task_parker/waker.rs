@@ -8,7 +8,7 @@
 //! A simple Context/Waker based task parker.
 
 use crate::thread_parker::UnparkHandleT;
-use crate::util::{current_waker, ImmediateFuture};
+use crate::util::{waker, ImmediateFuture};
 use core::sync::atomic::{AtomicBool, Ordering};
 use std::collections::BinaryHeap;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -33,7 +33,7 @@ impl super::TaskParkerT for TaskParker {
         TaskParker {
             parked: AtomicBool::new(false),
             wake_scheduled: AtomicBool::new(true),
-            waker: current_waker().poll_ready(cx),
+            waker: waker().poll_ready(cx),
         }
     }
 
@@ -169,7 +169,7 @@ fn rooster(rx: Receiver<Sleeper>) {
 fn sanity_sleeper_heap_order() {
     use futures::executor::block_on;
     block_on(async {
-        let waker = current_waker().await;
+        let waker = waker().await;
         let now = Instant::now();
         let next = now + Duration::from_secs(1);
         let mut heap = BinaryHeap::from_iter([

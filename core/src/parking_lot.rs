@@ -321,12 +321,8 @@ fn with_thread_data<T>(f: impl FnOnce(&ParkData, &ThreadParker) -> T) -> T {
         .try_with(|x| x as *const ParkData)
         .unwrap_or_else(|_| thread_data_storage.get_or_insert_with(ParkData::thread));
     let park_data = unsafe { &*thread_data_ptr };
-    #[allow(
-        irrefutable_let_patterns,
-        reason = "If async is disabled Parker becomes a single variant enum."
-    )]
     // SAFETY: Constructed with `ParkData::thread`.
-    let thread_parker = unsafe { &park_data.parker.get_thread().unchecked_unwrap() };
+    let thread_parker = unsafe { park_data.parker.get_thread().unchecked_unwrap() };
     f(park_data, thread_parker)
 }
 
@@ -576,13 +572,27 @@ fn lock_bucket_pair(key1: usize, key2: usize) -> (&'static Bucket, &'static Buck
     }
 }
 
-/// Inserts onto the tail of the bucket
+/// Appends one value onto the tail of the queue.
 ///
 /// # Safety
 ///
-/// Bucket must be locked and value must remain alive until removed.
+/// Queue must be intact and the value must remain alive until removed.
 #[inline]
-unsafe fn queue_insert_tail(
+unsafe fn queue_append_one(
+    dst_head: &Cell<*const ParkData>,
+    dst_tail: &Cell<*const ParkData>,
+    src: &ParkData,
+) {
+    queue_append_all(dst_head, dst_tail, src, src);
+}
+
+/// Appends one queue onto the tail of the other.
+///
+/// # Safety
+///
+/// Both queues must be intact and the values must remain alive until removed.
+#[inline]
+unsafe fn queue_append_all(
     dst_head: &Cell<*const ParkData>,
     dst_tail: &Cell<*const ParkData>,
     src_head: &ParkData,
@@ -599,15 +609,15 @@ unsafe fn queue_insert_tail(
     src_tail.next_in_queue.set(ptr::null());
 }
 
-/// Removes the first entry matching the predicate from the bucket
+/// Removes the first entry matching the predicate from the queue.
 /// Returns the removed entry, or null when it failed to find it,
 /// as well wether the key is now empty.
 ///
 /// # Safety
 ///
-/// Bucket must be locked.
+/// Queue must be intact.
 #[inline]
-unsafe fn queue_remove_first(
+unsafe fn queue_remove_one(
     key: usize,
     head: &Cell<*const ParkData>,
     tail: &Cell<*const ParkData>,
@@ -633,13 +643,13 @@ unsafe fn queue_remove_first(
     (removed.get(), is_empty)
 }
 
-/// Removes all entries matching the filter from the queue
+/// Removes all entries matching the filter from the queue.
 /// Returns the number of removed entries
 /// as well wether the key is now empty.
 ///
 /// # Safety
 ///
-/// Bucket must be locked.
+/// Queue must be intact.
 #[inline]
 unsafe fn queue_remove_all(
     key: usize,
@@ -853,12 +863,7 @@ pub unsafe fn park(
         // Append our thread data to the queue and unlock the bucket
         thread_data.prepare_insert(key, park_token, &timeout);
         thread_parker.prepare_park();
-        queue_insert_tail(
-            &bucket.queue_head,
-            &bucket.queue_tail,
-            thread_data,
-            thread_data,
-        );
+        queue_append_one(&bucket.queue_head, &bucket.queue_tail, thread_data);
         // SAFETY: We hold the lock here, as required
         bucket.mutex.unlock();
 
@@ -896,7 +901,7 @@ pub unsafe fn park(
         }
 
         let (removed, was_last_entry) =
-            queue_remove_first(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+            queue_remove_one(key, &bucket.queue_head, &bucket.queue_tail, |data| {
                 ptr::eq(data, thread_data)
             });
 
@@ -942,6 +947,10 @@ pub unsafe fn park(
 /// The `before_sleep` future is run outside the queue lock and is allowed
 /// to call `unpark_one`, `unpark_all`, `unpark_requeue` or `unpark_filter`, but
 /// it is not allowed to call `park`, `park_task` or panic.
+///
+/// Once polled this future must be run to completion before being dropped or forgotten,
+/// to ensure its data in the queue lives until its removal, but leaking it is fine
+/// as the queue never remains locked across yielding await points.
 #[cfg(feature = "async")]
 #[inline]
 pub async unsafe fn park_task(
@@ -957,7 +966,7 @@ pub async unsafe fn park_task(
     // `with_task_data` scoped callback here.
     let task_data = &ParkData::task().await;
     // SAFETY: Constructed with `ParkData::task`.
-    let task_parker = unsafe { &task_data.parker.get_task().unchecked_unwrap() };
+    let task_parker = unsafe { task_data.parker.get_task().unchecked_unwrap() };
 
     #[cfg(test)]
     CURRENT_PARK_DATA.set(task_data);
@@ -979,12 +988,12 @@ pub async unsafe fn park_task(
     // Awaiting an ImmediateFuture is guaranteed not to stall progress
     // and therefore fine to do even while the bucket remains locked.
     immediate(|cx| task_parker.prepare_park(cx)).await;
-    queue_insert_tail(&bucket.queue_head, &bucket.queue_tail, task_data, task_data);
+    queue_append_one(&bucket.queue_head, &bucket.queue_tail, task_data);
     // SAFETY: We hold the lock here, as required
     bucket.mutex.unlock();
 
     // Invoke the pre-sleep callback
-    // Note that this is the only non-immediate future of the different callbacks.
+    // Note that this is the only non-immediate future among the different callbacks.
     // As such we only invoke it when the bucket is unlocked to not stall progress.
     before_sleep.await;
 
@@ -1022,7 +1031,7 @@ pub async unsafe fn park_task(
 
     // We timed out, so we now need to remove our task from the queue
     let (removed, was_last_entry) =
-        queue_remove_first(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+        queue_remove_one(key, &bucket.queue_head, &bucket.queue_tail, |data| {
             ptr::eq(data, task_data)
         });
 
@@ -1075,7 +1084,7 @@ pub unsafe fn unpark_one(
     // Find a thread with a matching key and remove it from the queue
     let mut result = UnparkResult::default();
     let (removed, was_last_entry) =
-        queue_remove_first(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+        queue_remove_one(key, &bucket.queue_head, &bucket.queue_tail, |data| {
             data.key.load(Ordering::Relaxed) == key
         });
     if let Some(removed) = removed.as_ref() {
@@ -1230,7 +1239,7 @@ pub unsafe fn unpark_requeue(
                 result.unparked_threads = 1;
             } else {
                 park_data.key.store(key_to, Ordering::Relaxed);
-                queue_insert_tail(&requeue_head, &requeue_tail, park_data, park_data);
+                queue_append_one(&requeue_head, &requeue_tail, park_data);
                 result.requeued_threads += 1;
             }
         },
@@ -1239,7 +1248,7 @@ pub unsafe fn unpark_requeue(
     // Add the requeued threads to the destination bucket
     if let Some(requeue_head) = requeue_head.get().as_ref() {
         let requeue_tail = requeue_tail.get().as_ref().unchecked_unwrap();
-        queue_insert_tail(
+        queue_append_all(
             &bucket_to.queue_head,
             &bucket_to.queue_tail,
             requeue_head,
