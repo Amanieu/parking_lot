@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## `parking_lot` - [0.12.6](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.5...parking_lot-v0.12.6) - 2026-02-21
+
+### Other
+- Update minimum libc for AIX.
+- [AIX] Revert changes to define timespec_tv_nsec_t as 32-bit.
+- Adjust confusing documentation of SpinWait::spin
+- Merge pull request #506 from amy-kwan/amy-kwan/update-timespec-aix
+- Use postcard instead of bincode in tests
+- add Miri CI job
+- Merge pull request #504 from Amanieu/fix_test_129
+- Fix test_issue_129 under Miri
+- condvar test: remove outdated comment
+
+## `parking_lot_core` - [0.9.13](https://github.com/Amanieu/parking_lot/compare/parking_lot_core-v0.9.12...parking_lot_core-v0.9.13) - 2026-02-21
+
+### Other
+- Update minimum libc for AIX.
+- [AIX] Revert changes to define timespec_tv_nsec_t as 32-bit.
+- Adjust confusing documentation of SpinWait::spin
+- Merge pull request #506 from amy-kwan/amy-kwan/update-timespec-aix
+- Use postcard instead of bincode in tests
+- use AtomicPtr (with polyfill for operations missing on old Rust)
+
 ## `parking_lot` - [0.12.5](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.4...parking_lot-v0.12.5) - 2025-09-30
 
 - Bumped MSRV to 1.71
