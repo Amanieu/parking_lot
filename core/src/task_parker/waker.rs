@@ -86,11 +86,6 @@ impl super::TaskParkerT for TaskParker {
             Poll::Pending => {
                 if !self.wake_scheduled.swap(true, Ordering::Acquire) {
                     schedule_wake(timeout, self.waker.clone());
-                } else {
-                    debug_assert!(
-                        false,
-                        "TaskParker::park_until was called again prematurely."
-                    );
                 }
                 Poll::Pending
             }
@@ -99,21 +94,25 @@ impl super::TaskParkerT for TaskParker {
 
     #[inline]
     unsafe fn unpark_lock(&self) -> UnparkHandle {
-        // We don't need to lock anything, just clear the state
-        self.parked.store(false, Ordering::Release);
-        self.wake_scheduled.store(true, Ordering::Release);
-        UnparkHandle(self.waker.clone())
+        // SAFETY: Only mark as unparked AFTER everything else to avoid
+        //      our owning task spuriously waking before dropping and
+        //      overwriting us while we are still accessing self.
+        self.wake_scheduled.store(true, Ordering::Relaxed);
+        UnparkHandle(&self.parked, self.waker.clone())
     }
 }
 
-pub struct UnparkHandle(Waker);
+pub struct UnparkHandle(*const AtomicBool, Waker);
 impl UnparkHandleT for UnparkHandle {
     #[inline]
     unsafe fn unpark(self) {
-        self.0.wake();
+        // SAFETY: Only mark as unparked AFTER everything else to avoid
+        //      its owning task spuriously waking before dropping and
+        //      overwriting ParkData while we are still accessing it.
+        (&*self.0).store(false, Ordering::Release);
+        self.1.wake();
     }
 }
-
 fn schedule_wake(instant: Instant, waker: Waker) {
     let (tx, rooster) = &*ROOSTER;
     tx.send(Sleeper {
