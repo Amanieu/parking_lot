@@ -9,13 +9,15 @@ use crate::task_parker::{TaskParker, TaskParkerT};
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::util::UncheckedOptionExt;
 #[cfg(feature = "async")]
-use crate::util::{immediate, Immediate, ImmediateFuture};
+use crate::util::{immediate, ImmediateFuture};
 use crate::word_lock::WordLock;
 use core::{
     cell::{Cell, UnsafeCell},
     ptr,
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
+#[cfg(feature = "async")]
+use scopeguard::{guard, ScopeGuard};
 use smallvec::SmallVec;
 #[cfg(feature = "async")]
 use std::future::{poll_fn, Future};
@@ -281,24 +283,22 @@ impl ParkData {
 
     #[cfg(feature = "async")]
     #[inline]
-    fn task() -> Immediate<fn(&mut Context<'_>) -> ParkData> {
-        immediate(|cx| {
-            // Keep track of the total number of live ThreadData objects and resize
-            // the hash table accordingly.
-            let num_threads = NUM_THREADS.fetch_add(1, Ordering::Relaxed) + 1;
-            grow_hashtable(num_threads);
+    fn task(cx: &mut Context<'_>) -> ParkData {
+        // Keep track of the total number of live ThreadData objects and resize
+        // the hash table accordingly.
+        let num_threads = NUM_THREADS.fetch_add(1, Ordering::Relaxed) + 1;
+        grow_hashtable(num_threads);
 
-            ParkData {
-                parker: TaskParker::new(cx).into(),
-                key: AtomicUsize::new(0),
-                next_in_queue: Cell::new(ptr::null()),
-                unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
-                park_token: Cell::new(DEFAULT_PARK_TOKEN),
-                parked_with_timeout: Cell::new(false),
-                #[cfg(feature = "deadlock_detection")]
-                deadlock_data: deadlock::DeadlockData::new(),
-            }
-        })
+        ParkData {
+            parker: TaskParker::new(cx).into(),
+            key: AtomicUsize::new(0),
+            next_in_queue: Cell::new(ptr::null()),
+            unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
+            park_token: Cell::new(DEFAULT_PARK_TOKEN),
+            parked_with_timeout: Cell::new(false),
+            #[cfg(feature = "deadlock_detection")]
+            deadlock_data: deadlock::DeadlockData::new(),
+        }
     }
     #[inline]
     fn prepare_insert(&self, key: usize, park_token: ParkToken, timeout: &Option<Instant>) {
@@ -948,15 +948,11 @@ pub unsafe fn park(
 /// primitives.
 ///
 /// The `validate` and `timed_out` futures are called while the queue is
-/// locked and must not panic or call into any function in `parking_lot`.
+/// locked and must not call into any function in `parking_lot`.
 ///
 /// The `before_sleep` future is run outside the queue lock and is allowed
 /// to call `unpark_one`, `unpark_all`, `unpark_requeue` or `unpark_filter`, but
-/// it is not allowed to call `park`, `park_task` or panic.
-///
-/// Once polled this future must be run to completion before being dropped or forgotten,
-/// to ensure its data in the queue actually lives until its removal,
-/// but leaking it is fine as the queue never remains locked across yielding await points.
+/// it is not allowed to call `park` or `park_task`.
 #[cfg(feature = "async")]
 #[inline]
 pub async unsafe fn park_task(
@@ -970,7 +966,7 @@ pub async unsafe fn park_task(
     // Grab our task data, this also ensures that the hash table exists.
     // Because `park_task` is a future we can't use a hypothetical
     // `with_task_data` scoped callback here.
-    let task_data = &ParkData::task().await;
+    let task_data = &*Box::new(immediate(ParkData::task).await);
     // SAFETY: Constructed with `ParkData::task`.
     let task_parker = unsafe { task_data.parker.get_task().unchecked_unwrap() };
 
@@ -979,24 +975,38 @@ pub async unsafe fn park_task(
 
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
+    let bucket_guard = guard(bucket, |bucket| {
+        // SAFETY: We hold the lock here, as required
+        bucket.mutex.unlock();
+    });
 
     // If the validation function fails, just return.
     // Awaiting an ImmediateFuture is guaranteed not to stall progress
     // and therefore fine to do even while the bucket remains locked.
     if !validate.await {
-        // SAFETY: We hold the lock here, as required
-        bucket.mutex.unlock();
         return ParkResult::Invalid;
     }
-
     // Append our task data to the queue and unlock the bucket
     task_data.prepare_insert(key, park_token, &timeout);
     // Awaiting an ImmediateFuture is guaranteed not to stall progress
     // and therefore fine to do even while the bucket remains locked.
     immediate(|cx| task_parker.prepare_park(cx)).await;
     queue_append_one(&bucket.queue_head, &bucket.queue_tail, task_data);
-    // SAFETY: We hold the lock here, as required
-    bucket.mutex.unlock();
+    drop(bucket_guard);
+
+    let drop_guard = guard(task_data, |task_data| {
+        // Lock our bucket again. Note that the hashtable may have been rehashed in
+        // the meantime. Our key may also have changed if we were requeued.
+        let (key, bucket) = lock_bucket_checked(&task_data.key);
+        // We were dropped, so we now need to remove our task from the queue
+        let (removed, _) = queue_remove_one(key, &bucket.queue_head, &bucket.queue_tail, |data| {
+            ptr::eq(data, task_data)
+        });
+        debug_assert!(removed.is_null() || ptr::eq(removed, task_data));
+        // Unlock the bucket, we are done
+        // SAFETY: We hold the lock here, as required
+        bucket.mutex.unlock();
+    });
 
     // Invoke the pre-sleep callback
     // Note that this is the only non-immediate future among the different callbacks.
@@ -1011,10 +1021,12 @@ pub async unsafe fn park_task(
         None => {
             poll_fn(|cx| task_parker.park(cx)).await;
             // call deadlock detection on_unpark hook
-            deadlock::on_unpark(task_data);
+            deadlock::on_unpark(&*drop_guard);
             true
         }
     };
+
+    ScopeGuard::into_inner(drop_guard);
 
     // If we were unparked, return now
     if unparked {
@@ -1024,17 +1036,17 @@ pub async unsafe fn park_task(
     // Lock our bucket again. Note that the hashtable may have been rehashed in
     // the meantime. Our key may also have changed if we were requeued.
     let (key, bucket) = lock_bucket_checked(&task_data.key);
-
+    let _bucket_guard = guard(bucket, |bucket| {
+        // SAFETY: We hold the lock here, as required
+        bucket.mutex.unlock();
+    });
     // Now we need to check again if we were unparked or timed out. Unlike the
     // last check this is precise because we hold the bucket lock.
     // Awaiting an ImmediateFuture is guaranteed not to stall progress
     // and therefore fine to do even while the bucket remains locked.
     if !immediate(|cx| task_parker.timed_out(cx)).await {
-        // SAFETY: We hold the lock here, as required
-        bucket.mutex.unlock();
         return ParkResult::Unparked(task_data.unpark_token.get());
     }
-
     // We timed out, so we now need to remove our task from the queue
     let (removed, was_last_entry) =
         queue_remove_one(key, &bucket.queue_head, &bucket.queue_tail, |data| {
@@ -1051,9 +1063,6 @@ pub async unsafe fn park_task(
     // and therefore fine to do even while the bucket remains locked.
     timed_out.await(key, was_last_entry);
 
-    // Unlock the bucket, we are done
-    // SAFETY: We hold the lock here, as required
-    bucket.mutex.unlock();
     ParkResult::TimedOut
 }
 
@@ -1698,14 +1707,23 @@ mod deadlock_impl {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "async")]
+    use super::FilterOp;
     use super::{ParkData, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
     use crate::parking_lot::CURRENT_PARK_DATA;
     #[cfg(feature = "async")]
-    use crate::util::immediate;
+    use crate::{park_task, unpark_filter, util::immediate, ParkResult, ParkToken};
     #[cfg(feature = "async")]
     use futures::{executor::block_on, future::join_all};
     #[cfg(feature = "async")]
-    use std::future::ready;
+    use std::{
+        cell::Cell,
+        future::{poll_fn, ready, Future},
+        mem::{forget, take},
+        panic::{catch_unwind, AssertUnwindSafe, Location},
+        task::{Context, Poll, Waker},
+        time::Instant,
+    };
     use std::{
         ptr,
         sync::{
@@ -2084,6 +2102,179 @@ mod tests {
 
         fn semaphore_addr(&self) -> usize {
             &self.semaphore as *const _ as usize
+        }
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn park_task_memory_safe() {
+        let key = &() as *const _ as usize;
+        let find = |unpark| {
+            let mut found = false;
+            unsafe {
+                unpark_filter(
+                    key,
+                    |token| {
+                        if token == ParkToken(key) {
+                            found = true;
+                            if unpark {
+                                FilterOp::Unpark
+                            } else {
+                                FilterOp::Stop
+                            }
+                        } else if found {
+                            FilterOp::Stop
+                        } else {
+                            FilterOp::Skip
+                        }
+                    },
+                    |_| DEFAULT_UNPARK_TOKEN,
+                )
+            };
+            found
+        };
+        let pending = || {
+            let cx = &mut Context::from_waker(Waker::noop());
+            let mut task = unsafe {
+                Box::pin(park_task(
+                    key,
+                    ready(true),
+                    {
+                        let mut once = true;
+                        poll_fn(move |_| {
+                            if take(&mut once) {
+                                Poll::Pending
+                            } else {
+                                Poll::Ready(())
+                            }
+                        })
+                    },
+                    immediate(|_| |_, _| unreachable!()),
+                    ParkToken(key),
+                    None,
+                ))
+            };
+            assert!(!find(false));
+            let Poll::Pending = task.as_mut().poll(cx) else {
+                unreachable!()
+            };
+            task
+        };
+
+        assert!(!find(false));
+        let task = pending();
+        assert!(find(false));
+        drop(task);
+        assert!(!find(false));
+
+        let task = pending();
+        assert!(find(true));
+        assert!(!find(false));
+        drop(task);
+        assert!(!find(false));
+
+        let mut task = pending();
+        let cx = &mut Context::from_waker(Waker::noop());
+        assert!(find(true));
+        let Poll::Ready(ParkResult::Unparked(DEFAULT_UNPARK_TOKEN)) = task.as_mut().poll(cx) else {
+            unreachable!()
+        };
+        assert!(!find(false));
+
+        if option_env!("MIRIFLAGS").is_some_and(|flags| flags.contains("-Zmiri-ignore-leaks")) {
+            let task = pending();
+            assert!(find(false));
+            // Will cause leak
+            forget(task);
+            assert!(find(true));
+            assert!(!find(false));
+        } else {
+            println!(
+                "{}: note: also run with \"MIRIFLAGS=-Zmiri-ignore-leaks\" for more testing",
+                Location::caller()
+            )
+        }
+    }
+
+    #[cfg(feature = "async")]
+    #[test]
+    fn park_task_panic_safe() {
+        let key = &() as *const _ as usize;
+        let find = |unpark| {
+            let mut found = false;
+            unsafe {
+                unpark_filter(
+                    key,
+                    |token| {
+                        if token == ParkToken(key) {
+                            found = true;
+                            if unpark {
+                                FilterOp::Unpark
+                            } else {
+                                FilterOp::Stop
+                            }
+                        } else if found {
+                            FilterOp::Stop
+                        } else {
+                            FilterOp::Skip
+                        }
+                    },
+                    |_| DEFAULT_UNPARK_TOKEN,
+                )
+            };
+            found
+        };
+        let check = |panic: usize| {
+            let out = &Cell::new(0);
+            let mut task = unsafe {
+                Box::pin(park_task(
+                    key,
+                    immediate(move |_| {
+                        if panic == 1 {
+                            out.set(panic);
+                            panic!()
+                        } else {
+                            true
+                        }
+                    }),
+                    {
+                        poll_fn(move |_| {
+                            assert!(find(false));
+                            if panic == 2 {
+                                out.set(panic);
+                                panic!()
+                            } else {
+                                Poll::Ready(())
+                            }
+                        })
+                    },
+                    immediate(move |_| {
+                        move |_, _| {
+                            if panic == 3 {
+                                out.set(panic);
+                                panic!()
+                            }
+                        }
+                    }),
+                    ParkToken(key),
+                    Some(Instant::now()),
+                ))
+            };
+            assert!(!find(false));
+            let catch = catch_unwind(AssertUnwindSafe(|| {
+                let cx = &mut Context::from_waker(Waker::noop());
+                _ = task.as_mut().poll(cx);
+            }));
+            if panic == 0 {
+                catch.unwrap();
+            } else {
+                catch.unwrap_err();
+            }
+            assert!(!find(false));
+            assert_eq!(out.get(), panic);
+        };
+        for x in 0..=3 {
+            check(x);
         }
     }
 }

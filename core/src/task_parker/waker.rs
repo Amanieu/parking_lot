@@ -39,7 +39,7 @@ impl super::TaskParkerT for TaskParker {
 
     #[inline]
     fn is_valid_context(&self, cx: &mut Context<'_>) -> bool {
-        self.waker.will_wake(cx.waker())
+        self.waker.vtable() == Waker::noop().vtable() || self.waker.will_wake(cx.waker())
     }
 
     #[inline]
