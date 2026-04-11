@@ -5,12 +5,14 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
-use crate::util::UncheckedOptionExt;
 use core::{
     fmt, mem,
-    sync::atomic::{fence, AtomicU8, Ordering},
+    sync::atomic::{AtomicU8, Ordering, fence},
 };
-use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+
+use parking_lot_core::{self, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN, SpinWait};
+
+use crate::util::UncheckedOptionExt;
 
 const DONE_BIT: u8 = 1;
 const POISON_BIT: u8 = 2;
@@ -231,45 +233,7 @@ impl Once {
                 continue;
             }
 
-            // If there is no queue, try spinning a few times
-            if state & PARKED_BIT == 0 && spinwait.spin() {
-                state = self.0.load(Ordering::Relaxed);
-                continue;
-            }
-
-            // Set the parked bit
-            if state & PARKED_BIT == 0 {
-                if let Err(x) = self.0.compare_exchange_weak(
-                    state,
-                    state | PARKED_BIT,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                ) {
-                    state = x;
-                    continue;
-                }
-            }
-
-            // Park our thread until we are woken up by the thread that owns the
-            // lock.
-            let addr = self as *const _ as usize;
-            let validate = || self.0.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
-            let before_sleep = || {};
-            let timed_out = |_, _| unreachable!();
-            unsafe {
-                parking_lot_core::park(
-                    addr,
-                    validate,
-                    before_sleep,
-                    timed_out,
-                    DEFAULT_PARK_TOKEN,
-                    None,
-                );
-            }
-
-            // Loop back and check if the done bit was set
-            spinwait.reset();
-            state = self.0.load(Ordering::Relaxed);
+            self.wait_for_change(&mut state, &mut spinwait);
         }
 
         struct PanicGuard<'a>(&'a Once);
@@ -307,6 +271,65 @@ impl Once {
             }
         }
     }
+
+    fn wait_for_change(&self, state: &mut u8, spinwait: &mut SpinWait) {
+        // If there is no queue, try spinning a few times
+        if *state & PARKED_BIT == 0 && spinwait.spin() {
+            *state = self.0.load(Ordering::Relaxed);
+            return;
+        }
+        // Set the parked bit
+        if *state & PARKED_BIT == 0 {
+            if let Err(x) = self.0.compare_exchange_weak(
+                *state,
+                *state | PARKED_BIT,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                *state = x;
+                return;
+            }
+        }
+
+        // Park our thread until we are woken up by the thread that owns the
+        // lock.
+        let addr = self as *const _ as usize;
+        let validate = || self.0.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
+        let before_sleep = || {};
+        let timed_out = |_, _| unreachable!();
+        unsafe {
+            parking_lot_core::park(
+                addr,
+                validate,
+                before_sleep,
+                timed_out,
+                DEFAULT_PARK_TOKEN,
+                None,
+            );
+        }
+
+        // Loop back and check if the done bit was set
+        spinwait.reset();
+        *state = self.0.load(Ordering::Relaxed);
+    }
+
+    fn wait_until(&self, mut condition: impl FnMut(u8) -> bool) {
+        let mut spinwait = SpinWait::new();
+        let mut state = self.0.load(Ordering::Relaxed);
+
+        loop {
+            if condition(state) {
+                fence(Ordering::Acquire);
+                return;
+            }
+
+            self.wait_for_change(&mut state, &mut spinwait);
+        }
+    }
+
+    pub(crate) fn wait(&self) {
+        self.wait_until(|state| state & DONE_BIT != 0);
+    }
 }
 
 impl Default for Once {
@@ -326,10 +349,9 @@ impl fmt::Debug for Once {
 
 #[cfg(test)]
 mod tests {
+    use std::{panic, sync::mpsc::channel, thread};
+
     use crate::Once;
-    use std::panic;
-    use std::sync::mpsc::channel;
-    use std::thread;
 
     #[test]
     fn smoke_once() {
