@@ -51,6 +51,16 @@ impl OnceState {
     pub fn done(self) -> bool {
         matches!(self, OnceState::Done)
     }
+
+    // work around for `OnceLock::get_or_try_init`
+    pub(crate) fn set_done(&mut self) {
+        *self = Self::Done
+    }
+
+    // work around for `OnceLock::get_or_try_init`
+    pub(crate) fn set_poison(&mut self) {
+        *self = Self::Poisoned
+    }
 }
 
 /// A synchronization primitive which can be used to run a one-time
@@ -159,7 +169,9 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(false, &mut |_| unsafe { f.take().unchecked_unwrap()() });
+        self.call_once_slow(false, false, &mut |_| unsafe {
+            f.take().unchecked_unwrap()()
+        });
     }
 
     /// Performs the same function as `call_once` except ignores poisoning.
@@ -181,7 +193,23 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(true, &mut |state| unsafe {
+        self.call_once_slow(true, false, &mut |state| unsafe {
+            f.take().unchecked_unwrap()(*state)
+        });
+    }
+
+    // work around for `OnceLock::get_or_try_init`
+    #[inline]
+    pub(crate) fn call_once_for_once_lock<F>(&self, f: F)
+    where
+        F: FnOnce(&mut OnceState),
+    {
+        if self.0.load(Ordering::Acquire) == DONE_BIT {
+            return;
+        }
+
+        let mut f = Some(f);
+        self.call_once_slow(true, true, &mut |state| unsafe {
             f.take().unchecked_unwrap()(state)
         });
     }
@@ -198,7 +226,12 @@ impl Once {
     // currently no way to take an `FnOnce` and call it via virtual dispatch
     // without some allocation overhead.
     #[cold]
-    fn call_once_slow(&self, ignore_poison: bool, f: &mut dyn FnMut(OnceState)) {
+    fn call_once_slow(
+        &self,
+        ignore_poison: bool,
+        from_once_lock: bool, // work around for `OnceLock::get_or_try_init`
+        f: &mut dyn FnMut(&mut OnceState),
+    ) {
         let mut spinwait = SpinWait::new();
         let mut state = self.0.load(Ordering::Relaxed);
         loop {
@@ -254,16 +287,26 @@ impl Once {
         // At this point we have the lock, so run the closure. Make sure we
         // properly clean up if the closure panicks.
         let guard = PanicGuard(self);
-        let once_state = if state & POISON_BIT != 0 {
+        let mut once_state = if state & POISON_BIT != 0 {
             OnceState::Poisoned
         } else {
             OnceState::New
         };
-        f(once_state);
+        f(&mut once_state);
         mem::forget(guard);
+        let set_state = if from_once_lock {
+            // work around for `OnceLock::get_or_try_init`
+            match once_state {
+                OnceState::Poisoned => POISON_BIT,
+                OnceState::Done => DONE_BIT,
+                _ => unreachable!(),
+            }
+        } else {
+            DONE_BIT
+        };
 
         // Now unlock the state, set the done bit and unpark all threads
-        let state = self.0.swap(DONE_BIT, Ordering::Release);
+        let state = self.0.swap(set_state, Ordering::Release);
         if state & PARKED_BIT != 0 {
             let addr = self as *const _ as usize;
             unsafe {
