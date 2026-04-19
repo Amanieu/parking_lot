@@ -63,6 +63,13 @@ impl OnceState {
     }
 }
 
+#[repr(u8)]
+enum Method {
+    Normal,
+    IgnorePoison,
+    OnceLock,
+}
+
 /// A synchronization primitive which can be used to run a one-time
 /// initialization. Useful for one-time initialization for globals, FFI or
 /// related functionality.
@@ -169,7 +176,7 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(false, false, &mut |_| unsafe {
+        self.call_once_slow(Method::Normal, &mut |_| unsafe {
             f.take().unchecked_unwrap()()
         });
     }
@@ -193,7 +200,7 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(true, false, &mut |state| unsafe {
+        self.call_once_slow(Method::IgnorePoison, &mut |state| unsafe {
             f.take().unchecked_unwrap()(*state)
         });
     }
@@ -209,7 +216,7 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(true, true, &mut |state| unsafe {
+        self.call_once_slow(Method::OnceLock, &mut |state| unsafe {
             f.take().unchecked_unwrap()(state)
         });
     }
@@ -226,12 +233,7 @@ impl Once {
     // currently no way to take an `FnOnce` and call it via virtual dispatch
     // without some allocation overhead.
     #[cold]
-    fn call_once_slow(
-        &self,
-        ignore_poison: bool,
-        from_once_lock: bool, // work around for `OnceLock::get_or_try_init`
-        f: &mut dyn FnMut(&mut OnceState),
-    ) {
+    fn call_once_slow(&self, method: Method, f: &mut dyn FnMut(&mut OnceState)) {
         let mut spinwait = SpinWait::new();
         let mut state = self.0.load(Ordering::Relaxed);
         loop {
@@ -244,7 +246,8 @@ impl Once {
             }
 
             // If the state has been poisoned and we aren't forcing, then panic
-            if state & POISON_BIT != 0 && !ignore_poison {
+            if state & POISON_BIT != 0 && !matches!(method, Method::IgnorePoison | Method::OnceLock)
+            {
                 // Need the fence here as well for the same reason
                 fence(Ordering::Acquire);
                 panic!("Once instance has previously been poisoned");
@@ -294,7 +297,7 @@ impl Once {
         };
         f(&mut once_state);
         mem::forget(guard);
-        let set_state = if from_once_lock {
+        let set_state = if matches!(method, Method::OnceLock) {
             // work around for `OnceLock::get_or_try_init`
             match once_state {
                 OnceState::Poisoned => POISON_BIT,
