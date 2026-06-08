@@ -83,6 +83,28 @@ impl Once {
         Once(AtomicU8::new(0))
     }
 
+    /// Creates a new `Once` value that is already in the completed state.
+    ///
+    /// A `Once` created this way will never invoke a closure passed to
+    /// [`call_once`](Self::call_once) or [`call_once_force`](Self::call_once_force),
+    /// and its [`state`](Self::state) will always be [`OnceState::Done`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use parking_lot::{Once, OnceState};
+    ///
+    /// static INIT: Once = Once::new_completed();
+    /// assert_eq!(INIT.state(), OnceState::Done);
+    ///
+    /// // The closure is never executed.
+    /// INIT.call_once(|| unreachable!());
+    /// ```
+    #[inline]
+    pub const fn new_completed() -> Once {
+        Once(AtomicU8::new(DONE_BIT))
+    }
+
     /// Returns the current state of this `Once`.
     #[inline]
     pub fn state(&self) -> OnceState {
@@ -448,5 +470,29 @@ mod tests {
         static O: Once = Once::new();
 
         assert_eq!(format!("{:?}", O), "Once { state: New }");
+    }
+
+    #[test]
+    fn new_completed_is_done() {
+        use crate::OnceState;
+
+        static O: Once = Once::new_completed();
+        assert_eq!(O.state(), OnceState::Done);
+        assert!(O.state().done());
+        assert!(!O.state().poisoned());
+
+        let mut called = false;
+        O.call_once(|| called = true);
+        assert!(!called);
+        assert_eq!(O.state(), OnceState::Done);
+    }
+
+    #[test]
+    fn new_default_is_new() {
+        // Sanity check that the default constructor is unchanged.
+        static O: Once = Once::new();
+        let mut called = false;
+        O.call_once(|| called = true);
+        assert!(called);
     }
 }
