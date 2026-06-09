@@ -6,7 +6,8 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::thread_parker;
-use core::hint::spin_loop;
+use core::{hint::spin_loop, time::Duration};
+use std::thread;
 
 // Wastes some CPU time for the given number of iterations,
 // using a hint to indicate to the CPU that we are spinning.
@@ -44,16 +45,20 @@ impl SpinWait {
     ///
     /// The spin strategy will initially use a CPU-bound loop but will fall back
     /// to yielding the CPU to the OS after a few iterations.
+    /// Before parking, 'spin()' will finally try sleep 1ms, 4 times to avoid
+    /// entering parking too frequently in case of cache contention.
     #[inline]
     pub fn spin(&mut self) -> bool {
-        if self.counter >= 10 {
+        if self.counter >= 15 {
             return false;
         }
         self.counter += 1;
         if self.counter <= 3 {
             cpu_relax(1 << self.counter);
-        } else {
+        } else if self.counter <= 10 {
             thread_parker::thread_yield();
+        } else {
+            thread::sleep(Duration::from_millis(1));
         }
         true
     }
