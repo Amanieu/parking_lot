@@ -108,6 +108,16 @@ pub type MutexGuard<'a, T> = lock_api::MutexGuard<'a, RawMutex, T>;
 /// thread.
 pub type MappedMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawMutex, T>;
 
+/// An RAII mutex guard returned by `ArcMutexGuard::map`, which can point to a
+/// subfield of the protected data.
+///
+/// The main difference between `MappedArcMutexGuard` and `ArcMutexGuard` is that the
+/// former doesn't support temporarily unlocking and re-locking, since that
+/// could introduce soundness issues if the locked object is modified by another
+/// thread.
+#[cfg(feature = "arc_lock")]
+pub type MappedArcMutexGuard<U> = lock_api::MappedArcMutexGuard<RawMutex, U>;
+
 #[cfg(test)]
 mod tests {
     use crate::{Condvar, MappedMutexGuard, Mutex, MutexGuard};
@@ -309,6 +319,31 @@ mod tests {
 
         assert_eq!(*(mutex.lock()), *(deserialized.lock()));
         assert_eq!(contents, *(deserialized.lock()));
+    }
+
+    #[cfg(feature = "arc_lock")]
+    #[test]
+    fn test_arc_map() {
+        use lock_api::{ArcMutexGuard, MappedArcMutexGuard};
+        use std::sync::Arc;
+
+        let contents: Vec<u8> = vec![0, 1, 2];
+        let mutex: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(contents));
+
+        let guard = mutex.lock_arc();
+
+        // Example of a failible mapping function: getting a chunk
+        let guard = ArcMutexGuard::try_map(guard, |contents| contents.first_chunk_mut::<3>())
+            .ok()
+            .expect("Could not get the first 3 elements as a chunk.");
+
+        // Example of chained mapping: accessing a value.
+        let guard = MappedArcMutexGuard::map(guard, |contents| &mut contents[1]);
+
+        // The point of the ArcMutexGuard is that we don't borrow the mutex, so we can drop it.
+        drop(mutex);
+
+        assert_eq!(*guard, 1);
     }
 
     #[test]
