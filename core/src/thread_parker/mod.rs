@@ -73,6 +73,16 @@ cfg_if! {
     ))] {
         #[path = "wasm_atomic.rs"]
         mod imp;
+    } else if #[cfg(all(
+        target_family = "wasm",
+        target_os = "wasi",
+        target_feature = "atomics"
+    ))] {
+        // Stable fallback for threaded WASI targets: std's futex-backed
+        // Mutex/Condvar. The wasm_atomic parker above is preferred but its
+        // intrinsics are nightly-only (rust-lang/rust#77839).
+        #[path = "wasi_threads.rs"]
+        mod imp;
     } else if #[cfg(target_family = "wasm")] {
         #[path = "wasm.rs"]
         mod imp;
