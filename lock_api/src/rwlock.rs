@@ -2049,7 +2049,7 @@ pub struct RwLockUpgradableReadGuard<'a, R: RawRwLockUpgrade, T: ?Sized> {
     marker: PhantomData<(&'a T, R::GuardMarker)>,
 }
 
-unsafe impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + Sync + 'a> Sync
+unsafe impl<'a, R: RawRwLockUpgrade + Sync + 'a, T: ?Sized + Sync + 'a> Sync
     for RwLockUpgradableReadGuard<'a, R, T>
 {
 }
@@ -2798,8 +2798,8 @@ pub struct MappedRwLockReadGuard<'a, R: RawRwLock, T: ?Sized> {
     marker: PhantomData<&'a T>,
 }
 
-unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync for MappedRwLockReadGuard<'a, R, T> {}
-unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Send for MappedRwLockReadGuard<'a, R, T> where
+unsafe impl<'a, R: RawRwLock + Sync + 'a, T: ?Sized + Sync + 'a> Sync for MappedRwLockReadGuard<'a, R, T> {}
+unsafe impl<'a, R: RawRwLock + Sync + 'a, T: ?Sized + Sync + 'a> Send for MappedRwLockReadGuard<'a, R, T> where
     R::GuardMarker: Send
 {
 }
@@ -2966,11 +2966,11 @@ pub struct MappedRwLockWriteGuard<'a, R: RawRwLock, T: ?Sized> {
     marker: PhantomData<&'a mut T>,
 }
 
-unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync
+unsafe impl<'a, R: RawRwLock + Sync + 'a, T: ?Sized + Sync + 'a> Sync
     for MappedRwLockWriteGuard<'a, R, T>
 {
 }
-unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Send + 'a> Send for MappedRwLockWriteGuard<'a, R, T> where
+unsafe impl<'a, R: RawRwLock + Sync + 'a, T: ?Sized + Send + 'a> Send for MappedRwLockWriteGuard<'a, R, T> where
     R::GuardMarker: Send
 {
 }

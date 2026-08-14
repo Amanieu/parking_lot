@@ -872,6 +872,58 @@ impl<R: RawMutex, T: ?Sized> Drop for ArcMutexGuard<R, T> {
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
+///
+/// # Soundness
+///
+/// A `MappedMutexGuard` only implements [`Send`]/[`Sync`] when the underlying
+/// raw mutex is `Sync`. The `Drop` impl calls `RawMutex::unlock` on `&self.raw`,
+/// and a `Send`-but-`!Sync` raw mutex may rely on single-threaded bookkeeping
+/// that would be violated by a cross-thread drop. The following witness (from
+/// issue #527) used to compile but is rejected at type-check time after the
+/// `R: Sync` bound was added to the `Send` impl:
+///
+/// ```compile_fail
+/// use std::cell::Cell;
+/// use std::sync::atomic::{AtomicBool, Ordering};
+/// use lock_api::{GuardSend, Mutex, MutexGuard, MappedMutexGuard, RawMutex};
+///
+/// // A raw mutex that is `Send` but NOT `Sync`: the `Cell<usize>` bookkeeping
+/// // would race if a guard derived from this mutex were dropped on another
+/// // thread. `Cell` is intentionally `!Sync` so the wrapper inherits that.
+/// struct NotSyncRawMutex {
+///     locked: AtomicBool,
+///     owner_tid: Cell<usize>,
+/// }
+/// unsafe impl RawMutex for NotSyncRawMutex {
+///     const INIT: Self = NotSyncRawMutex {
+///         locked: AtomicBool::new(false),
+///         owner_tid: Cell::new(0),
+///     };
+///     type GuardMarker = GuardSend;
+///     fn lock(&self) {
+///         self.locked.store(true, Ordering::SeqCst);
+///         self.owner_tid.set(1);
+///     }
+///     fn try_lock(&self) -> bool {
+///         if self.locked.swap(true, Ordering::SeqCst) { false } else {
+///             self.owner_tid.set(1);
+///             true
+///         }
+///     }
+///     unsafe fn unlock(&self) {
+///         self.locked.store(false, Ordering::SeqCst);
+///     }
+/// }
+///
+/// // Leak the mutex so the mapped guard can hold a `'static` reference.
+/// let m: &'static Mutex<NotSyncRawMutex, (u8, u8)> =
+///     Box::leak(Box::new(Mutex::new((0, 0))));
+/// let guard: MappedMutexGuard<'static, NotSyncRawMutex, u8> =
+///     MutexGuard::map(m.lock(), |p| &mut p.1);
+/// // Sending the guard across threads would run `unlock` on the wrong
+/// // thread, racing on the `Cell`-backed `owner_tid`.
+/// std::thread::spawn(move || drop(guard)).join().unwrap();
+/// ```
 #[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized> {
@@ -884,7 +936,7 @@ unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync
     for MappedMutexGuard<'a, R, T>
 {
 }
-unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + Send + 'a> Send for MappedMutexGuard<'a, R, T> where
+unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Send + 'a> Send for MappedMutexGuard<'a, R, T> where
     R::GuardMarker: Send
 {
 }
