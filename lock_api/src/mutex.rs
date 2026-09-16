@@ -91,6 +91,12 @@ pub unsafe trait RawMutexFair: RawMutex {
     ///
     /// This method may only be called if the mutex is held in the current context, see
     /// the documentation of [`unlock`](RawMutex::unlock).
+    ///
+    /// Implementations must not unwind: callers (e.g.
+    /// [`RawReentrantMutex::bump`](crate::remutex::RawReentrantMutex::bump))
+    /// rely on these methods to re-establish the lock state that was
+    /// temporarily cleared before the call, and cannot recover the state if
+    /// the implementation panics.
     unsafe fn unlock_fair(&self);
 
     /// Temporarily yields the mutex to a waiting thread if there is one.
@@ -103,6 +109,9 @@ pub unsafe trait RawMutexFair: RawMutex {
     ///
     /// This method may only be called if the mutex is held in the current context, see
     /// the documentation of [`unlock`](RawMutex::unlock).
+    ///
+    /// Implementations must not unwind, for the same reason as
+    /// [`unlock_fair`](Self::unlock_fair).
     unsafe fn bump(&self) {
         self.unlock_fair();
         self.lock();
