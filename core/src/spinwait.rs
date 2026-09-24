@@ -17,6 +17,14 @@ fn cpu_relax(iterations: u32) {
     }
 }
 
+// Returns the number of times `spin_loop` should be called for the given
+// (1-indexed) backoff counter value. This grows as 1, 2, 4, ... so that the
+// very first spin only issues a single spin-loop hint.
+#[inline]
+fn spin_iterations(counter: u32) -> u32 {
+    1 << (counter - 1)
+}
+
 /// A counter used to perform exponential backoff in spin loops.
 #[derive(Default)]
 pub struct SpinWait {
@@ -51,7 +59,7 @@ impl SpinWait {
         }
         self.counter += 1;
         if self.counter <= 3 {
-            cpu_relax(1 << self.counter);
+            cpu_relax(spin_iterations(self.counter));
         } else {
             thread_parker::thread_yield();
         }
@@ -70,5 +78,19 @@ impl SpinWait {
             self.counter = 10;
         }
         cpu_relax(1 << self.counter);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::spin_iterations;
+
+    #[test]
+    fn spin_iterations_starts_at_one() {
+        // Regression test for https://github.com/Amanieu/parking_lot/issues/484:
+        // the first spin used to issue two `spin_loop` hints instead of one.
+        assert_eq!(spin_iterations(1), 1);
+        assert_eq!(spin_iterations(2), 2);
+        assert_eq!(spin_iterations(3), 4);
     }
 }
