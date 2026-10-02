@@ -65,3 +65,24 @@ pub use self::lock_api::{
     ArcMutexGuard, ArcReentrantMutexGuard, ArcRwLockReadGuard, ArcRwLockUpgradableReadGuard,
     ArcRwLockWriteGuard,
 };
+
+#[cfg(all(test, feature = "send_guard"))]
+#[test]
+fn test_send_guards() {
+    fn assert_send<T: Send>() {}
+
+    assert_send::<MutexGuard<'static, ()>>();
+    assert_send::<MappedMutexGuard<'static, ()>>();
+    assert_send::<FairMutexGuard<'static, ()>>();
+    assert_send::<MappedFairMutexGuard<'static, ()>>();
+    assert_send::<RwLockReadGuard<'static, ()>>();
+    assert_send::<RwLockWriteGuard<'static, ()>>();
+    assert_send::<RwLockUpgradableReadGuard<'static, ()>>();
+    assert_send::<MappedRwLockReadGuard<'static, ()>>();
+    assert_send::<MappedRwLockWriteGuard<'static, ()>>();
+    assert_send::<RecursiveRwLockReadGuard<'static, ()>>();
+    assert_send::<RecursiveRwLockWriteGuard<'static, ()>>();
+    assert_send::<RecursiveRwLockUpgradableReadGuard<'static, ()>>();
+    assert_send::<MappedRecursiveRwLockReadGuard<'static, ()>>();
+    assert_send::<MappedRecursiveRwLockWriteGuard<'static, ()>>();
+}
