@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::thread_parker;
 use core::hint::spin_loop;
 
@@ -26,13 +19,13 @@ pub struct SpinWait {
 impl SpinWait {
     /// Creates a new `SpinWait`.
     #[inline]
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self { counter: 0 }
     }
 
     /// Resets a `SpinWait` to its initial state.
     #[inline]
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.counter = 0;
     }
 

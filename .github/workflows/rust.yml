@@ -18,13 +18,10 @@ jobs:
       matrix:
         os: [ubuntu, macos, windows]
         channel: [stable, beta, nightly]
-        feature: [arc_lock, serde, deadlock_detection]
+        feature: [arc_lock, serde, deadlock_detection, send_guard]
         include:
           - channel: nightly
             feature: nightly
-            os: ubuntu
-          - channel: nightly
-            feature: hardware-lock-elision
             os: ubuntu
 
     steps:
@@ -34,7 +31,6 @@ jobs:
     - run: cargo test --all
     - run: cargo build --all --features ${{ matrix.feature }}
     - run: cargo test --all --features ${{ matrix.feature }}
-      if: matrix.feature == 'nightly'
     - run: cargo install cargo-msrv
     - run: cargo msrv --workspace verify
   build_other_platforms:

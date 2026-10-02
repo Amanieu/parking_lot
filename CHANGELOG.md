@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Raised the MSRV to Rust 1.95 and upgraded all crates to edition 2024.
+- Removed the `hardware-lock-elision` feature.
+- Removed automatic eventual fairness. Fair unlocking remains available through
+  the explicit fair-unlock APIs.
+- Removed the no-op `lock_api/nightly` feature.
+- Removed the legacy `lock_api` `const_new` methods and the redundant
+  `parking_lot` `const_*` constructor functions; the corresponding `new`
+  methods can be called in constant contexts.
+- Replaced the recursive read methods on `RwLock` with a dedicated reader-biased
+  `RecursiveRwLock` type. The `RawRwLockRecursive` and `RawRwLockRecursiveTimed`
+  extension traits have been removed from `lock_api`.
+- Added `Once::new_completed` for constructing a `Once` in the completed state.
+- Added `Once::{is_completed, wait, wait_force}` and the corresponding
+  `OnceState` query methods.
+- Made additional lock, timeout, parking, and spin-wait accessors usable in
+  constant contexts.
+- Added `into_inner_with_raw` to `lock_api`'s `Mutex`, `RwLock`, and `ReentrantMutex`.
+- Added `RawCondvar`, `RawCondvarTimed`, and the generic `Condvar` wrapper to
+  `lock_api`, and implemented `parking_lot::Condvar` using them. Custom raw
+  condition variables may allow spurious wakeups; their notification methods
+  must then return `false` or `0`. `parking_lot::Condvar` still guarantees no
+  spurious wakeups and exact notification counts.
+- Corrected the `Send` and `Sync` bounds of lock guards in `lock_api`.
+- Made `RawMutex::is_locked` and `RawRwLock::{is_locked, is_locked_exclusive}` required methods.
+- Renamed `MappedRwLockReadGuard::try_map_or_else` to `try_map_or_err`.
+- Clarified the safety requirements of raw lock implementations, including
+  acquire/release synchronization, moving or dropping a locked raw lock,
+  preserving the original lock mode on a failed upgrade, and stable thread IDs.
+  Acquisitions may unwind without acquiring the lock; unlock and bump operations
+  must not unwind.
+- Clarified the aliasing requirements of unsafe raw-access, force-unlock, and
+  guard-construction APIs in `lock_api`.
+- Guard `unlocked` and `unlocked_fair` operations now abort if re-locking panics.
+  Default raw-lock bump implementations also abort if re-locking panics.
+- Parking-lot operations in `parking_lot_core` are now guaranteed to never
+  unwind.
+- Documented that parking-lot-based synchronization primitives must not be used
+  internally by global allocators.
+- Fixed `unlock_upgradable_fair` not forcing a fair handoff.
+- Fixed conditional `Condvar` waits reporting a timeout without rechecking the predicate.
+- Fixed the generic thread parker continuously busy-spinning while parked.
+- Fixed timed waits on ESP-IDF using the wrong clock.
+- Made timed waits on Apple platforms independent of wall-clock changes.
+- Fixed the futex timeout ABI on 32-bit Linux targets, including time64-only
+  architectures, with fallback to time32 when the kernel lacks time64 support.
+- Corrected `RwLock` deadlock tracking to avoid false positives and missed
+  cycles, and prevented dependency feature unification from enabling tracking
+  when only `parking_lot_core/deadlock_detection` is enabled.
+- Added `Once` deadlock tracking and made overlapping wait cycles report as a
+  single component.
+
 ## `parking_lot` - [0.12.5](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.4...parking_lot-v0.12.5) - 2025-09-30
 
 - Bumped MSRV to 1.71

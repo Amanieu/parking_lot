@@ -1,15 +1,8 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::raw_condvar::RawCondvar;
 
 pub use lock_api::WaitTimeoutResult;
 
-/// A Condition Variable
+/// A condition variable.
 ///
 /// Condition variables represent the ability to block a thread such that it
 /// consumes no CPU time while waiting for an event to occur. Condition
@@ -28,14 +21,11 @@ pub use lock_api::WaitTimeoutResult;
 ///
 /// - No spurious wakeups: A wait will only return a non-timeout result if it
 ///   was woken up by `notify_one` or `notify_all`.
-/// - `Condvar::notify_all` will only wake up a single thread, the rest are
-///   requeued to wait for the `Mutex` to be unlocked by the thread that was
-///   woken up.
-/// - Only requires 1 word of space, whereas the standard library boxes the
-///   `Condvar` due to platform limitations.
-/// - Can be statically constructed.
-/// - Does not require any drop glue when dropped.
-/// - Inline fast path for the uncontended case.
+/// - `notify_one` returns exactly whether a waiting thread was notified, and
+///   `notify_all` returns the exact number of waiting threads notified.
+/// - `Condvar::notify_all` requeues waiters directly onto the associated
+///   `Mutex` and wakes them as the lock becomes available, avoiding a
+///   thundering herd.
 ///
 /// # Examples
 ///
@@ -61,21 +51,21 @@ pub use lock_api::WaitTimeoutResult;
 /// if !*started {
 ///     cvar.wait(&mut started);
 /// }
-/// // Note that we used an if instead of a while loop above. This is only
-/// // possible because parking_lot's Condvar will never spuriously wake up.
-/// // This means that wait() will only return after notify_one or notify_all is
-/// // called.
+/// // In this single-waiter example an `if` is sufficient because
+/// // parking_lot's Condvar never spuriously wakes: wait() only returns after
+/// // notify_one or notify_all is called. Code with multiple waiters or multiple
+/// // predicates may still need a loop to re-check the predicate.
 /// ```
 pub type Condvar = lock_api::Condvar<RawCondvar>;
 
 #[cfg(test)]
 mod tests {
     use crate::{Condvar, Mutex, MutexGuard};
-    use std::sync::mpsc::channel;
     use std::sync::Arc;
+    use std::sync::mpsc::channel;
     use std::thread;
-    use std::thread::sleep;
     use std::thread::JoinHandle;
+    use std::thread::sleep;
     use std::time::Duration;
     use std::time::Instant;
 
@@ -145,22 +135,17 @@ mod tests {
         let c2 = c.clone();
 
         let mut g = m.lock();
-        let _t = thread::spawn(move || {
+        let t = thread::spawn(move || {
             let _g = m2.lock();
             assert!(c2.notify_one());
         });
         c.wait(&mut g);
+        t.join().unwrap();
     }
 
     #[test]
     fn notify_one_return_false() {
-        let m = Arc::new(Mutex::new(()));
-        let c = Arc::new(Condvar::new());
-
-        let _t = thread::spawn(move || {
-            let _g = m.lock();
-            assert!(!c.notify_one());
-        });
+        assert!(!Condvar::new().notify_one());
     }
 
     #[test]
@@ -209,17 +194,18 @@ mod tests {
         let c2 = c.clone();
 
         let mut g = m.lock();
-        let no_timeout = c.wait_for(&mut g, Duration::from_millis(1));
-        assert!(no_timeout.timed_out());
+        let result = c.wait_for(&mut g, Duration::from_millis(1));
+        assert!(result.timed_out());
 
-        let _t = thread::spawn(move || {
+        let t = thread::spawn(move || {
             let _g = m2.lock();
             c2.notify_one();
         });
-        let timeout_res = c.wait_for(&mut g, Duration::from_secs(u64::max_value()));
-        assert!(!timeout_res.timed_out());
+        let result = c.wait_for(&mut g, Duration::from_millis(u32::MAX as u64));
+        assert!(!result.timed_out());
 
         drop(g);
+        t.join().unwrap();
     }
 
     #[test]
@@ -230,18 +216,19 @@ mod tests {
         let c2 = c.clone();
 
         let mut g = m.lock();
-        let no_timeout = c.wait_until(&mut g, Instant::now() + Duration::from_millis(1));
-        assert!(no_timeout.timed_out());
-        let _t = thread::spawn(move || {
+        let result = c.wait_until(&mut g, Instant::now() + Duration::from_millis(1));
+        assert!(result.timed_out());
+        let t = thread::spawn(move || {
             let _g = m2.lock();
             c2.notify_one();
         });
-        let timeout_res = c.wait_until(
+        let result = c.wait_until(
             &mut g,
-            Instant::now() + Duration::from_millis(u32::max_value() as u64),
+            Instant::now() + Duration::from_millis(u32::MAX as u64),
         );
-        assert!(!timeout_res.timed_out());
+        assert!(!result.timed_out());
         drop(g);
+        t.join().unwrap();
     }
 
     fn spawn_wait_while_notifier(
@@ -259,10 +246,10 @@ mod tests {
                 let _mutex_guard = loop {
                     let mutex_guard = mutex.lock();
 
-                    if let Some(timeout) = timeout {
-                        if Instant::now() >= timeout {
-                            return;
-                        }
+                    if let Some(timeout) = timeout
+                        && Instant::now() >= timeout
+                    {
+                        return;
                     }
 
                     if *mutex_guard == epoch {
@@ -283,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn wait_while_until_internal_does_not_wait_if_initially_false() {
+    fn wait_while_does_not_wait_if_initially_false() {
         let mutex = Arc::new(Mutex::new(0));
         let cv = Arc::new(Condvar::new());
 
@@ -294,12 +281,11 @@ mod tests {
 
         let mut mutex_guard = mutex.lock();
         cv.wait_while(&mut mutex_guard, condition);
-
         assert!(*mutex_guard == 1);
     }
 
     #[test]
-    fn wait_while_until_internal_times_out_before_false() {
+    fn wait_while_until_times_out_before_false() {
         let mutex = Arc::new(Mutex::new(0));
         let cv = Arc::new(Condvar::new());
 
@@ -316,7 +302,7 @@ mod tests {
         let timeout_result = cv.wait_while_until(&mut mutex_guard, condition, timeout);
 
         assert!(timeout_result.timed_out());
-        assert!(*mutex_guard == num_iters + 1);
+        assert!(*mutex_guard == num_iters + 2);
 
         // prevent deadlock with notifier
         drop(mutex_guard);
@@ -324,7 +310,24 @@ mod tests {
     }
 
     #[test]
-    fn wait_while_until_internal() {
+    fn wait_while_until_rechecks_condition_after_timeout() {
+        let mutex = Mutex::new(());
+        let cv = Condvar::new();
+        let mut calls = 0;
+        let condition = |_: &mut ()| {
+            calls += 1;
+            calls == 1
+        };
+
+        let mut mutex_guard = mutex.lock();
+        let timeout_result = cv.wait_while_until(&mut mutex_guard, condition, Instant::now());
+
+        assert!(!timeout_result.timed_out());
+        assert_eq!(calls, 2);
+    }
+
+    #[test]
+    fn wait_while() {
         let mutex = Arc::new(Mutex::new(0));
         let cv = Arc::new(Condvar::new());
 
@@ -339,7 +342,6 @@ mod tests {
         let handle = spawn_wait_while_notifier(mutex.clone(), cv.clone(), num_iters, None);
 
         cv.wait_while(&mut mutex_guard, condition);
-
         assert!(*mutex_guard == num_iters + 1);
 
         cv.wait_while(&mut mutex_guard, condition);
@@ -349,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "attempted to use a condition variable with more than one mutex")]
     fn two_mutexes() {
         let m = Arc::new(Mutex::new(()));
         let m2 = m.clone();
@@ -456,8 +458,8 @@ mod tests {
     }
 }
 
-/// This module contains an integration test that is heavily inspired from WebKit's own integration
-/// tests for it's own Condvar.
+/// This module contains an integration test heavily inspired by WebKit's own
+/// condition-variable tests.
 #[cfg(test)]
 #[cfg(not(miri))] // Miri is too slow
 mod webkit_queue_test {
@@ -596,27 +598,29 @@ mod webkit_queue_test {
         output_queue: Arc<Mutex<Vec<usize>>>,
         max_queue_size: usize,
     ) -> thread::JoinHandle<()> {
-        thread::spawn(move || loop {
-            let (should_notify, result) = {
-                let mut queue = input_queue.lock();
-                wait(
-                    &empty_condition,
-                    &mut queue,
-                    |state| -> bool { !state.items.is_empty() || !state.should_continue },
-                    &timeout,
-                );
-                if queue.items.is_empty() && !queue.should_continue {
-                    return;
-                }
-                let should_notify = queue.items.len() == max_queue_size;
-                let result = queue.items.pop_front();
-                std::mem::drop(queue);
-                (should_notify, result)
-            };
-            notify(notify_style, &full_condition, should_notify);
+        thread::spawn(move || {
+            loop {
+                let (should_notify, result) = {
+                    let mut queue = input_queue.lock();
+                    wait(
+                        &empty_condition,
+                        &mut queue,
+                        |state| -> bool { !state.items.is_empty() || !state.should_continue },
+                        &timeout,
+                    );
+                    if queue.items.is_empty() && !queue.should_continue {
+                        return;
+                    }
+                    let should_notify = queue.items.len() == max_queue_size;
+                    let result = queue.items.pop_front();
+                    std::mem::drop(queue);
+                    (should_notify, result)
+                };
+                notify(notify_style, &full_condition, should_notify);
 
-            if let Some(result) = result {
-                output_queue.lock().push(result);
+                if let Some(result) = result {
+                    output_queue.lock().push(result);
+                }
             }
         })
     }

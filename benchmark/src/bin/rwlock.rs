@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use parking_lot_benchmark::args;
 use parking_lot_benchmark::args::ArgRange;
 
@@ -12,8 +5,8 @@ use parking_lot_benchmark::args::ArgRange;
 use std::cell::UnsafeCell;
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc, Barrier,
+        atomic::{AtomicBool, Ordering},
     },
     thread,
     time::Duration,
@@ -98,8 +91,8 @@ type SrwLock<T> = std::sync::RwLock<T>;
 
 #[cfg(windows)]
 use windows_sys::Win32::System::Threading::{
-    SRWLOCK, InitializeSRWLock, AcquireSRWLockExclusive, ReleaseSRWLockExclusive,
-    AcquireSRWLockShared, ReleaseSRWLockShared,
+    AcquireSRWLockExclusive, AcquireSRWLockShared, InitializeSRWLock, ReleaseSRWLockExclusive,
+    ReleaseSRWLockShared, SRWLOCK,
 };
 #[cfg(windows)]
 struct SrwLock<T>(UnsafeCell<T>, UnsafeCell<SRWLOCK>);

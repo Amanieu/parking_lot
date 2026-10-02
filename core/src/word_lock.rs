@@ -1,46 +1,10 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::spinwait::SpinWait;
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use core::{
     cell::Cell,
     mem, ptr,
-    sync::atomic::{fence, AtomicPtr, Ordering},
+    sync::atomic::{AtomicPtr, Ordering},
 };
-
-// Polyfill for compatibility with older Rust versions.
-#[cfg(not(miri))]
-fn atomic_ptr_fetch_byte_sub<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
-    use core::sync::atomic::AtomicUsize;
-    let p = ptr::from_ref(p).cast::<AtomicUsize>();
-    // Very strictly speaking, this is not provenance-correct: we are loading the pointer stored in
-    // `p` at integer type, which discards provenance, and then storing that back, thus erasing the
-    // provenance in memory. However, LLVM's provenance model is not defined yet, and Rust already
-    // relies on its integer type being able to hold provenance under some circumstances. So it
-    // seems fine for us to rely on this as well.
-    (unsafe { (*p).fetch_sub(val, order) }) as *mut T
-}
-#[cfg(not(miri))]
-fn atomic_ptr_fetch_and<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
-    use core::sync::atomic::AtomicUsize;
-    let p = ptr::from_ref(p).cast::<AtomicUsize>();
-    (unsafe { (*p).fetch_and(val, order) }) as *mut T
-}
-// Use provenance-aware versions on Miri
-// FIXME: use this everywhere once we can depend on Rust 1.91
-#[cfg(miri)]
-fn atomic_ptr_fetch_byte_sub<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
-    p.fetch_byte_sub(val, order)
-}
-#[cfg(miri)]
-fn atomic_ptr_fetch_and<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
-    p.fetch_and(val, order)
-}
 
 struct ThreadData {
     parker: ThreadParker,
@@ -93,7 +57,7 @@ fn with_thread_data<T>(f: impl FnOnce(&ThreadData) -> T) -> T {
         thread_data_ptr = thread_data_storage.get_or_insert_with(ThreadData::new);
     }
 
-    f(unsafe { &*thread_data_ptr })
+    f(unsafe { thread_data_ptr.as_ref_unchecked() })
 }
 
 const LOCKED_BIT: usize = 1;
@@ -134,7 +98,7 @@ impl WordLock {
     /// Must not be called on an already unlocked `WordLock`!
     #[inline]
     pub unsafe fn unlock(&self) {
-        let state = atomic_ptr_fetch_byte_sub(&self.state, LOCKED_BIT, Ordering::Release);
+        let state = self.state.fetch_byte_sub(LOCKED_BIT, Ordering::Release);
         if state.is_queue_locked() || state.queue_head().is_null() {
             return;
         }
@@ -226,7 +190,10 @@ impl WordLock {
                 Ordering::Acquire,
                 Ordering::Relaxed,
             ) {
-                Ok(_) => break,
+                Ok(previous) => {
+                    state = previous.map_addr(|a| a | QUEUE_LOCKED_BIT);
+                    break;
+                }
                 Err(x) => state = x,
             }
         }
@@ -257,61 +224,57 @@ impl WordLock {
                 (*queue_head).queue_tail.set(queue_tail);
             }
 
-            // If the WordLock is locked, then there is no point waking up a
-            // thread now. Instead we let the next unlocker take care of waking
-            // up a thread.
-            if state.is_locked() {
-                match self.state.compare_exchange_weak(
-                    state,
-                    state.map_addr(|a| a & !QUEUE_LOCKED_BIT),
-                    Ordering::Release,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => return,
-                    Err(x) => state = x,
+            // Remove the last thread from the queue and unlock the queue.
+            let new_tail = unsafe { (*queue_tail).prev.get() };
+            loop {
+                // If the WordLock is locked, then there is no point waking up
+                // a thread now. Release the queue lock and let the next
+                // unlocker take care of it.
+                if state.is_locked() {
+                    match self.state.compare_exchange_weak(
+                        state,
+                        state.map_addr(|a| a & !QUEUE_LOCKED_BIT),
+                        Ordering::Release,
+                        Ordering::Acquire,
+                    ) {
+                        Ok(_) => return,
+                        Err(x) => state = x,
+                    }
+                    continue;
                 }
 
-                // Need an acquire fence before reading the new queue
-                fence_acquire(&self.state);
-                continue;
-            }
+                // A changed head means that another thread was added after we
+                // processed the queue.
+                if state.queue_head() != queue_head {
+                    continue 'outer;
+                }
 
-            // Remove the last thread from the queue and unlock the queue
-            let new_tail = unsafe { (*queue_tail).prev.get() };
-            if new_tail.is_null() {
-                loop {
+                // Removing the only thread also removes the queue head, so we
+                // need a CAS to detect a concurrent enqueue or lock acquire.
+                // Otherwise we can update the cached tail and clear the queue
+                // lock.
+                if new_tail.is_null() {
                     match self.state.compare_exchange_weak(
                         state,
                         state.map_addr(|a| a & LOCKED_BIT),
                         Ordering::Release,
-                        Ordering::Relaxed,
+                        Ordering::Acquire,
                     ) {
                         Ok(_) => break,
                         Err(x) => state = x,
                     }
-
-                    // If the compare_exchange failed because a new thread was
-                    // added to the queue then we need to re-scan the queue to
-                    // find the previous element.
-                    if state.queue_head().is_null() {
-                        continue;
-                    } else {
-                        // Need an acquire fence before reading the new queue
-                        fence_acquire(&self.state);
-                        continue 'outer;
+                } else {
+                    unsafe {
+                        (*queue_head).queue_tail.set(new_tail);
                     }
+                    self.state.fetch_and(!QUEUE_LOCKED_BIT, Ordering::Release);
+                    break;
                 }
-            } else {
-                unsafe {
-                    (*queue_head).queue_tail.set(new_tail);
-                }
-                atomic_ptr_fetch_and(&self.state, !QUEUE_LOCKED_BIT, Ordering::Release);
             }
 
-            // Finally, wake up the thread we removed from the queue. Note that
-            // we don't need to worry about any races here since the thread is
-            // guaranteed to be sleeping right now and we are the only one who
-            // can wake it up.
+            // Finally, wake up the thread we removed from the queue. It may not
+            // have entered `park` yet, but `prepare_park` ensures that this
+            // unpark cannot be missed.
             unsafe {
                 (*queue_tail).parker.unpark_lock().unpark();
             }
@@ -320,17 +283,7 @@ impl WordLock {
     }
 }
 
-// Thread-Sanitizer only has partial fence support, so when running under it, we
-// try and avoid false positives by using a discarded acquire load instead.
-#[inline]
-fn fence_acquire<T>(a: &AtomicPtr<T>) {
-    if cfg!(tsan_enabled) {
-        let _ = a.load(Ordering::Acquire);
-    } else {
-        fence(Ordering::Acquire);
-    }
-}
-
+#[allow(clippy::wrong_self_convention)]
 trait LockState {
     fn is_locked(self) -> bool;
     fn is_queue_locked(self) -> bool;

@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
 use crate::{deadlock, util};
 use core::{
@@ -12,17 +5,22 @@ use core::{
     sync::atomic::{AtomicPtr, Ordering},
 };
 use lock_api::RawMutex as RawMutex_;
-use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
+use parking_lot_core::{self, DEFAULT_PARK_TOKEN, ParkResult, RequeueOp, UnparkResult};
 use std::time::{Duration, Instant};
 
-/// A Raw Condition Variable
+/// A raw condition variable.
+///
+/// Waits never return spuriously. [`notify_one`](lock_api::RawCondvar::notify_one)
+/// returns exactly whether a waiting thread was selected for notification, and
+/// [`notify_all`](lock_api::RawCondvar::notify_all) returns the exact number of
+/// waiting threads selected. A thread requeued directly onto the associated
+/// mutex is considered notified.
 pub struct RawCondvar {
     state: AtomicPtr<RawMutex>,
 }
 
-// SAFETY:
-// Implementation will safely panic when used on different `RawMutex`'s
-// simultaneously.
+// SAFETY: Waiting atomically releases and re-acquires the mutex, does not wake
+// spuriously, and safely panics if used with distinct mutexes simultaneously.
 unsafe impl lock_api::RawCondvar for RawCondvar {
     const INIT: Self = RawCondvar {
         state: AtomicPtr::new(ptr::null_mut()),
@@ -57,9 +55,8 @@ unsafe impl lock_api::RawCondvar for RawCondvar {
     }
 }
 
-// SAFETY:
-// Implementation will safely panic when used on different `RawMutex`'s
-// simultaneously.
+// SAFETY: The timed waits uphold the same requirements as the untimed wait and
+// accurately distinguish notification from timeout.
 unsafe impl lock_api::RawCondvarTimed for RawCondvar {
     fn checked_duration_to_instant(timeout: &Duration) -> Option<Instant> {
         util::to_deadline(*timeout)
@@ -78,9 +75,9 @@ unsafe impl lock_api::RawCondvarTimed for RawCondvar {
 impl RawCondvar {
     #[cold]
     fn notify_one_slow(&self, mutex: *mut RawMutex) -> bool {
-        // Unpark one thread and requeue the rest onto the mutex
-        let from = self as *const _ as usize;
-        let to = mutex as usize;
+        // Unpark one thread or requeue it onto the mutex
+        let from = ptr::from_ref(self).addr();
+        let to = mutex.addr();
         let validate = || {
             // Make sure that our atomic state still points to the same
             // mutex. If not then it means that all threads on the current
@@ -91,8 +88,8 @@ impl RawCondvar {
                 return RequeueOp::Abort;
             }
 
-            // Unpark one thread if the mutex is unlocked, otherwise just
-            // requeue everything to the mutex. This is safe to do here
+            // Unpark one thread if the mutex is unlocked, otherwise
+            // requeue it onto the mutex. This is safe to do here
             // since unlocking the mutex when the parked bit is set requires
             // locking the queue. There is the possibility of a race if the
             // mutex gets locked after we check, but that doesn't matter in
@@ -118,8 +115,8 @@ impl RawCondvar {
     #[cold]
     fn notify_all_slow(&self, mutex: *mut RawMutex) -> usize {
         // Unpark one thread and requeue the rest onto the mutex
-        let from = self as *const _ as usize;
-        let to = mutex as usize;
+        let from = ptr::from_ref(self).addr();
+        let to = mutex.addr();
         let validate = || {
             // Make sure that our atomic state still points to the same
             // mutex. If not then it means that all threads on the current
@@ -163,10 +160,16 @@ impl RawCondvar {
     // using `wait_until`.
     fn wait_until_internal(&self, mutex: &RawMutex, timeout: Option<Instant>) -> bool {
         let result;
-        let mut bad_mutex = false;
         let mut requeued = false;
+
+        // Stop recording ownership before ThreadData is transferred to the
+        // parking lot. The physical unlock remains in `before_sleep` so that
+        // unlocking and parking are atomic with respect to notification.
+        let mutex_addr = ptr::from_ref(mutex).addr();
+        unsafe { deadlock::release_resource(mutex_addr) };
+
         {
-            let addr = self as *const _ as usize;
+            let addr = ptr::from_ref(self).addr();
             let lock_addr = mutex as *const _ as *mut _;
             let validate = || {
                 // Ensure we don't use two different mutexes with the same
@@ -176,14 +179,13 @@ impl RawCondvar {
                 if state.is_null() {
                     self.state.store(lock_addr, Ordering::Relaxed);
                 } else if state != lock_addr {
-                    bad_mutex = true;
                     return false;
                 }
                 true
             };
             let before_sleep = || {
                 // Unlock the mutex before sleeping...
-                unsafe { mutex.unlock() };
+                unsafe { mutex.unlock_inner(false) };
             };
             let timed_out = |k, was_last_thread| {
                 // If we were requeued to a mutex, then we did not time out.
@@ -213,13 +215,15 @@ impl RawCondvar {
         // Panic if we tried to use multiple mutexes with a Condvar. Note
         // that at this point the MutexGuard is still locked. It will be
         // unlocked by the unwinding logic.
-        if bad_mutex {
+        if result == ParkResult::Invalid {
+            // We never got around to unlocking the mutex.
+            unsafe { deadlock::acquire_resource(mutex_addr) };
             panic!("attempted to use a condition variable with more than one mutex");
         }
 
         // ... and re-lock it once we are done sleeping
         if result == ParkResult::Unparked(TOKEN_HANDOFF) {
-            unsafe { deadlock::acquire_resource(mutex as *const _ as usize) };
+            unsafe { deadlock::acquire_resource(mutex_addr) };
         } else {
             mutex.lock();
         }
