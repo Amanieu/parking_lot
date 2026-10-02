@@ -9,6 +9,12 @@ use parking_lot_core::{self, DEFAULT_PARK_TOKEN, ParkResult, RequeueOp, UnparkRe
 use std::time::{Duration, Instant};
 
 /// A raw condition variable.
+///
+/// Waits never return spuriously. [`notify_one`](lock_api::RawCondvar::notify_one)
+/// returns exactly whether a waiting thread was selected for notification, and
+/// [`notify_all`](lock_api::RawCondvar::notify_all) returns the exact number of
+/// waiting threads selected. A thread requeued directly onto the associated
+/// mutex is considered notified.
 pub struct RawCondvar {
     state: AtomicPtr<RawMutex>,
 }

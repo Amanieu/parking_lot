@@ -21,6 +21,8 @@ pub use lock_api::WaitTimeoutResult;
 ///
 /// - No spurious wakeups: A wait will only return a non-timeout result if it
 ///   was woken up by `notify_one` or `notify_all`.
+/// - `notify_one` returns exactly whether a waiting thread was notified, and
+///   `notify_all` returns the exact number of waiting threads notified.
 /// - `Condvar::notify_all` requeues waiters directly onto the associated
 ///   `Mutex` and wakes them as the lock becomes available, avoiding a
 ///   thundering herd.
