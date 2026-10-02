@@ -1,8 +1,7 @@
-#[cfg(target_vendor = "apple")]
-use core::ptr;
+#[cfg(not(target_vendor = "apple"))]
+use core::mem::MaybeUninit;
 use core::{
     cell::{Cell, UnsafeCell},
-    mem::MaybeUninit,
     ptr::NonNull,
 };
 use libc;
@@ -87,10 +86,15 @@ impl super::ThreadParkerT for ThreadParker {
                 return false;
             }
 
-            if let Some(ts) = timeout_to_timespec(timeout - now) {
-                let r = unsafe {
-                    libc::pthread_cond_timedwait(self.condvar.get(), self.mutex.get(), &ts)
-                };
+            let remaining = timeout - now;
+            if let Some(ts) = timeout_to_timespec(remaining) {
+                let pthread_cond_timedwait =
+                    cfg_select! {
+                        target_vendor = "apple" => libc::pthread_cond_timedwait_relative_np,
+                        _ => libc::pthread_cond_timedwait,
+                    };
+                let r =
+                    unsafe { pthread_cond_timedwait(self.condvar.get(), self.mutex.get(), &ts) };
                 if ts.tv_sec < 0 {
                     // On some systems, negative timeouts will return EINVAL. In
                     // that case we won't sleep and will just busy loop instead,
@@ -125,12 +129,12 @@ impl super::ThreadParkerT for ThreadParker {
 impl ThreadParker {
     /// No initialization is needed on platforms which don't support selecting
     /// the condvar clock.
-    #[cfg(any(target_vendor = "apple", target_os = "android", target_os = "espidf"))]
+    #[cfg(any(target_vendor = "apple", target_os = "espidf"))]
     #[inline]
     unsafe fn init(&self) {}
 
     /// Initializes the condvar to use CLOCK_MONOTONIC instead of CLOCK_REALTIME.
-    #[cfg(not(any(target_vendor = "apple", target_os = "android", target_os = "espidf")))]
+    #[cfg(not(any(target_vendor = "apple", target_os = "espidf")))]
     #[inline]
     unsafe fn init(&self) {
         let mut attr = MaybeUninit::<libc::pthread_condattr_t>::uninit();
@@ -183,25 +187,12 @@ impl super::UnparkHandleT for UnparkHandle {
 }
 
 // Returns the current time on the clock used by pthread_cond_t as a timespec.
-#[cfg(target_vendor = "apple")]
-#[inline]
-fn timespec_now() -> libc::timespec {
-    let mut now = MaybeUninit::<libc::timeval>::uninit();
-    let r = unsafe { libc::gettimeofday(now.as_mut_ptr(), ptr::null_mut()) };
-    debug_assert_eq!(r, 0);
-    // SAFETY: We know `libc::gettimeofday` has initialized the value.
-    let now = unsafe { now.assume_init() };
-    libc::timespec {
-        tv_sec: now.tv_sec,
-        tv_nsec: now.tv_usec as tv_nsec_t * 1000,
-    }
-}
 #[cfg(not(target_vendor = "apple"))]
 #[inline]
 fn timespec_now() -> libc::timespec {
     let mut now = MaybeUninit::<libc::timespec>::uninit();
-    let clock = if cfg!(any(target_os = "android", target_os = "espidf")) {
-        // These platforms don't support pthread_condattr_setclock, so we need
+    let clock = if cfg!(target_os = "espidf") {
+        // This platform doesn't support pthread_condattr_setclock, so we need
         // to specify the timeout in CLOCK_REALTIME.
         libc::CLOCK_REALTIME
     } else {
@@ -213,8 +204,24 @@ fn timespec_now() -> libc::timespec {
     unsafe { now.assume_init() }
 }
 
+// On Apple, generate a relative timespec directly for
+// pthread_cond_timedwait_relative_np.
+#[cfg(target_vendor = "apple")]
+#[inline]
+fn timeout_to_timespec(timeout: Duration) -> Option<libc::timespec> {
+    // Older Apple condvar implementations convert relative timeouts to u64
+    // nanoseconds without checking for overflow.
+    const MAX_DURATION: Duration = Duration::from_nanos(u64::MAX);
+    let timeout = timeout.min(MAX_DURATION);
+    Some(libc::timespec {
+        tv_sec: libc::time_t::try_from(timeout.as_secs()).ok()?,
+        tv_nsec: timeout.subsec_nanos() as tv_nsec_t,
+    })
+}
+
 // Converts a relative timeout into an absolute timeout in the clock used by
 // pthread_cond_t.
+#[cfg(not(target_vendor = "apple"))]
 #[inline]
 fn timeout_to_timespec(timeout: Duration) -> Option<libc::timespec> {
     // Handle overflows early on
