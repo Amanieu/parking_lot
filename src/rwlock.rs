@@ -127,10 +127,10 @@ pub type RwLockUpgradableReadGuard<'a, T> = lock_api::RwLockUpgradableReadGuard<
 #[cfg(test)]
 mod tests {
     use crate::{RwLock, RwLockUpgradableReadGuard, RwLockWriteGuard};
-    use rand::Rng;
+    use rand::RngExt;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::channel;
-    use std::sync::Arc;
     use std::thread;
     use std::time::Duration;
 
@@ -163,9 +163,9 @@ mod tests {
             let tx = tx.clone();
             let r = r.clone();
             thread::spawn(move || {
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 for _ in 0..M {
-                    if rng.gen_bool(1.0 / N as f64) {
+                    if rng.random_bool(1.0 / N as f64) {
                         drop(r.write());
                     } else {
                         drop(r.read());
