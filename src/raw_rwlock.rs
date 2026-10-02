@@ -1,12 +1,15 @@
-use crate::raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
-use crate::util;
+use crate::{
+    deadlock,
+    raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL},
+    util,
+};
 use core::{
     cell::Cell,
     sync::atomic::{AtomicUsize, Ordering},
 };
 use lock_api::{RawRwLock as RawRwLock_, RawRwLockUpgrade};
 use parking_lot_core::{
-    self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken, deadlock,
+    self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken,
 };
 use std::time::{Duration, Instant};
 
@@ -811,7 +814,7 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     #[cold]
     unsafe fn bump_shared_slow(&self) {
         unsafe { self.unlock_shared() };
-        self.lock_shared();
+        util::abort_on_panic(|| self.lock_shared());
     }
 
     #[cold]
@@ -825,7 +828,7 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     fn bump_upgradable_slow(&self) {
         self.deadlock_release_all();
         self.unlock_upgradable_slow(true);
-        self.lock_upgradable();
+        util::abort_on_panic(|| self.lock_upgradable());
     }
 
     /// Common code for waking up parked threads after releasing `WRITER_BIT` or
@@ -834,8 +837,8 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     /// # Safety
     ///
     /// `callback` must uphold the requirements of the `callback` parameter to
-    /// `parking_lot_core::unpark_filter`. Meaning no panics or calls into any function in
-    /// `parking_lot`.
+    /// `parking_lot_core::unpark_filter`: it must not unwind or call any
+    /// parking-lot function.
     #[inline]
     unsafe fn wake_parked_threads(
         &self,

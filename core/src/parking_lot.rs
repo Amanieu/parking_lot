@@ -2,6 +2,7 @@ use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::word_lock::WordLock;
 use core::{
     cell::{Cell, UnsafeCell},
+    mem,
     ptr::{self, NonNull},
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
@@ -9,6 +10,27 @@ use smallvec::SmallVec;
 use std::time::Instant;
 
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
+
+/// Aborts the process if it is dropped while unwinding.
+///
+/// Parking-lot operations manipulate shared intrusive state without unwind
+/// guards. Once an operation has started, unwinding could leave bucket locks
+/// held, queue links inconsistent, or a transferred `ThreadData` inaccessible.
+struct AbortOnPanic;
+
+impl AbortOnPanic {
+    /// Prevents the guard from being dropped after a successful operation.
+    #[inline]
+    fn disarm(self) {
+        mem::forget(self);
+    }
+}
+
+impl Drop for AbortOnPanic {
+    fn drop(&mut self) {
+        panic!("aborting due to panic in parking lot");
+    }
+}
 
 /// Holds the pointer to the currently active `HashTable`.
 ///
@@ -546,11 +568,11 @@ pub const DEFAULT_PARK_TOKEN: ParkToken = ParkToken(0);
 /// primitives.
 ///
 /// The `validate` and `timed_out` functions are called while the queue is
-/// locked and must not panic or call into any function in `parking_lot`.
+/// locked and must not unwind or call into any function in `parking_lot`.
 ///
 /// The `before_sleep` function is called outside the queue lock and is allowed
 /// to call `unpark_one`, `unpark_all`, `unpark_requeue` or `unpark_filter`, but
-/// it is not allowed to call `park` or panic.
+/// it is not allowed to call `park` or unwind.
 ///
 /// The parking-lot functions are not reentrant. Calling this function from an
 /// asynchronous signal handler may cause undefined behavior, including
@@ -564,8 +586,10 @@ pub unsafe fn park(
     park_token: ParkToken,
     timeout: Option<Instant>,
 ) -> ParkResult {
+    let abort_on_panic = AbortOnPanic;
+
     // Grab our thread data, this also ensures that the hash table exists
-    with_thread_data(|thread_data| {
+    let result = with_thread_data(|thread_data| {
         // Lock the bucket for the given key
         let bucket = lock_bucket(key);
 
@@ -679,7 +703,10 @@ pub unsafe fn park(
         // SAFETY: We hold the lock here, as required
         unsafe { bucket.mutex.unlock() };
         ParkResult::TimedOut
-    })
+    });
+
+    abort_on_panic.disarm();
+    result
 }
 
 /// Unparks one thread from the queue associated with the given key.
@@ -700,7 +727,7 @@ pub unsafe fn park(
 /// primitives.
 ///
 /// The `callback` function is called while the queue is locked and must not
-/// panic or call into any function in `parking_lot`.
+/// unwind or call into any function in `parking_lot`.
 ///
 /// The parking-lot functions are not reentrant. Calling this function from an
 /// asynchronous signal handler may cause undefined behavior, including
@@ -710,6 +737,8 @@ pub unsafe fn unpark_one(
     key: usize,
     callback: impl FnOnce(UnparkResult) -> UnparkToken,
 ) -> UnparkResult {
+    let abort_on_panic = AbortOnPanic;
+
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -760,6 +789,7 @@ pub unsafe fn unpark_one(
             unsafe { bucket.mutex.unlock() };
             unsafe { handle.unpark() };
 
+            abort_on_panic.disarm();
             return result;
         } else {
             previous = Some(current_ptr);
@@ -771,6 +801,8 @@ pub unsafe fn unpark_one(
     callback(result);
     // SAFETY: We hold the lock here, as required
     unsafe { bucket.mutex.unlock() };
+
+    abort_on_panic.disarm();
     result
 }
 
@@ -791,6 +823,8 @@ pub unsafe fn unpark_one(
 /// internal-state corruption or deadlock.
 #[inline]
 pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
+    let abort_on_panic = AbortOnPanic;
+
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -837,6 +871,7 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
         unsafe { handle.unpark() };
     }
 
+    abort_on_panic.disarm();
     num_threads
 }
 
@@ -866,7 +901,7 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
 /// primitives.
 ///
 /// The `validate` and `callback` functions are called while both queues are locked
-/// and must not panic or call into any function in `parking_lot`.
+/// and must not unwind or call into any function in `parking_lot`.
 ///
 /// The parking-lot functions are not reentrant. Calling this function from an
 /// asynchronous signal handler may cause undefined behavior, including
@@ -878,6 +913,8 @@ pub unsafe fn unpark_requeue(
     validate: impl FnOnce() -> RequeueOp,
     callback: impl FnOnce(RequeueOp, UnparkResult) -> UnparkToken,
 ) -> UnparkResult {
+    let abort_on_panic = AbortOnPanic;
+
     // Lock the two buckets for the given key
     let (bucket_from, bucket_to) = lock_bucket_pair(key_from, key_to);
 
@@ -887,6 +924,7 @@ pub unsafe fn unpark_requeue(
     if op == RequeueOp::Abort {
         // SAFETY: Both buckets are locked, as required.
         unsafe { unlock_bucket_pair(bucket_from, bucket_to) };
+        abort_on_panic.disarm();
         return result;
     }
 
@@ -975,6 +1013,7 @@ pub unsafe fn unpark_requeue(
         unsafe { unlock_bucket_pair(bucket_from, bucket_to) };
     }
 
+    abort_on_panic.disarm();
     result
 }
 
@@ -1003,7 +1042,7 @@ pub unsafe fn unpark_requeue(
 /// primitives.
 ///
 /// The `filter` and `callback` functions are called while the queue is locked
-/// and must not panic or call into any function in `parking_lot`.
+/// and must not unwind or call into any function in `parking_lot`.
 ///
 /// The parking-lot functions are not reentrant. Calling this function from an
 /// asynchronous signal handler may cause undefined behavior, including
@@ -1011,9 +1050,12 @@ pub unsafe fn unpark_requeue(
 #[inline]
 pub unsafe fn unpark_filter(
     key: usize,
-    mut filter: impl FnMut(ParkToken) -> FilterOp,
+    filter: impl FnMut(ParkToken) -> FilterOp,
     callback: impl FnOnce(UnparkResult) -> UnparkToken,
 ) -> UnparkResult {
+    let abort_on_panic = AbortOnPanic;
+    let mut filter = filter;
+
     // Lock the bucket for the given key
     let bucket = lock_bucket(key);
 
@@ -1081,6 +1123,7 @@ pub unsafe fn unpark_filter(
         unsafe { handle.unwrap_unchecked().unpark() };
     }
 
+    abort_on_panic.disarm();
     result
 }
 
@@ -1108,10 +1151,14 @@ pub mod deadlock {
     /// function.
     #[inline]
     pub unsafe fn acquire_resource(_key: usize) {
+        let abort_on_panic = super::AbortOnPanic;
+
         #[cfg(feature = "deadlock_detection")]
         unsafe {
             deadlock_impl::acquire_resource(_key);
         }
+
+        abort_on_panic.disarm();
     }
 
     /// Stops recording one acquisition of the resource identified by `key` by
@@ -1128,10 +1175,14 @@ pub mod deadlock {
     /// function.
     #[inline]
     pub unsafe fn release_resource(_key: usize) {
+        let abort_on_panic = super::AbortOnPanic;
+
         #[cfg(feature = "deadlock_detection")]
         unsafe {
             deadlock_impl::release_resource(_key);
         }
+
+        abort_on_panic.disarm();
     }
 
     /// Detects and returns all currently deadlocked thread components.
@@ -1147,15 +1198,22 @@ pub mod deadlock {
     #[cfg(feature = "deadlock_detection")]
     #[inline]
     pub fn check_deadlock() -> Vec<Vec<deadlock_impl::DeadlockedThread>> {
-        deadlock_impl::check_deadlock()
+        let abort_on_panic = super::AbortOnPanic;
+        let result = deadlock_impl::check_deadlock();
+        abort_on_panic.disarm();
+        result
     }
 
     #[inline]
     pub(super) unsafe fn on_unpark(_td: &super::ThreadData) {
+        let abort_on_panic = super::AbortOnPanic;
+
         #[cfg(feature = "deadlock_detection")]
         unsafe {
             deadlock_impl::on_unpark(_td);
         }
+
+        abort_on_panic.disarm();
     }
 }
 

@@ -21,6 +21,9 @@
 //!
 //! See the documentation of the individual functions for more details.
 //!
+//! Parking-lot operations never unwind. If an operation panics, the process
+//! aborts.
+//!
 //! # Use in global allocators
 //!
 //! Synchronization primitives built on this parking lot must not be used
