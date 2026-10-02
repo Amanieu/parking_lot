@@ -13,10 +13,10 @@ use std::time::{Duration, Instant};
 // This reader-writer lock implementation is based on Boost's upgrade_mutex:
 // https://github.com/boostorg/thread/blob/fc08c1fe2840baeeee143440fba31ef9e9a813c8/include/boost/thread/v2/shared_mutex.hpp#L432
 //
-// This implementation uses 2 wait queues, one at key [addr] and one at key
-// [addr + 1]. The primary queue is used for all new waiting threads, and the
-// secondary queue is used by the thread which has acquired WRITER_BIT but is
-// waiting for the remaining readers to exit the lock.
+// This implementation uses 2 wait queues. The primary queue at key [addr] is
+// used for all new waiting threads. The secondary queue at key [addr + 1] is
+// used by the thread which has acquired WRITER_BIT but is waiting for the
+// remaining readers to exit the lock.
 //
 // In nonrecursive mode, readers block behind a pending writer. Recursive mode
 // admits new readers while other readers hold the lock, which can starve
@@ -66,12 +66,13 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLock for RawRwLock<RECURSIVE> 
         if self
             .state
             .compare_exchange_weak(0, WRITER_BIT, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
+            .is_ok()
         {
+            self.deadlock_acquire_all();
+        } else {
             let result = self.lock_exclusive_slow(None);
             debug_assert!(result);
         }
-        self.deadlock_acquire();
     }
 
     #[inline]
@@ -81,7 +82,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLock for RawRwLock<RECURSIVE> 
             .compare_exchange(0, WRITER_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
-            self.deadlock_acquire();
+            self.deadlock_acquire_all();
             true
         } else {
             false
@@ -90,7 +91,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLock for RawRwLock<RECURSIVE> 
 
     #[inline]
     unsafe fn unlock_exclusive(&self) {
-        self.deadlock_release();
+        self.deadlock_release_all();
         if self
             .state
             .compare_exchange(WRITER_BIT, 0, Ordering::Release, Ordering::Relaxed)
@@ -107,7 +108,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLock for RawRwLock<RECURSIVE> 
             let result = self.lock_shared_slow(None);
             debug_assert!(result);
         }
-        self.deadlock_acquire();
+        self.deadlock_acquire_secondary();
     }
 
     #[inline]
@@ -118,14 +119,14 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLock for RawRwLock<RECURSIVE> 
             self.try_lock_shared_slow()
         };
         if result {
-            self.deadlock_acquire();
+            self.deadlock_acquire_secondary();
         }
         result
     }
 
     #[inline]
     unsafe fn unlock_shared(&self) {
-        self.deadlock_release();
+        self.deadlock_release_secondary();
         let state = self.state.fetch_sub(ONE_READER, Ordering::Release);
         if state & (READERS_MASK | WRITER_PARKED_BIT) == (ONE_READER | WRITER_PARKED_BIT) {
             self.unlock_shared_slow();
@@ -154,7 +155,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockFair for RawRwLock<RECURSI
 
     #[inline]
     unsafe fn unlock_exclusive_fair(&self) {
-        self.deadlock_release();
+        self.deadlock_release_all();
         if self
             .state
             .compare_exchange(WRITER_BIT, 0, Ordering::Release, Ordering::Relaxed)
@@ -184,6 +185,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockFair for RawRwLock<RECURSI
 unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockDowngrade for RawRwLock<RECURSIVE> {
     #[inline]
     unsafe fn downgrade(&self) {
+        self.deadlock_release_primary();
         let state = self
             .state
             .fetch_add(ONE_READER - WRITER_BIT, Ordering::Release);
@@ -207,7 +209,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockTimed for RawRwLock<RECURS
             self.lock_shared_slow(util::to_deadline(timeout))
         };
         if result {
-            self.deadlock_acquire();
+            self.deadlock_acquire_secondary();
         }
         result
     }
@@ -220,43 +222,37 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockTimed for RawRwLock<RECURS
             self.lock_shared_slow(Some(timeout))
         };
         if result {
-            self.deadlock_acquire();
+            self.deadlock_acquire_secondary();
         }
         result
     }
 
     #[inline]
     fn try_lock_exclusive_for(&self, timeout: Duration) -> bool {
-        let result = if self
+        if self
             .state
             .compare_exchange_weak(0, WRITER_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
+            self.deadlock_acquire_all();
             true
         } else {
             self.lock_exclusive_slow(util::to_deadline(timeout))
-        };
-        if result {
-            self.deadlock_acquire();
         }
-        result
     }
 
     #[inline]
     fn try_lock_exclusive_until(&self, timeout: Instant) -> bool {
-        let result = if self
+        if self
             .state
             .compare_exchange_weak(0, WRITER_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
+            self.deadlock_acquire_all();
             true
         } else {
             self.lock_exclusive_slow(Some(timeout))
-        };
-        if result {
-            self.deadlock_acquire();
         }
-        result
     }
 }
 
@@ -267,7 +263,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgrade for RawRwLock<RECU
             let result = self.lock_upgradable_slow(None);
             debug_assert!(result);
         }
-        self.deadlock_acquire();
+        self.deadlock_acquire_all();
     }
 
     #[inline]
@@ -278,14 +274,14 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgrade for RawRwLock<RECU
             self.try_lock_upgradable_slow()
         };
         if result {
-            self.deadlock_acquire();
+            self.deadlock_acquire_all();
         }
         result
     }
 
     #[inline]
     unsafe fn unlock_upgradable(&self) {
-        self.deadlock_release();
+        self.deadlock_release_all();
         let state = self.state.load(Ordering::Relaxed);
         #[allow(clippy::collapsible_if)]
         if state & PARKED_BIT == 0 {
@@ -307,6 +303,8 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgrade for RawRwLock<RECU
 
     #[inline]
     unsafe fn upgrade(&self) {
+        // Stop owning the reader stage before replacing it with WRITER_BIT.
+        self.deadlock_release_secondary();
         let state = self.state.fetch_sub(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
             Ordering::Acquire,
@@ -314,6 +312,8 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgrade for RawRwLock<RECU
         if state & READERS_MASK != ONE_READER {
             let result = self.upgrade_slow(None);
             debug_assert!(result);
+        } else {
+            self.deadlock_acquire_secondary();
         }
     }
 
@@ -339,7 +339,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgrade for RawRwLock<RECU
 unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgradeFair for RawRwLock<RECURSIVE> {
     #[inline]
     unsafe fn unlock_upgradable_fair(&self) {
-        self.deadlock_release();
+        self.deadlock_release_all();
         let state = self.state.load(Ordering::Relaxed);
         #[allow(clippy::collapsible_if)]
         if state & PARKED_BIT == 0 {
@@ -370,6 +370,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgradeFair for RawRwLock<
 unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgradeDowngrade for RawRwLock<RECURSIVE> {
     #[inline]
     unsafe fn downgrade_upgradable(&self) {
+        self.deadlock_release_primary();
         let state = self.state.fetch_sub(UPGRADABLE_BIT, Ordering::Relaxed);
 
         // Wake up parked upgradable threads if there are any
@@ -401,7 +402,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgradeTimed for RawRwLock
             self.lock_upgradable_slow(Some(timeout))
         };
         if result {
-            self.deadlock_acquire();
+            self.deadlock_acquire_all();
         }
         result
     }
@@ -414,18 +415,21 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgradeTimed for RawRwLock
             self.lock_upgradable_slow(util::to_deadline(timeout))
         };
         if result {
-            self.deadlock_acquire();
+            self.deadlock_acquire_all();
         }
         result
     }
 
     #[inline]
     unsafe fn try_upgrade_until(&self, timeout: Instant) -> bool {
+        // Stop owning the reader stage before replacing it with WRITER_BIT.
+        self.deadlock_release_secondary();
         let state = self.state.fetch_sub(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
             Ordering::Acquire,
         );
         if state & READERS_MASK == ONE_READER {
+            self.deadlock_acquire_secondary();
             true
         } else {
             self.upgrade_slow(Some(timeout))
@@ -434,11 +438,14 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgradeTimed for RawRwLock
 
     #[inline]
     unsafe fn try_upgrade_for(&self, timeout: Duration) -> bool {
+        // Stop owning the reader stage before replacing it with WRITER_BIT.
+        self.deadlock_release_secondary();
         let state = self.state.fetch_sub(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
             Ordering::Acquire,
         );
         if state & READERS_MASK == ONE_READER {
+            self.deadlock_acquire_secondary();
             true
         } else {
             self.upgrade_slow(util::to_deadline(timeout))
@@ -549,8 +556,16 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
             return false;
         }
 
+        // WRITER_BIT prevents new writers and upgradable readers from
+        // acquiring the lock, so it represents ownership of the primary key.
+        self.deadlock_acquire_primary();
+
         // Step 2: wait for all remaining readers to exit the lock.
-        self.wait_for_readers(timeout, 0)
+        let result = self.wait_for_readers(timeout, 0);
+        if result {
+            self.deadlock_acquire_secondary();
+        }
+        result
     }
 
     #[cold]
@@ -754,9 +769,10 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
 
     #[cold]
     fn upgrade_slow(&self, timeout: Option<Instant>) -> bool {
-        self.deadlock_release();
         let result = self.wait_for_readers(timeout, ONE_READER | UPGRADABLE_BIT);
-        self.deadlock_acquire();
+        // We either acquired exclusive access or restored the upgradable read
+        // lock after timing out. Both states own the secondary key.
+        self.deadlock_acquire_secondary();
         result
     }
 
@@ -800,14 +816,14 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
 
     #[cold]
     fn bump_exclusive_slow(&self) {
-        self.deadlock_release();
+        self.deadlock_release_all();
         self.unlock_exclusive_slow(true);
         self.lock_exclusive();
     }
 
     #[cold]
     fn bump_upgradable_slow(&self) {
-        self.deadlock_release();
+        self.deadlock_release_all();
         self.unlock_upgradable_slow(true);
         self.lock_upgradable();
     }
@@ -930,6 +946,12 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
                     // We need to release WRITER_BIT and revert back to
                     // our previous value. We also wake up any threads that
                     // might be waiting on WRITER_BIT.
+                    if prev_value == 0 {
+                        // A fresh writer no longer owns WRITER_BIT after the
+                        // rollback. An upgrading reader retains ownership of
+                        // the primary key when its upgradable lock is restored.
+                        self.deadlock_release_primary();
+                    }
                     let state = self
                         .state
                         .fetch_add(prev_value.wrapping_sub(WRITER_BIT), Ordering::Relaxed);
@@ -1032,15 +1054,35 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     }
 
     #[inline]
-    fn deadlock_acquire(&self) {
+    fn deadlock_acquire_primary(&self) {
         unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
+    }
+
+    #[inline]
+    fn deadlock_release_primary(&self) {
+        unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
+    }
+
+    #[inline]
+    fn deadlock_acquire_secondary(&self) {
         unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr() + 1) };
     }
 
     #[inline]
-    fn deadlock_release(&self) {
-        unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
+    fn deadlock_release_secondary(&self) {
         unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr() + 1) };
+    }
+
+    #[inline]
+    fn deadlock_acquire_all(&self) {
+        self.deadlock_acquire_primary();
+        self.deadlock_acquire_secondary();
+    }
+
+    #[inline]
+    fn deadlock_release_all(&self) {
+        self.deadlock_release_primary();
+        self.deadlock_release_secondary();
     }
 
     #[cfg(test)]

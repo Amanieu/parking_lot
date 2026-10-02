@@ -94,6 +94,8 @@ impl KeyedEvent {
 
     #[inline]
     pub unsafe fn park(&'static self, key: &AtomicUsize) {
+        // The rendezvous with NtReleaseKeyedEvent provides the synchronization
+        // required by ThreadParkerT for the surrounding ThreadData.
         let status = unsafe { self.wait_for(key as *const _ as *mut ffi::c_void, ptr::null_mut()) };
         debug_assert_eq!(status, STATUS_SUCCESS);
     }
@@ -119,6 +121,8 @@ impl KeyedEvent {
             let ticks = diff.as_nanos().div_ceil(100).min(i64::MAX as u128);
             let mut nt_timeout = -(ticks as i64);
 
+            // A successful wait synchronizes with NtReleaseKeyedEvent just as
+            // in `park` above.
             let status =
                 unsafe { self.wait_for(key as *const _ as *mut ffi::c_void, &mut nt_timeout) };
             if status == STATUS_SUCCESS {
@@ -169,6 +173,8 @@ impl UnparkHandle {
     #[inline]
     pub unsafe fn unpark(self) {
         if let Some(key) = self.key {
+            // This rendezvous synchronizes with the target's
+            // NtWaitForKeyedEvent call.
             let status = unsafe { self.keyed_event.release(key.as_ptr().cast::<ffi::c_void>()) };
             debug_assert_eq!(status, STATUS_SUCCESS);
         }

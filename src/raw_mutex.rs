@@ -86,14 +86,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
     #[inline]
     unsafe fn unlock(&self) {
         unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
-        if self
-            .state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
-        {
-            return;
-        }
-        self.unlock_slow(false);
+        unsafe { self.unlock_inner(false) };
     }
 
     #[inline]
@@ -107,14 +100,7 @@ unsafe impl lock_api::RawMutexFair for RawMutex {
     #[inline]
     unsafe fn unlock_fair(&self) {
         unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
-        if self
-            .state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
-        {
-            return;
-        }
-        self.unlock_slow(true);
+        unsafe { self.unlock_inner(true) };
     }
 
     #[inline]
@@ -165,6 +151,23 @@ unsafe impl lock_api::RawMutexTimed for RawMutex {
 }
 
 impl RawMutex {
+    /// Unlocks the mutex without updating the deadlock detector.
+    ///
+    /// # Safety
+    ///
+    /// The caller must own the mutex.
+    #[inline]
+    pub(crate) unsafe fn unlock_inner(&self, force_fair: bool) {
+        if self
+            .state
+            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .is_ok()
+        {
+            return;
+        }
+        self.unlock_slow(force_fair);
+    }
+
     // Used by Condvar when requeuing threads to us, must be called while
     // holding the queue lock.
     #[inline]

@@ -31,7 +31,6 @@ jobs:
     - run: cargo test --all
     - run: cargo build --all --features ${{ matrix.feature }}
     - run: cargo test --all --features ${{ matrix.feature }}
-      if: matrix.feature == 'nightly'
     - run: cargo install cargo-msrv
     - run: cargo msrv --workspace verify
   build_other_platforms:

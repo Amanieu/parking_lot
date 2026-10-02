@@ -157,9 +157,8 @@ impl super::ThreadParkerT for ThreadParker {
         true
     }
 
-    // Locks the parker to prevent the target thread from exiting. This is
-    // necessary to ensure that thread-local ThreadData objects remain valid.
-    // This should be called while holding the queue lock.
+    // Marks the thread as unparked while holding the queue lock. A late futex
+    // wake remains harmless even if the target's ThreadData has been freed.
     #[inline]
     unsafe fn unpark_lock(&self) -> UnparkHandle {
         // We don't need to lock anything, just clear the state

@@ -8,6 +8,11 @@ use std::time::Instant;
 /// variables which must not be moved. Calling an unsafe method after moving the
 /// parker from the address at which a previous unsafe method was called is
 /// undefined behavior.
+///
+/// The protocol also transfers ownership of the surrounding `ThreadData`
+/// between the parked thread and the parking lot. Writes performed by an
+/// unparker before `unpark_lock` must be visible after `park` returns or after
+/// `park_until` returns true.
 pub trait ThreadParkerT {
     type UnparkHandle: UnparkHandleT;
 
@@ -15,34 +20,46 @@ pub trait ThreadParkerT {
 
     fn new() -> Self;
 
-    /// Prepares the parker. This should be called before adding it to the queue.
+    /// Prepares the parker. This must be called while the local thread still
+    /// owns the `ThreadData`, before adding it to the queue.
     unsafe fn prepare_park(&self);
 
     /// Checks if the park timed out. This should be called while holding the
     /// queue lock after `park_until` has returned false.
     unsafe fn timed_out(&self) -> bool;
 
-    /// Parks the thread until it is unparked. This should be called after it has
-    /// been added to the queue, after unlocking the queue.
+    /// Parks the thread until it is unparked. This must be called after the
+    /// `ThreadData` has been added to the queue and the queue has been unlocked.
+    /// Returning transfers ownership of the `ThreadData` back to the local
+    /// thread and acquires the writes that preceded `unpark_lock`.
     unsafe fn park(&self);
 
     /// Parks the thread until it is unparked or the timeout is reached. This
-    /// should be called after it has been added to the queue, after unlocking
-    /// the queue. Returns true if we were unparked and false if we timed out.
+    /// must be called after the `ThreadData` has been added to the queue and the
+    /// queue has been unlocked. Returning true transfers ownership of the
+    /// `ThreadData` back to the local thread and acquires the writes that
+    /// preceded `unpark_lock`. Returning false does not transfer ownership: the
+    /// caller must resolve the timeout while holding the queue lock.
     ///
     /// The timeout is the earliest point at which this method may return false,
     /// but scheduling and platform-specific behavior may delay the return.
     unsafe fn park_until(&self, timeout: Instant) -> bool;
 
-    /// Locks the parker to prevent the target thread from exiting. This is
-    /// necessary to ensure that thread-local `ThreadData` objects remain valid.
-    /// This should be called while holding the queue lock.
+    /// Prepares to unpark a thread after removing its `ThreadData` from the
+    /// queue and writing its result fields. This must be called while holding
+    /// the queue lock.
+    ///
+    /// After this returns, the caller must not access the target `ThreadData`:
+    /// the target may immediately observe the unpark and destroy it, even while
+    /// the queue remains locked. The returned handle must nevertheless remain
+    /// safe to pass to `unpark`. Implementations may either keep the parker
+    /// alive or make such a late `unpark` harmless.
     unsafe fn unpark_lock(&self) -> Self::UnparkHandle;
 }
 
-/// Handle for a thread that is about to be unparked. We need to mark the thread
-/// as unparked while holding the queue lock, but we delay the actual unparking
-/// until after the queue lock is released.
+/// Handle for a thread that is about to be unparked. We mark the thread as
+/// unparked while holding the queue lock, but delay any potentially expensive
+/// wake operation until after the queue lock is released.
 pub trait UnparkHandleT {
     /// Wakes up the parked thread. This should be called after the queue lock is
     /// released to avoid blocking the queue for too long.

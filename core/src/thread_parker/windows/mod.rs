@@ -93,9 +93,8 @@ impl super::ThreadParkerT for ThreadParker {
         }
     }
 
-    // Locks the parker to prevent the target thread from exiting. This is
-    // necessary to ensure that thread-local ThreadData objects remain valid.
-    // This should be called while holding the queue lock.
+    // Marks the thread as unparked while holding the queue lock and returns a
+    // backend-specific handle for the delayed wake.
     #[inline]
     unsafe fn unpark_lock(&self) -> UnparkHandle {
         match *self.backend {

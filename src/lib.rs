@@ -23,8 +23,8 @@ pub mod deadlock;
 #[cfg(not(feature = "deadlock_detection"))]
 mod deadlock;
 
-// If deadlock detection is enabled, we cannot allow lock guards to be sent to
-// other threads.
+// Deadlock detection records lock ownership per thread, so guards cannot be
+// sent to another thread while it is enabled.
 #[cfg(all(feature = "send_guard", feature = "deadlock_detection"))]
 compile_error!("the `send_guard` and `deadlock_detection` features cannot be used together");
 #[cfg(feature = "send_guard")]

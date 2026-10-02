@@ -106,8 +106,6 @@ impl UnparkHandle {
     // released to avoid blocking the queue for too long.
     #[inline]
     pub fn unpark(self) {
-        unsafe {
-            (self.waitaddress.WakeByAddressSingle)(self.key.as_ptr().cast::<ffi::c_void>())
-        };
+        unsafe { (self.waitaddress.WakeByAddressSingle)(self.key.as_ptr().cast::<ffi::c_void>()) };
     }
 }

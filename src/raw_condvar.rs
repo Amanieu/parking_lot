@@ -154,8 +154,14 @@ impl RawCondvar {
     // using `wait_until`.
     fn wait_until_internal(&self, mutex: &RawMutex, timeout: Option<Instant>) -> bool {
         let result;
-        let mut bad_mutex = false;
         let mut requeued = false;
+
+        // Stop recording ownership before ThreadData is transferred to the
+        // parking lot. The physical unlock remains in `before_sleep` so that
+        // unlocking and parking are atomic with respect to notification.
+        let mutex_addr = ptr::from_ref(mutex).addr();
+        unsafe { deadlock::release_resource(mutex_addr) };
+
         {
             let addr = ptr::from_ref(self).addr();
             let lock_addr = mutex as *const _ as *mut _;
@@ -167,14 +173,13 @@ impl RawCondvar {
                 if state.is_null() {
                     self.state.store(lock_addr, Ordering::Relaxed);
                 } else if state != lock_addr {
-                    bad_mutex = true;
                     return false;
                 }
                 true
             };
             let before_sleep = || {
                 // Unlock the mutex before sleeping...
-                unsafe { mutex.unlock() };
+                unsafe { mutex.unlock_inner(false) };
             };
             let timed_out = |k, was_last_thread| {
                 // If we were requeued to a mutex, then we did not time out.
@@ -204,13 +209,15 @@ impl RawCondvar {
         // Panic if we tried to use multiple mutexes with a Condvar. Note
         // that at this point the MutexGuard is still locked. It will be
         // unlocked by the unwinding logic.
-        if bad_mutex {
+        if result == ParkResult::Invalid {
+            // We never got around to unlocking the mutex.
+            unsafe { deadlock::acquire_resource(mutex_addr) };
             panic!("attempted to use a condition variable with more than one mutex");
         }
 
         // ... and re-lock it once we are done sleeping
         if result == ParkResult::Unparked(TOKEN_HANDOFF) {
-            unsafe { deadlock::acquire_resource(ptr::from_ref(mutex).addr()) };
+            unsafe { deadlock::acquire_resource(mutex_addr) };
         } else {
             mutex.lock();
         }

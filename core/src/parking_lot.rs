@@ -1,7 +1,7 @@
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::word_lock::WordLock;
 use core::{
-    cell::Cell,
+    cell::{Cell, UnsafeCell},
     ptr::{self, NonNull},
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
@@ -73,26 +73,60 @@ impl Bucket {
     }
 }
 
+// A ThreadData has two stable ownership states:
+//
+// * While it is not linked into a bucket queue, it is owned by its thread and
+//   its non-atomic fields are unshared.
+// * While it is linked into a bucket queue, it is owned by the parking lot. Its
+//   queue fields and lifetime are protected by the lock of the bucket that
+//   currently contains it.
+//
+// To transfer ownership to the parking lot, the local thread initializes the
+// queue fields and prepares the parker while holding the destination bucket
+// lock, then links the ThreadData into the queue. Once linked, the local thread
+// must not access fields owned by the parking lot.
+//
+// To transfer ownership back, an unparker removes the ThreadData from the queue,
+// writes the result fields, and calls `unpark_lock` while still holding the
+// bucket lock. It must not access the ThreadData after `unpark_lock`, since the
+// parked thread may immediately resume and destroy it. The returned
+// UnparkHandle remains usable without access to the ThreadData. A successful
+// return from `park` or `park_until` completes the transfer back to the local
+// thread and synchronizes with the unparker's preceding writes.
+//
+// A timeout does not by itself transfer ownership back. The local thread must
+// use the atomic key to find and lock the current bucket, resolve any concurrent
+// unpark or requeue, and remove itself from the queue before it again owns the
+// ThreadData.
 struct ThreadData {
+    // Accessed concurrently through the ThreadParker protocol rather than the
+    // bucket lock.
     parker: ThreadParker,
 
-    // Key that this thread is sleeping on. This may change if the thread is
-    // requeued to a different key.
+    // Written by the parking lot under the bucket lock. This is atomic because
+    // a timing-out local thread must read it before regaining ownership, and a
+    // concurrent requeue may change it.
     key: AtomicUsize,
 
-    // Linked list of parked threads in a bucket
-    next_in_queue: Cell<Option<NonNull<ThreadData>>>,
+    // Fields transferred between local ownership and parking-lot ownership as
+    // described above.
+    state: UnsafeCell<ThreadDataState>,
+}
 
-    // UnparkToken passed to this thread when it is unparked
-    unpark_token: Cell<UnparkToken>,
+struct ThreadDataState {
+    // Linked list of parked threads. Accessed only while holding the lock of
+    // the bucket that contains this ThreadData.
+    next_in_queue: Option<NonNull<ThreadData>>,
 
-    // ParkToken value set by the thread when it was parked
-    park_token: Cell<ParkToken>,
+    // Written by the parking lot before `unpark_lock` and read locally only
+    // after a successful return from the parker.
+    unpark_token: UnparkToken,
 
-    // Is the thread parked with a timeout?
-    parked_with_timeout: Cell<bool>,
+    // Initialized before linking and subsequently read only under the bucket
+    // lock.
+    park_token: ParkToken,
 
-    // Extra data for deadlock detection
+    // Deadlock detector fields governed by the same ownership rules.
     #[cfg(feature = "deadlock_detection")]
     deadlock_data: deadlock::DeadlockData,
 }
@@ -107,13 +141,27 @@ impl ThreadData {
         ThreadData {
             parker: ThreadParker::new(),
             key: AtomicUsize::new(0),
-            next_in_queue: Cell::new(None),
-            unpark_token: Cell::new(DEFAULT_UNPARK_TOKEN),
-            park_token: Cell::new(DEFAULT_PARK_TOKEN),
-            parked_with_timeout: Cell::new(false),
-            #[cfg(feature = "deadlock_detection")]
-            deadlock_data: deadlock::DeadlockData::new(),
+            state: UnsafeCell::new(ThreadDataState {
+                next_in_queue: None,
+                unpark_token: DEFAULT_UNPARK_TOKEN,
+                park_token: DEFAULT_PARK_TOKEN,
+                #[cfg(feature = "deadlock_detection")]
+                deadlock_data: deadlock::DeadlockData::new(),
+            }),
         }
+    }
+
+    /// Returns the state under the ownership model described above.
+    ///
+    /// # Safety
+    ///
+    /// The caller must have exclusive access to the state. Either the current
+    /// thread must own this `ThreadData`, or the parking lot must own it and the
+    /// caller must hold the lock that protects it.
+    #[inline]
+    #[allow(clippy::mut_from_ref)]
+    unsafe fn state(&self) -> &mut ThreadDataState {
+        unsafe { self.state.get().as_mut_unchecked() }
     }
 }
 
@@ -220,9 +268,8 @@ fn grow_hashtable(num_threads: usize) {
 
     // Move the entries from the old table to the new one
     for bucket in &old_table.entries[..] {
-        // SAFETY: The park, unpark* and check_wait_graph_fast functions create only correct linked
-        // lists. All `ThreadData` instances in these lists will remain valid as long as they are
-        // present in the lists, meaning as long as their threads are parked.
+        // SAFETY: Parking-lot operations maintain correctly linked queues. A
+        // `ThreadData` remains valid for as long as it is linked in a queue.
         unsafe { rehash_bucket_into(bucket, &mut new_table) };
     }
 
@@ -251,17 +298,15 @@ unsafe fn rehash_bucket_into(bucket: &'static Bucket, table: &mut HashTable) {
     let mut current = bucket.queue_head.get();
     while let Some(current_ptr) = current {
         let current_ref = unsafe { current_ptr.as_ref() };
-        let next = current_ref.next_in_queue.get();
+        let next = unsafe { current_ref.state() }.next_in_queue;
         let hash = hash(current_ref.key.load(Ordering::Relaxed), table.hash_bits);
         if let Some(tail) = table.entries[hash].queue_tail.get() {
-            unsafe { tail.as_ref() }
-                .next_in_queue
-                .set(Some(current_ptr));
+            unsafe { tail.as_ref().state() }.next_in_queue = Some(current_ptr);
         } else {
             table.entries[hash].queue_head.set(Some(current_ptr));
         }
         table.entries[hash].queue_tail.set(Some(current_ptr));
-        current_ref.next_in_queue.set(None);
+        unsafe { current_ref.state() }.next_in_queue = None;
         current = next;
     }
 }
@@ -532,16 +577,18 @@ pub unsafe fn park(
         }
 
         // Append our thread data to the queue and unlock the bucket
-        thread_data.parked_with_timeout.set(timeout.is_some());
         let thread_data_ptr = NonNull::from(thread_data);
-        thread_data.next_in_queue.set(None);
+        let state = unsafe { thread_data.state() };
+        state.next_in_queue = None;
+        state.park_token = park_token;
+        #[cfg(feature = "deadlock_detection")]
+        {
+            state.deadlock_data.parked_with_timeout = timeout.is_some();
+        }
         thread_data.key.store(key, Ordering::Relaxed);
-        thread_data.park_token.set(park_token);
         unsafe { thread_data.parker.prepare_park() };
         if let Some(tail) = bucket.queue_tail.get() {
-            unsafe { tail.as_ref() }
-                .next_in_queue
-                .set(Some(thread_data_ptr));
+            unsafe { tail.as_ref().state() }.next_in_queue = Some(thread_data_ptr);
         } else {
             bucket.queue_head.set(Some(thread_data_ptr));
         }
@@ -559,7 +606,7 @@ pub unsafe fn park(
             Some(timeout) => unsafe { thread_data.parker.park_until(timeout) },
             None => {
                 unsafe { thread_data.parker.park() };
-                // call deadlock detection on_unpark hook
+                // Handle a pending deadlock-detector backtrace request.
                 unsafe { deadlock::on_unpark(thread_data) };
                 true
             }
@@ -567,7 +614,7 @@ pub unsafe fn park(
 
         // If we were unparked, return now
         if unparked {
-            return ParkResult::Unparked(thread_data.unpark_token.get());
+            return ParkResult::Unparked(unsafe { thread_data.state() }.unpark_token);
         }
 
         // Lock our bucket again. Note that the hashtable may have been rehashed in
@@ -579,19 +626,22 @@ pub unsafe fn park(
         if !unsafe { thread_data.parker.timed_out() } {
             // SAFETY: We hold the lock here, as required
             unsafe { bucket.mutex.unlock() };
-            return ParkResult::Unparked(thread_data.unpark_token.get());
+            return ParkResult::Unparked(unsafe { thread_data.state() }.unpark_token);
         }
 
         // We timed out, so we now need to remove our thread from the queue
-        let mut link = &bucket.queue_head;
         let mut current = bucket.queue_head.get();
-        let mut previous = None;
+        let mut previous: Option<NonNull<ThreadData>> = None;
         let mut was_last_thread = true;
         while let Some(current_ptr) = current {
             let current_ref = unsafe { current_ptr.as_ref() };
+            let next = unsafe { current_ref.state() }.next_in_queue;
             if current_ptr == thread_data_ptr {
-                let next = current_ref.next_in_queue.get();
-                link.set(next);
+                if let Some(previous) = previous {
+                    unsafe { previous.as_ref().state() }.next_in_queue = next;
+                } else {
+                    bucket.queue_head.set(next);
+                }
                 if bucket.queue_tail.get() == Some(current_ptr) {
                     bucket.queue_tail.set(previous);
                 } else {
@@ -604,7 +654,7 @@ pub unsafe fn park(
                             was_last_thread = false;
                             break;
                         }
-                        scan = scan_ref.next_in_queue.get();
+                        scan = unsafe { scan_ref.state() }.next_in_queue;
                     }
                 }
 
@@ -616,9 +666,8 @@ pub unsafe fn park(
                 if current_ref.key.load(Ordering::Relaxed) == key {
                     was_last_thread = false;
                 }
-                link = &current_ref.next_in_queue;
                 previous = Some(current_ptr);
-                current = link.get();
+                current = next;
             }
         }
 
@@ -665,16 +714,19 @@ pub unsafe fn unpark_one(
     let bucket = lock_bucket(key);
 
     // Find a thread with a matching key and remove it from the queue
-    let mut link = &bucket.queue_head;
     let mut current = bucket.queue_head.get();
-    let mut previous = None;
+    let mut previous: Option<NonNull<ThreadData>> = None;
     let mut result = UnparkResult::default();
     while let Some(current_ptr) = current {
         let current_ref = unsafe { current_ptr.as_ref() };
+        let next = unsafe { current_ref.state() }.next_in_queue;
         if current_ref.key.load(Ordering::Relaxed) == key {
             // Remove the thread from the queue
-            let next = current_ref.next_in_queue.get();
-            link.set(next);
+            if let Some(previous) = previous {
+                unsafe { previous.as_ref().state() }.next_in_queue = next;
+            } else {
+                bucket.queue_head.set(next);
+            }
             if bucket.queue_tail.get() == Some(current_ptr) {
                 bucket.queue_tail.set(previous);
             } else {
@@ -687,7 +739,7 @@ pub unsafe fn unpark_one(
                         result.have_more_threads = true;
                         break;
                     }
-                    scan = scan_ref.next_in_queue.get();
+                    scan = unsafe { scan_ref.state() }.next_in_queue;
                 }
             }
 
@@ -696,7 +748,7 @@ pub unsafe fn unpark_one(
             let token = callback(result);
 
             // Set the token for the target thread
-            current_ref.unpark_token.set(token);
+            unsafe { current_ref.state() }.unpark_token = token;
 
             // This is a bit tricky: we first lock the ThreadParker to prevent
             // the thread from exiting and freeing its ThreadData if its wait
@@ -710,9 +762,8 @@ pub unsafe fn unpark_one(
 
             return result;
         } else {
-            link = &current_ref.next_in_queue;
             previous = Some(current_ptr);
-            current = link.get();
+            current = next;
         }
     }
 
@@ -744,22 +795,25 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
     let bucket = lock_bucket(key);
 
     // Remove all threads with the given key in the bucket
-    let mut link = &bucket.queue_head;
     let mut current = bucket.queue_head.get();
-    let mut previous = None;
+    let mut previous: Option<NonNull<ThreadData>> = None;
     let mut threads = SmallVec::<[_; 8]>::new();
     while let Some(current_ptr) = current {
         let current_ref = unsafe { current_ptr.as_ref() };
+        let next = unsafe { current_ref.state() }.next_in_queue;
         if current_ref.key.load(Ordering::Relaxed) == key {
             // Remove the thread from the queue
-            let next = current_ref.next_in_queue.get();
-            link.set(next);
+            if let Some(previous) = previous {
+                unsafe { previous.as_ref().state() }.next_in_queue = next;
+            } else {
+                bucket.queue_head.set(next);
+            }
             if bucket.queue_tail.get() == Some(current_ptr) {
                 bucket.queue_tail.set(previous);
             }
 
             // Set the token for the target thread
-            current_ref.unpark_token.set(unpark_token);
+            unsafe { current_ref.state() }.unpark_token = unpark_token;
 
             // Don't wake up threads while holding the queue lock. See comment
             // in unpark_one. For now just record which threads we need to wake
@@ -767,9 +821,8 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
             threads.push(unsafe { current_ref.parker.unpark_lock() });
             current = next;
         } else {
-            link = &current_ref.next_in_queue;
             previous = Some(current_ptr);
-            current = link.get();
+            current = next;
         }
     }
 
@@ -838,18 +891,21 @@ pub unsafe fn unpark_requeue(
     }
 
     // Remove all threads with the given key in the source bucket
-    let mut link = &bucket_from.queue_head;
     let mut current = bucket_from.queue_head.get();
-    let mut previous = None;
+    let mut previous: Option<NonNull<ThreadData>> = None;
     let mut requeue_threads: Option<NonNull<ThreadData>> = None;
     let mut requeue_threads_tail: Option<NonNull<ThreadData>> = None;
     let mut wakeup_thread = None;
     while let Some(current_ptr) = current {
         let current_ref = unsafe { current_ptr.as_ref() };
+        let next = unsafe { current_ref.state() }.next_in_queue;
         if current_ref.key.load(Ordering::Relaxed) == key_from {
             // Remove the thread from the queue
-            let next = current_ref.next_in_queue.get();
-            link.set(next);
+            if let Some(previous) = previous {
+                unsafe { previous.as_ref().state() }.next_in_queue = next;
+            } else {
+                bucket_from.queue_head.set(next);
+            }
             if bucket_from.queue_tail.get() == Some(current_ptr) {
                 bucket_from.queue_tail.set(previous);
             }
@@ -862,9 +918,7 @@ pub unsafe fn unpark_requeue(
                 result.unparked_threads = 1;
             } else {
                 if let Some(tail) = requeue_threads_tail {
-                    unsafe { tail.as_ref() }
-                        .next_in_queue
-                        .set(Some(current_ptr));
+                    unsafe { tail.as_ref().state() }.next_in_queue = Some(current_ptr);
                 } else {
                     requeue_threads = Some(current_ptr);
                 }
@@ -882,28 +936,23 @@ pub unsafe fn unpark_requeue(
                         result.have_more_threads = true;
                         break;
                     }
-                    scan = scan_ref.next_in_queue.get();
+                    scan = unsafe { scan_ref.state() }.next_in_queue;
                 }
                 break;
             }
             current = next;
         } else {
-            link = &current_ref.next_in_queue;
             previous = Some(current_ptr);
-            current = link.get();
+            current = next;
         }
     }
 
     // Add the requeued threads to the destination bucket
     if let Some(requeue_threads) = requeue_threads {
         let requeue_threads_tail = requeue_threads_tail.unwrap();
-        unsafe { requeue_threads_tail.as_ref() }
-            .next_in_queue
-            .set(None);
+        unsafe { requeue_threads_tail.as_ref().state() }.next_in_queue = None;
         if let Some(tail) = bucket_to.queue_tail.get() {
-            unsafe { tail.as_ref() }
-                .next_in_queue
-                .set(Some(requeue_threads));
+            unsafe { tail.as_ref().state() }.next_in_queue = Some(requeue_threads);
         } else {
             bucket_to.queue_head.set(Some(requeue_threads));
         }
@@ -916,7 +965,7 @@ pub unsafe fn unpark_requeue(
     // See comment in unpark_one for why we mess with the locking
     if let Some(wakeup_thread) = wakeup_thread {
         let wakeup_thread = unsafe { wakeup_thread.as_ref() };
-        wakeup_thread.unpark_token.set(token);
+        unsafe { wakeup_thread.state() }.unpark_token = token;
         let handle = unsafe { wakeup_thread.parker.unpark_lock() };
         // SAFETY: Both buckets are locked, as required.
         unsafe { unlock_bucket_pair(bucket_from, bucket_to) };
@@ -969,20 +1018,23 @@ pub unsafe fn unpark_filter(
     let bucket = lock_bucket(key);
 
     // Go through the queue looking for threads with a matching key
-    let mut link = &bucket.queue_head;
     let mut current = bucket.queue_head.get();
-    let mut previous = None;
+    let mut previous: Option<NonNull<ThreadData>> = None;
     let mut threads = SmallVec::<[_; 8]>::new();
     let mut result = UnparkResult::default();
     while let Some(current_ptr) = current {
         let current_ref = unsafe { current_ptr.as_ref() };
+        let next = unsafe { current_ref.state() }.next_in_queue;
         if current_ref.key.load(Ordering::Relaxed) == key {
             // Call the filter function with the thread's ParkToken
-            let next = current_ref.next_in_queue.get();
-            match filter(current_ref.park_token.get()) {
+            match filter(unsafe { current_ref.state() }.park_token) {
                 FilterOp::Unpark => {
                     // Remove the thread from the queue
-                    link.set(next);
+                    if let Some(previous) = previous {
+                        unsafe { previous.as_ref().state() }.next_in_queue = next;
+                    } else {
+                        bucket.queue_head.set(next);
+                    }
                     if bucket.queue_tail.get() == Some(current_ptr) {
                         bucket.queue_tail.set(previous);
                     }
@@ -994,9 +1046,8 @@ pub unsafe fn unpark_filter(
                 }
                 FilterOp::Skip => {
                     result.have_more_threads = true;
-                    link = &current_ref.next_in_queue;
                     previous = Some(current_ptr);
-                    current = link.get();
+                    current = next;
                 }
                 FilterOp::Stop => {
                     result.have_more_threads = true;
@@ -1004,9 +1055,8 @@ pub unsafe fn unpark_filter(
                 }
             }
         } else {
-            link = &current_ref.next_in_queue;
             previous = Some(current_ptr);
-            current = link.get();
+            current = next;
         }
     }
 
@@ -1018,7 +1068,7 @@ pub unsafe fn unpark_filter(
     // them for unparking.
     for t in threads.iter_mut() {
         let thread = unsafe { t.0.as_ref() };
-        thread.unpark_token.set(token);
+        unsafe { thread.state() }.unpark_token = token;
         t.1 = Some(unsafe { thread.parker.unpark_lock() });
     }
 
@@ -1044,13 +1094,18 @@ pub mod deadlock {
     #[cfg(feature = "deadlock_detection")]
     pub(super) use super::deadlock_impl::DeadlockData;
 
-    /// Acquires a resource identified by `key` in the deadlock detector.
+    /// Records that the current thread owns the resource identified by `key`.
     ///
     /// This is a no-op if the `deadlock_detection` feature is not enabled.
+    /// Each recorded acquisition should be paired with a call to
+    /// [`release_resource`] using the same key. The same key may be recorded
+    /// more than once if a resource is acquired repeatedly by the same thread.
+    /// Call this after the resource has been acquired.
     ///
     /// # Safety
     ///
-    /// Call this after the resource is acquired.
+    /// This must not be called from a callback passed to a parking-lot
+    /// function.
     #[inline]
     pub unsafe fn acquire_resource(_key: usize) {
         #[cfg(feature = "deadlock_detection")]
@@ -1059,18 +1114,18 @@ pub mod deadlock {
         }
     }
 
-    /// Releases a resource identified by `key` in the deadlock detector.
+    /// Stops recording one acquisition of the resource identified by `key` by
+    /// the current thread.
     ///
     /// This is a no-op if the `deadlock_detection` feature is not enabled.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the resource was already released or was not acquired by the
-    /// current thread.
+    /// The key should match an acquisition previously recorded by this thread.
+    /// The bookkeeping may be removed before the underlying resource is
+    /// physically released.
     ///
     /// # Safety
     ///
-    /// Call this before the resource is released.
+    /// This must not be called from a callback passed to a parking-lot
+    /// function.
     #[inline]
     pub unsafe fn release_resource(_key: usize) {
         #[cfg(feature = "deadlock_detection")]
@@ -1079,9 +1134,16 @@ pub mod deadlock {
         }
     }
 
-    /// Returns all deadlocks detected since the previous call.
+    /// Detects and returns all currently deadlocked thread components.
     ///
-    /// Each cycle consists of a vector of `DeadlockedThread` values.
+    /// Each inner vector contains the threads in one mutually deadlocked
+    /// component.
+    ///
+    /// Waits with a deadline are excluded because they can resolve by timing
+    /// out.
+    ///
+    /// Reporting a component removes its threads from the parking queues. Each
+    /// thread captures its backtrace and then remains blocked permanently.
     #[cfg(feature = "deadlock_detection")]
     #[inline]
     pub fn check_deadlock() -> Vec<Vec<deadlock_impl::DeadlockedThread>> {
@@ -1099,13 +1161,12 @@ pub mod deadlock {
 
 #[cfg(feature = "deadlock_detection")]
 mod deadlock_impl {
-    use super::{NUM_THREADS, ThreadData, get_hashtable, lock_bucket, with_thread_data};
+    use super::{HASHTABLE, NUM_THREADS, ThreadData, get_hashtable, with_thread_data};
     use crate::thread_parker::{ThreadParkerT, UnparkHandleT};
     use crate::word_lock::WordLock;
     use backtrace::Backtrace;
     use petgraph::graphmap::DiGraphMap;
-    use std::cell::{Cell, UnsafeCell};
-    use std::collections::HashSet;
+    use std::collections::HashMap;
     use std::ptr::NonNull;
     use std::sync::atomic::Ordering;
     use std::sync::mpsc;
@@ -1118,55 +1179,60 @@ mod deadlock_impl {
     }
 
     impl DeadlockedThread {
-        /// The system thread ID.
+        /// The identifier of the deadlocked thread.
         pub fn thread_id(&self) -> ThreadId {
             self.thread_id
         }
 
-        /// The thread backtrace.
+        /// The backtrace captured on the deadlocked thread.
         pub fn backtrace(&self) -> &Backtrace {
             &self.backtrace
         }
     }
 
     pub struct DeadlockData {
-        // Currently owned resources (keys)
-        resources: UnsafeCell<Vec<usize>>,
+        // Resource keys currently recorded as owned by this thread.
+        resources: Vec<usize>,
 
-        // Set when there's a pending callstack request
-        deadlocked: Cell<bool>,
+        // Set before linking to indicate whether the current wait has a
+        // deadline, then read by the detector under the bucket lock.
+        pub(super) parked_with_timeout: bool,
 
-        // Sender used to report the backtrace
-        backtrace_sender: UnsafeCell<Option<mpsc::Sender<DeadlockedThread>>>,
+        // Installed by the detector while the ThreadData is owned by the
+        // parking lot and taken locally only after the parker returns.
+        deadlock_backtrace: Option<mpsc::Sender<DeadlockedThread>>,
 
-        // System thread id
+        // Immutable after construction.
         thread_id: ThreadId,
     }
 
     impl DeadlockData {
         pub fn new() -> Self {
             DeadlockData {
-                resources: UnsafeCell::new(Vec::new()),
-                deadlocked: Cell::new(false),
-                backtrace_sender: UnsafeCell::new(None),
+                resources: Vec::new(),
+                parked_with_timeout: false,
+                deadlock_backtrace: None,
                 thread_id: std::thread::current().id(),
             }
         }
     }
 
     pub(super) unsafe fn on_unpark(td: &ThreadData) {
-        if td.deadlock_data.deadlocked.get() {
-            let sender = unsafe { (*td.deadlock_data.backtrace_sender.get()).take().unwrap() };
+        let state = unsafe { td.state() };
+        if let Some(sender) = state.deadlock_data.deadlock_backtrace.take() {
             sender
                 .send(DeadlockedThread {
-                    thread_id: td.deadlock_data.thread_id,
+                    thread_id: state.deadlock_data.thread_id,
                     backtrace: Backtrace::new(),
                 })
                 .unwrap();
-            // make sure to close this sender
+            // Drop the sender before parking permanently so that the detector
+            // observes the channel closing.
             drop(sender);
 
-            // park until the end of the time
+            // This ThreadData has been removed from its queue and cannot be
+            // reached by another parking-lot wake operation. Park permanently
+            // after reporting the backtrace.
             unsafe { td.parker.prepare_park() };
             unsafe { td.parker.park() };
             unreachable!("unparked deadlocked thread!");
@@ -1175,18 +1241,20 @@ mod deadlock_impl {
 
     pub unsafe fn acquire_resource(key: usize) {
         with_thread_data(|thread_data| {
-            unsafe { (*thread_data.deadlock_data.resources.get()).push(key) };
+            unsafe { thread_data.state() }
+                .deadlock_data
+                .resources
+                .push(key);
         });
     }
 
     pub unsafe fn release_resource(key: usize) {
         with_thread_data(|thread_data| {
-            let resources = unsafe { thread_data.deadlock_data.resources.get().as_mut_unchecked() };
+            let resources = &mut unsafe { thread_data.state() }.deadlock_data.resources;
 
-            // There is only one situation where we can fail to find the
-            // resource: we are currently running TLS destructors and our
-            // ThreadData has already been freed. There isn't much we can do
-            // about it at this point, so just ignore it.
+            // During TLS destruction the original ThreadData may no longer be
+            // accessible, in which case with_thread_data supplies a temporary
+            // empty ThreadData. There is no bookkeeping left to update.
             if let Some(p) = resources.iter().rposition(|x| *x == key) {
                 resources.swap_remove(p);
             }
@@ -1194,48 +1262,61 @@ mod deadlock_impl {
     }
 
     pub fn check_deadlock() -> Vec<Vec<DeadlockedThread>> {
-        // fast pass
+        // First use an approximate snapshot to avoid the precise scan in the
+        // common case where no cycle is observed.
         if unsafe { check_wait_graph_fast() } {
-            // double check
+            // Verify the result using a consistent snapshot.
             unsafe { check_wait_graph_slow() }
         } else {
             Vec::new()
         }
     }
 
-    // Simple algorithm that builds a wait graph f the threads and the resources,
-    // then checks for the presence of cycles (deadlocks).
-    // This variant isn't precise as it doesn't lock the entire table before checking
+    // Build an approximate wait graph while locking one bucket at a time. The
+    // resulting snapshot may combine states from different points in time, so
+    // a cycle only triggers the precise slow check.
     unsafe fn check_wait_graph_fast() -> bool {
-        let table = get_hashtable();
-        let thread_count = NUM_THREADS.load(Ordering::Relaxed);
-        let mut graph = DiGraphMap::<usize, ()>::with_capacity(thread_count * 2, thread_count * 2);
+        'retry: loop {
+            let table = get_hashtable();
+            let thread_count = NUM_THREADS.load(Ordering::Relaxed);
+            let mut graph =
+                DiGraphMap::<usize, ()>::with_capacity(thread_count * 2, thread_count * 2);
 
-        for b in &table.entries[..] {
-            b.mutex.lock();
-            let mut current = b.queue_head.get();
-            while let Some(current_ptr) = current {
-                let thread_data = unsafe { current_ptr.as_ref() };
-                if !thread_data.parked_with_timeout.get()
-                    && !thread_data.deadlock_data.deadlocked.get()
-                {
-                    let thread = current_ptr.as_ptr().addr();
-                    // .resources are waiting for their owner
-                    for &resource in
-                        unsafe { thread_data.deadlock_data.resources.get().as_ref_unchecked() }
-                    {
-                        graph.add_edge(resource, thread, ());
-                    }
-                    // owner waits for resource .key
-                    graph.add_edge(thread, thread_data.key.load(Ordering::Relaxed), ());
+            for b in &table.entries[..] {
+                b.mutex.lock();
+
+                // Hash-table growth may have moved this bucket's queue while
+                // we were waiting for its lock. Restart with the current table
+                // rather than traversing queue links no longer protected by
+                // this bucket.
+                if !core::ptr::eq(HASHTABLE.load(Ordering::Relaxed), table) {
+                    unsafe { b.mutex.unlock() };
+                    continue 'retry;
                 }
-                current = thread_data.next_in_queue.get();
-            }
-            // SAFETY: We hold the lock here, as required
-            unsafe { b.mutex.unlock() };
-        }
 
-        petgraph::algo::is_cyclic_directed(&graph)
+                let mut current = b.queue_head.get();
+                while let Some(current_ptr) = current {
+                    let thread_data = unsafe { current_ptr.as_ref() };
+                    let state = unsafe { thread_data.state() };
+                    // Exclude timed waits because they can eventually resolve
+                    // without being unparked by another thread.
+                    if !state.deadlock_data.parked_with_timeout {
+                        let thread = current_ptr.as_ptr().addr();
+                        // Each owned resource points to its owning thread.
+                        for &resource in &state.deadlock_data.resources {
+                            graph.add_edge(resource, thread, ());
+                        }
+                        // The thread points to the queue key on which it is parked.
+                        graph.add_edge(thread, thread_data.key.load(Ordering::Relaxed), ());
+                    }
+                    current = state.next_in_queue;
+                }
+                // SAFETY: We hold the lock here, as required
+                unsafe { b.mutex.unlock() };
+            }
+
+            return petgraph::algo::is_cyclic_directed(&graph);
+        }
     }
 
     #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Copy, Clone)]
@@ -1246,28 +1327,31 @@ mod deadlock_impl {
 
     use self::WaitGraphNode::*;
 
-    // Contrary to the _fast variant this locks the entries table before looking for cycles.
-    // Returns all detected thread wait cycles.
-    // Note that once a cycle is reported it's never reported again.
+    // Unlike the fast check, this locks every bucket while constructing the
+    // wait graph and selecting deadlocked components. Reported threads are
+    // removed from their queues before the buckets are unlocked.
     unsafe fn check_wait_graph_slow() -> Vec<Vec<DeadlockedThread>> {
+        // Reporting mutates the global queues, so only one slow check may run
+        // at a time.
         static DEADLOCK_DETECTION_LOCK: WordLock = WordLock::new();
         DEADLOCK_DETECTION_LOCK.lock();
 
         let mut table = get_hashtable();
         loop {
-            // Lock all buckets in the old table
+            // Lock all buckets in the candidate table.
             for b in &table.entries[..] {
                 b.mutex.lock();
             }
 
-            // Now check if our table is still the latest one. Another thread could
-            // have grown the hash table between us getting and locking the hash table.
+            // Another thread may have replaced the hash table while its
+            // buckets were being locked. In that case, retry with the current
+            // table.
             let new_table = get_hashtable();
             if core::ptr::eq(new_table, table) {
                 break;
             }
 
-            // Unlock buckets and try again
+            // Unlock the candidate table's buckets and try again.
             for b in &table.entries[..] {
                 // SAFETY: We hold the lock here, as required
                 unsafe { b.mutex.unlock() };
@@ -1284,101 +1368,148 @@ mod deadlock_impl {
             let mut current = b.queue_head.get();
             while let Some(current_ptr) = current {
                 let thread_data = unsafe { current_ptr.as_ref() };
-                if !thread_data.parked_with_timeout.get()
-                    && !thread_data.deadlock_data.deadlocked.get()
-                {
-                    // .resources are waiting for their owner
-                    for &resource in
-                        unsafe { thread_data.deadlock_data.resources.get().as_ref_unchecked() }
-                    {
+                let state = unsafe { thread_data.state() };
+                // Exclude timed waits because they can eventually resolve
+                // without being unparked by another thread.
+                if !state.deadlock_data.parked_with_timeout {
+                    // Each owned resource points to its owning thread.
+                    for &resource in &state.deadlock_data.resources {
                         graph.add_edge(Resource(resource), Thread(current_ptr), ());
                     }
-                    // owner waits for resource .key
+                    // The thread points to the queue key on which it is parked.
                     graph.add_edge(
                         Thread(current_ptr),
                         Resource(thread_data.key.load(Ordering::Relaxed)),
                         (),
                     );
                 }
-                current = thread_data.next_in_queue.get();
+                current = state.next_in_queue;
             }
         }
+
+        let components = graph_components(&graph);
+        let deadlocked_thread_count = components.iter().map(Vec::len).sum();
+        let mut senders = HashMap::with_capacity(deadlocked_thread_count);
+        let mut receivers = Vec::with_capacity(components.len());
+        // Use one channel per component, with one sender stored in each thread
+        // that must report a backtrace.
+        for component in components {
+            let (sender, receiver) = mpsc::channel();
+            for thread in component {
+                let previous = senders.insert(thread, sender.clone());
+                debug_assert!(previous.is_none());
+            }
+            // Drop the detector's sender so only the per-thread copies keep
+            // the channel open.
+            drop(sender);
+            receivers.push(receiver);
+        }
+
+        // The components contain raw ThreadData pointers. Keeping every bucket
+        // locked preserves each queued ThreadData until it has been unlinked
+        // and passed to unpark_lock.
+        let mut handles = Vec::with_capacity(deadlocked_thread_count);
+        for bucket in &table.entries[..] {
+            let mut current = bucket.queue_head.get();
+            let mut previous: Option<NonNull<ThreadData>> = None;
+            while let Some(current_ptr) = current {
+                let thread_data = unsafe { current_ptr.as_ref() };
+                let state = unsafe { thread_data.state() };
+                let next = state.next_in_queue;
+                if let Some(sender) = senders.remove(&current_ptr) {
+                    if let Some(previous) = previous {
+                        unsafe { previous.as_ref().state() }.next_in_queue = next;
+                    } else {
+                        bucket.queue_head.set(next);
+                    }
+                    if bucket.queue_tail.get() == Some(current_ptr) {
+                        bucket.queue_tail.set(previous);
+                    }
+
+                    // The reporting thread parks permanently after capturing
+                    // its backtrace, so it must no longer be visible to normal
+                    // queue operations.
+                    state.next_in_queue = None;
+                    state.deadlock_data.deadlock_backtrace = Some(sender);
+                    handles.push(unsafe { thread_data.parker.unpark_lock() });
+                } else {
+                    previous = Some(current_ptr);
+                }
+                current = next;
+            }
+        }
+        debug_assert!(senders.is_empty());
 
         for b in &table.entries[..] {
             // SAFETY: We hold the lock here, as required
             unsafe { b.mutex.unlock() };
         }
 
-        // find cycles
-        let cycles = graph_cycles(&graph);
-
-        let mut results = Vec::with_capacity(cycles.len());
-
-        for cycle in cycles {
-            let (sender, receiver) = mpsc::channel();
-            for td in cycle {
-                let thread_data = unsafe { td.as_ref() };
-                let bucket = lock_bucket(thread_data.key.load(Ordering::Relaxed));
-                thread_data.deadlock_data.deadlocked.set(true);
-                unsafe { *thread_data.deadlock_data.backtrace_sender.get() = Some(sender.clone()) };
-                let handle = unsafe { thread_data.parker.unpark_lock() };
-                // SAFETY: We hold the lock here, as required
-                unsafe { bucket.mutex.unlock() };
-                // unpark the deadlocked thread!
-                // on unpark it'll notice the deadlocked flag and report back
-                unsafe { handle.unpark() };
-            }
-            // make sure to drop our sender before collecting results
-            drop(sender);
-            results.push(receiver.iter().collect());
+        // Platform wake operations may block, so perform them only after all
+        // bucket locks have been released.
+        for handle in handles {
+            unsafe { handle.unpark() };
         }
+
+        // Collect until every per-thread sender for the component is dropped.
+        let results = receivers
+            .into_iter()
+            .map(|receiver| receiver.iter().collect())
+            .collect();
 
         unsafe { DEADLOCK_DETECTION_LOCK.unlock() };
 
         results
     }
 
-    // normalize a cycle to start with the "smallest" node
-    fn normalize_cycle<T: Ord + Copy + Clone>(input: &[T]) -> Vec<T> {
-        let min_pos = input
-            .iter()
-            .enumerate()
-            .min_by_key(|&(_, &t)| t)
-            .map(|(p, _)| p)
-            .unwrap_or(0);
-        input
-            .iter()
-            .cycle()
-            .skip(min_pos)
-            .take(input.len())
-            .cloned()
+    // Returns the thread nodes in each nontrivial strongly connected component.
+    fn graph_components(g: &DiGraphMap<WaitGraphNode, ()>) -> Vec<Vec<NonNull<ThreadData>>> {
+        petgraph::algo::kosaraju_scc(g)
+            .into_iter()
+            .filter(|component| component.len() > 1)
+            .filter_map(|component| {
+                let threads = component
+                    .into_iter()
+                    .filter_map(|node| match node {
+                        Thread(thread) => Some(thread),
+                        Resource(_) => None,
+                    })
+                    .collect::<Vec<_>>();
+                (!threads.is_empty()).then_some(threads)
+            })
             .collect()
     }
 
-    // returns all thread cycles in the wait graph
-    fn graph_cycles(g: &DiGraphMap<WaitGraphNode, ()>) -> Vec<Vec<NonNull<ThreadData>>> {
-        use petgraph::visit::DfsEvent;
-        use petgraph::visit::NodeIndexable;
-        use petgraph::visit::depth_first_search;
+    #[cfg(test)]
+    mod tests {
+        use super::*;
 
-        let mut cycles = HashSet::new();
-        let mut path = Vec::with_capacity(g.node_bound());
-        // start from threads to get the correct threads cycle
-        let threads = g.nodes().filter(|n| matches!(n, &Thread(_)));
+        #[test]
+        fn overlapping_cycles_form_one_component() {
+            let storage = [0u8; 3];
+            let thread1 = NonNull::from(&storage[0]).cast::<ThreadData>();
+            let thread2 = NonNull::from(&storage[1]).cast::<ThreadData>();
+            let thread3 = NonNull::from(&storage[2]).cast::<ThreadData>();
+            let mut graph = DiGraphMap::new();
 
-        depth_first_search(g, threads, |e| match e {
-            DfsEvent::Discover(Thread(n), _) => path.push(n),
-            DfsEvent::Finish(Thread(_), _) => {
-                path.pop();
-            }
-            DfsEvent::BackEdge(_, Thread(n)) => {
-                let from = path.iter().rposition(|&i| i == n).unwrap();
-                cycles.insert(normalize_cycle(&path[from..]));
-            }
-            _ => (),
-        });
+            graph.add_edge(Thread(thread1), Resource(1), ());
+            graph.add_edge(Resource(1), Thread(thread2), ());
+            graph.add_edge(Thread(thread2), Resource(2), ());
+            graph.add_edge(Resource(2), Thread(thread1), ());
 
-        cycles.iter().cloned().collect()
+            graph.add_edge(Thread(thread2), Resource(3), ());
+            graph.add_edge(Resource(3), Thread(thread3), ());
+            graph.add_edge(Thread(thread3), Resource(4), ());
+            graph.add_edge(Resource(4), Thread(thread2), ());
+
+            let mut components = graph_components(&graph);
+            assert_eq!(components.len(), 1);
+            components[0].sort_unstable();
+
+            let mut expected = vec![thread1, thread2, thread3];
+            expected.sort_unstable();
+            assert_eq!(components[0], expected);
+        }
     }
 }
 
@@ -1405,7 +1536,7 @@ mod tests {
             if current_ref.key.load(Ordering::Relaxed) == key {
                 f(current_ref);
             }
-            current = current_ref.next_in_queue.get();
+            current = unsafe { current_ref.state() }.next_in_queue;
         }
 
         // SAFETY: We hold the lock here, as required

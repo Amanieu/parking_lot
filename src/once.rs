@@ -4,6 +4,8 @@ use core::{
 };
 use parking_lot_core::{self, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN, SpinWait};
 
+use crate::deadlock;
+
 const DONE_BIT: u8 = 1;
 const POISON_BIT: u8 = 2;
 const LOCKED_BIT: u8 = 4;
@@ -537,8 +539,10 @@ impl Once {
         struct PanicGuard<'a>(&'a Once);
         impl<'a> Drop for PanicGuard<'a> {
             fn drop(&mut self) {
-                // Mark the state as poisoned, unlock it and unpark all threads.
+                // Stop recording ownership, mark the state as poisoned,
+                // unlock it and unpark all threads.
                 let once = self.0;
+                unsafe { deadlock::release_resource(core::ptr::from_ref(once).addr()) };
                 let state = once.0.swap(POISON_BIT, Ordering::Release);
                 if state & PARKED_BIT != 0 {
                     let addr = core::ptr::from_ref(once).addr();
@@ -549,8 +553,9 @@ impl Once {
             }
         }
 
-        // At this point we have the lock, so run the closure. Make sure we
-        // properly clean up if the closure panics.
+        // At this point we have the lock, so record its ownership and run the
+        // closure. Make sure we properly clean up if the closure panics.
+        unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
         let guard = PanicGuard(self);
         let once_state = if state & POISON_BIT != 0 {
             OnceState::Poisoned
@@ -558,6 +563,7 @@ impl Once {
             OnceState::New
         };
         f(once_state);
+        unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
         mem::forget(guard);
 
         // Now unlock the state, set the done bit and unpark all threads
