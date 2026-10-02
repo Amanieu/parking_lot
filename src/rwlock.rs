@@ -13,6 +13,9 @@ use crate::raw_rwlock::RawRwLock;
 /// the lock. Because of this, attempts to recursively acquire a read lock
 /// within a single thread may result in a deadlock.
 ///
+/// Use [`RecursiveRwLock`](crate::RecursiveRwLock) instead if recursive read
+/// locking is required.
+///
 /// The type parameter `T` represents the data that this lock protects. It is
 /// required that `T` satisfies `Send` to be shared across threads and `Sync` to
 /// allow concurrent access through readers. The RAII guards returned from the
@@ -123,7 +126,6 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::channel;
     use std::thread;
-    use std::time::Duration;
 
     #[cfg(feature = "serde")]
     use postcard::{from_bytes, to_stdvec};
@@ -531,33 +533,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rwlock_recursive() {
-        let arc = Arc::new(RwLock::new(1));
-        let arc2 = arc.clone();
-        let lock1 = arc.read();
-        let t = thread::spawn(move || {
-            let _lock = arc2.write();
-        });
-
-        if cfg!(not(all(target_env = "sgx", target_vendor = "fortanix"))) {
-            thread::sleep(Duration::from_millis(100));
-        } else {
-            // FIXME: https://github.com/fortanix/rust-sgx/issues/31
-            for _ in 0..100 {
-                thread::yield_now();
-            }
-        }
-
-        // A normal read would block here since there is a pending writer
-        let lock2 = arc.read_recursive();
-
-        // Unblock the thread and join it.
-        drop(lock1);
-        drop(lock2);
-        t.join().unwrap();
-    }
-
-    #[test]
     fn test_rwlock_debug() {
         let x = RwLock::new(vec![0u8, 10]);
 
@@ -569,7 +544,7 @@ mod tests {
     #[test]
     fn test_clone_through_guard() {
         let rwlock = RwLock::new(Arc::new(1));
-        let a = rwlock.read_recursive();
+        let a = rwlock.read();
         // This must clone the protected Arc, not the read guard.
         let b = a.clone();
         assert_eq!(Arc::strong_count(&b), 2);

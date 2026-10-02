@@ -68,7 +68,6 @@
 //! - Fair unlocking (`RawMutexFair`, `RawRwLockFair`)
 //! - Lock timeouts (`RawMutexTimed`, `RawRwLockTimed`)
 //! - Downgradable write locks (`RawRwLockDowngradable`)
-//! - Recursive read locks (`RawRwLockRecursive`)
 //! - Upgradable read locks (`RawRwLockUpgrade`)
 //!
 //! The `Mutex` and `RwLock` wrappers will automatically expose this additional

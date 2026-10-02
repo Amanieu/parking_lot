@@ -11,9 +11,9 @@ parking_lot
 [Documentation (type-safe lock API)](https://docs.rs/lock_api/)
 
 This library provides compact and efficient implementations of `Mutex`,
-`RwLock`, `Condvar` and `Once`, as well as a `ReentrantMutex` type which
-supports recursive locking. It also exposes a low-level API for creating your
-own synchronization primitives.
+`RwLock`, `RecursiveRwLock`, `Condvar` and `Once`, as well as a
+`ReentrantMutex` type. It also exposes a low-level API for creating your own
+synchronization primitives.
 
 ## Features
 
@@ -44,15 +44,17 @@ Notable features of the primitives provided by this library include:
     object.
 11. `Mutex` and `RwLock` support [eventual fairness](https://trac.webkit.org/changeset/203350)
     which allows them to be fair on average without sacrificing performance.
-12. A `ReentrantMutex` type which supports recursive locking.
-13. An *experimental* deadlock detector that works for `Mutex`,
-    `RwLock` and `ReentrantMutex`. This feature is disabled by default and
-    can be enabled via the `deadlock_detection` feature.
-14. `RwLock` supports atomically upgrading an "upgradable" read lock into a
-    write lock.
+12. `ReentrantMutex` and `RecursiveRwLock` types which support recursive
+    locking.
+13. An *experimental* deadlock detector that works for `Mutex`, `RwLock`,
+    `RecursiveRwLock` and `ReentrantMutex`. This feature is disabled by default
+    and can be enabled via the `deadlock_detection` feature.
+14. `RwLock` and `RecursiveRwLock` support atomically upgrading an "upgradable"
+    read lock into a write lock.
 15. Optional support for [serde](https://docs.serde.rs/serde/).  Enable via the
     feature `serde`.  **NOTE!** this support is for `Mutex`, `ReentrantMutex`,
-    and `RwLock` only; `Condvar` and `Once` are not currently supported.
+    `RwLock`, and `RecursiveRwLock` only; `Condvar` and `Once` are not currently
+    supported.
 16. Lock guards can be sent to other threads when the `send_guard` feature is
     enabled.
 

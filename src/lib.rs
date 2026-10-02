@@ -1,5 +1,6 @@
 //! This library provides compact and efficient implementations of `Mutex`,
-//! `RwLock`, `Condvar` and `Once`. It also provides a `ReentrantMutex` type.
+//! `RwLock`, `RecursiveRwLock`, `Condvar` and `Once`. It also provides a
+//! `ReentrantMutex` type.
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]
@@ -12,6 +13,7 @@ mod raw_condvar;
 mod raw_fair_mutex;
 mod raw_mutex;
 mod raw_rwlock;
+mod recursive_rwlock;
 mod remutex;
 mod rwlock;
 mod util;
@@ -37,7 +39,11 @@ pub use self::once::{Once, OnceState};
 pub use self::raw_condvar::RawCondvar;
 pub use self::raw_fair_mutex::RawFairMutex;
 pub use self::raw_mutex::RawMutex;
-pub use self::raw_rwlock::RawRwLock;
+pub use self::raw_rwlock::{RawRwLock, RawRwLockRecursive};
+pub use self::recursive_rwlock::{
+    MappedRecursiveRwLockReadGuard, MappedRecursiveRwLockWriteGuard, RecursiveRwLock,
+    RecursiveRwLockReadGuard, RecursiveRwLockUpgradableReadGuard, RecursiveRwLockWriteGuard,
+};
 pub use self::remutex::{
     MappedReentrantMutexGuard, RawThreadId, ReentrantMutex, ReentrantMutexGuard,
     const_reentrant_mutex,
