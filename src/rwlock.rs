@@ -149,11 +149,10 @@ mod tests {
 
         let r = Arc::new(RwLock::new(()));
 
-        let (tx, rx) = channel::<()>();
+        let mut threads = Vec::new();
         for _ in 0..N {
-            let tx = tx.clone();
             let r = r.clone();
-            thread::spawn(move || {
+            threads.push(thread::spawn(move || {
                 let mut rng = rand::rng();
                 for _ in 0..M {
                     if rng.random_bool(1.0 / N as f64) {
@@ -162,11 +161,11 @@ mod tests {
                         drop(r.read());
                     }
                 }
-                drop(tx);
-            });
+            }));
         }
-        drop(tx);
-        let _ = rx.recv();
+        for thread in threads {
+            thread.join().unwrap();
+        }
     }
 
     #[test]
@@ -568,9 +567,10 @@ mod tests {
     }
 
     #[test]
-    fn test_clone() {
+    fn test_clone_through_guard() {
         let rwlock = RwLock::new(Arc::new(1));
         let a = rwlock.read_recursive();
+        // This must clone the protected Arc, not the read guard.
         let b = a.clone();
         assert_eq!(Arc::strong_count(&b), 2);
     }

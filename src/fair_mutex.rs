@@ -47,7 +47,7 @@ use crate::raw_fair_mutex::RawFairMutex;
 /// let data = Arc::new(FairMutex::new(0));
 ///
 /// let (tx, rx) = channel();
-/// for _ in 0..10 {
+/// for _ in 0..N {
 ///     let (data, tx) = (Arc::clone(&data), tx.clone());
 ///     thread::spawn(move || {
 ///         // The shared state can only be accessed once the lock is held.

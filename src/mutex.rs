@@ -57,7 +57,7 @@ use crate::raw_mutex::RawMutex;
 /// let data = Arc::new(Mutex::new(0));
 ///
 /// let (tx, rx) = channel();
-/// for _ in 0..10 {
+/// for _ in 0..N {
 ///     let (data, tx) = (Arc::clone(&data), tx.clone());
 ///     thread::spawn(move || {
 ///         // The shared state can only be accessed once the lock is held.
@@ -117,9 +117,6 @@ mod tests {
     #[derive(Eq, PartialEq, Debug)]
     struct NonCopy(i32);
 
-    unsafe impl<T: Send> Send for Packet<T> {}
-    unsafe impl<T> Sync for Packet<T> {}
-
     #[test]
     fn smoke() {
         let m = Mutex::new(());
@@ -166,7 +163,10 @@ mod tests {
     #[test]
     fn try_lock() {
         let m = Mutex::new(());
-        *m.try_lock().unwrap() = ();
+        let guard = m.try_lock().unwrap();
+        assert!(m.try_lock().is_none());
+        drop(guard);
+        assert!(m.try_lock().is_some());
     }
 
     #[test]
