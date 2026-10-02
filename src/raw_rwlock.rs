@@ -480,7 +480,7 @@ unsafe impl lock_api::RawRwLockUpgradeTimed for RawRwLock {
     unsafe fn try_upgrade_until(&self, timeout: Instant) -> bool {
         let state = self.state.fetch_sub(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
-            Ordering::Relaxed,
+            Ordering::Acquire,
         );
         if state & READERS_MASK == ONE_READER {
             true
@@ -493,7 +493,7 @@ unsafe impl lock_api::RawRwLockUpgradeTimed for RawRwLock {
     unsafe fn try_upgrade_for(&self, timeout: Duration) -> bool {
         let state = self.state.fetch_sub(
             (ONE_READER | UPGRADABLE_BIT) - WRITER_BIT,
-            Ordering::Relaxed,
+            Ordering::Acquire,
         );
         if state & READERS_MASK == ONE_READER {
             true
@@ -815,7 +815,7 @@ impl RawRwLock {
                     match self.state.compare_exchange_weak(
                         state,
                         new_state,
-                        Ordering::Relaxed,
+                        Ordering::Release,
                         Ordering::Relaxed,
                     ) {
                         Ok(_) => return TOKEN_HANDOFF,
@@ -835,7 +835,7 @@ impl RawRwLock {
                 match self.state.compare_exchange_weak(
                     state,
                     new_state,
-                    Ordering::Relaxed,
+                    Ordering::Release,
                     Ordering::Relaxed,
                 ) {
                     Ok(_) => return TOKEN_NORMAL,
@@ -859,7 +859,7 @@ impl RawRwLock {
             match self.state.compare_exchange_weak(
                 state,
                 state - (ONE_READER | UPGRADABLE_BIT) + WRITER_BIT,
-                Ordering::Relaxed,
+                Ordering::Acquire,
                 Ordering::Relaxed,
             ) {
                 Ok(_) => return true,
