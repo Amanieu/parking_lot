@@ -94,7 +94,8 @@ impl ThreadParker {
                 self.ptr(),
                 FUTEX_WAIT,
                 PARKED,
-                ts_ptr.addr(),
+                // The syscall ABI carries this pointer as an integer.
+                ts_ptr.expose_provenance(),
                 ptr::null_mut(),
             )
         };
