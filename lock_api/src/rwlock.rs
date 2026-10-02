@@ -11,6 +11,8 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
 
+use crate::guard::{ExclusiveGuardData, SharedGuardData};
+
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
 #[cfg(feature = "arc_lock")]
@@ -361,7 +363,6 @@ where
     }
 }
 
-unsafe impl<R: RawRwLock + Send, T: ?Sized + Send> Send for RwLock<R, T> {}
 unsafe impl<R: RawRwLock + Sync, T: ?Sized + Send + Sync> Sync for RwLock<R, T> {}
 
 impl<R: RawRwLock, T> RwLock<R, T> {
@@ -1261,8 +1262,6 @@ pub struct RwLockReadGuard<'a, R: RawRwLock, T: ?Sized> {
     marker: PhantomData<(&'a T, R::GuardMarker)>,
 }
 
-unsafe impl<R: RawRwLock + Sync, T: Sync + ?Sized> Sync for RwLockReadGuard<'_, R, T> {}
-
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     /// Returns a reference to the original reader-writer lock object.
     pub fn rwlock(s: &Self) -> &'a RwLock<R, T> {
@@ -1287,7 +1286,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         mem::forget(s);
         MappedRwLockReadGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         }
     }
@@ -1314,7 +1313,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         mem::forget(s);
         Ok(MappedRwLockReadGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -1345,7 +1344,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         mem::forget(s);
         Ok(MappedRwLockReadGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -1605,8 +1604,6 @@ pub struct RwLockWriteGuard<'a, R: RawRwLock, T: ?Sized> {
     marker: PhantomData<(&'a mut T, R::GuardMarker)>,
 }
 
-unsafe impl<R: RawRwLock + Sync, T: Sync + ?Sized> Sync for RwLockWriteGuard<'_, R, T> {}
-
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     /// Returns a reference to the original reader-writer lock object.
     pub fn rwlock(s: &Self) -> &'a RwLock<R, T> {
@@ -1631,7 +1628,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         mem::forget(s);
         MappedRwLockWriteGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         }
     }
@@ -1658,7 +1655,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -1689,7 +1686,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -2053,11 +2050,6 @@ impl<R: RawRwLock, T: fmt::Display + ?Sized> fmt::Display for ArcRwLockWriteGuar
 pub struct RwLockUpgradableReadGuard<'a, R: RawRwLockUpgrade, T: ?Sized> {
     rwlock: &'a RwLock<R, T>,
     marker: PhantomData<(&'a T, R::GuardMarker)>,
-}
-
-unsafe impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + Sync + 'a> Sync
-    for RwLockUpgradableReadGuard<'a, R, T>
-{
 }
 
 impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a, R, T> {
@@ -2798,16 +2790,10 @@ impl<R: RawRwLockUpgrade, T: fmt::Display + ?Sized> fmt::Display
 /// thread.
 #[clippy::has_significant_drop]
 #[must_use = "if unused the RwLock will immediately unlock"]
-pub struct MappedRwLockReadGuard<'a, R: RawRwLock, T: ?Sized> {
+pub struct MappedRwLockReadGuard<'a, R: RawRwLock, T: ?Sized + 'a> {
     raw: &'a R,
-    data: *const T,
-    marker: PhantomData<&'a T>,
-}
-
-unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync for MappedRwLockReadGuard<'a, R, T> {}
-unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Send for MappedRwLockReadGuard<'a, R, T> where
-    R::GuardMarker: Send
-{
+    data: SharedGuardData<T>,
+    marker: PhantomData<R::GuardMarker>,
 }
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
@@ -2825,11 +2811,11 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
         F: FnOnce(&T) -> &U,
     {
         let raw = s.raw;
-        let data = f(unsafe { &*s.data });
+        let data = f(unsafe { &*s.data.as_ptr() });
         mem::forget(s);
         MappedRwLockReadGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         }
     }
@@ -2849,14 +2835,14 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &*s.data }) {
+        let data = match f(unsafe { &*s.data.as_ptr() }) {
             Some(data) => data,
             None => return Err(s),
         };
         mem::forget(s);
         Ok(MappedRwLockReadGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -2880,14 +2866,14 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
         F: FnOnce(&T) -> Result<&U, E>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &*s.data }) {
+        let data = match f(unsafe { &*s.data.as_ptr() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
         mem::forget(s);
         Ok(MappedRwLockReadGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -2921,7 +2907,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for MappedRwLockReadGuard<'a, 
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data }
+        unsafe { &*self.data.as_ptr() }
     }
 }
 
@@ -2966,19 +2952,10 @@ unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> StableAddress
 /// thread.
 #[clippy::has_significant_drop]
 #[must_use = "if unused the RwLock will immediately unlock"]
-pub struct MappedRwLockWriteGuard<'a, R: RawRwLock, T: ?Sized> {
+pub struct MappedRwLockWriteGuard<'a, R: RawRwLock, T: ?Sized + 'a> {
     raw: &'a R,
-    data: *mut T,
-    marker: PhantomData<&'a mut T>,
-}
-
-unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Sync + 'a> Sync
-    for MappedRwLockWriteGuard<'a, R, T>
-{
-}
-unsafe impl<'a, R: RawRwLock + 'a, T: ?Sized + Send + 'a> Send for MappedRwLockWriteGuard<'a, R, T> where
-    R::GuardMarker: Send
-{
+    data: ExclusiveGuardData<T>,
+    marker: PhantomData<R::GuardMarker>,
 }
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
@@ -2996,11 +2973,11 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
         F: FnOnce(&mut T) -> &mut U,
     {
         let raw = s.raw;
-        let data = f(unsafe { &mut *s.data });
+        let data = f(unsafe { &mut *s.data.as_ptr() });
         mem::forget(s);
         MappedRwLockWriteGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         }
     }
@@ -3020,14 +2997,14 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data }) {
+        let data = match f(unsafe { &mut *s.data.as_ptr() }) {
             Some(data) => data,
             None => return Err(s),
         };
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -3051,14 +3028,14 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Result<&mut U, E>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data }) {
+        let data = match f(unsafe { &mut *s.data.as_ptr() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -3092,14 +3069,14 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for MappedRwLockWriteGuard<'a,
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data }
+        unsafe { &*self.data.as_ptr() }
     }
 }
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> DerefMut for MappedRwLockWriteGuard<'a, R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data }
+        unsafe { &mut *self.data.as_ptr() }
     }
 }
 

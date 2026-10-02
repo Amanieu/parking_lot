@@ -6,6 +6,7 @@
 // copied, modified, or distributed except according to those terms.
 
 use crate::{
+    guard::SharedGuardData,
     mutex::{RawMutex, RawMutexFair, RawMutexTimed},
     GuardNoSend,
 };
@@ -68,7 +69,6 @@ pub struct RawReentrantMutex<R, G> {
     get_thread_id: G,
 }
 
-unsafe impl<R: RawMutex + Send, G: GetThreadId + Send> Send for RawReentrantMutex<R, G> {}
 unsafe impl<R: RawMutex + Sync, G: GetThreadId + Sync> Sync for RawReentrantMutex<R, G> {}
 
 impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
@@ -218,10 +218,6 @@ pub struct ReentrantMutex<R, G, T: ?Sized> {
     data: UnsafeCell<T>,
 }
 
-unsafe impl<R: RawMutex + Send, G: GetThreadId + Send, T: ?Sized + Send> Send
-    for ReentrantMutex<R, G, T>
-{
-}
 unsafe impl<R: RawMutex + Sync, G: GetThreadId + Sync, T: ?Sized + Send> Sync
     for ReentrantMutex<R, G, T>
 {
@@ -426,6 +422,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     pub unsafe fn make_arc_guard_unchecked(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
         ArcReentrantMutexGuard {
             remutex: self.clone(),
+            data_marker: PhantomData,
             marker: PhantomData,
         }
     }
@@ -631,11 +628,6 @@ pub struct ReentrantMutexGuard<'a, R: RawMutex, G: GetThreadId, T: ?Sized> {
     marker: PhantomData<(&'a T, GuardNoSend)>,
 }
 
-unsafe impl<'a, R: RawMutex + Sync + 'a, G: GetThreadId + Sync + 'a, T: ?Sized + Sync + 'a> Sync
-    for ReentrantMutexGuard<'a, R, G, T>
-{
-}
-
 impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGuard<'a, R, G, T> {
     /// Returns a reference to the original `ReentrantMutex` object.
     pub fn remutex(s: &Self) -> &'a ReentrantMutex<R, G, T> {
@@ -660,7 +652,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         mem::forget(s);
         MappedReentrantMutexGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         }
     }
@@ -690,7 +682,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         mem::forget(s);
         Ok(MappedReentrantMutexGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -721,7 +713,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         mem::forget(s);
         Ok(MappedReentrantMutexGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -859,6 +851,7 @@ unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAdd
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct ArcReentrantMutexGuard<R: RawMutex, G: GetThreadId, T: ?Sized> {
     remutex: Arc<ReentrantMutex<R, G, T>>,
+    data_marker: PhantomData<T>,
     marker: PhantomData<GuardNoSend>,
 }
 
@@ -980,15 +973,10 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> Drop for ArcReentrantMutexGuard<R, 
 /// thread.
 #[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
-pub struct MappedReentrantMutexGuard<'a, R: RawMutex, G: GetThreadId, T: ?Sized> {
+pub struct MappedReentrantMutexGuard<'a, R: RawMutex, G: GetThreadId, T: ?Sized + 'a> {
     raw: &'a RawReentrantMutex<R, G>,
-    data: *const T,
-    marker: PhantomData<&'a T>,
-}
-
-unsafe impl<'a, R: RawMutex + Sync + 'a, G: GetThreadId + Sync + 'a, T: ?Sized + Sync + 'a> Sync
-    for MappedReentrantMutexGuard<'a, R, G, T>
-{
+    data: SharedGuardData<T>,
+    marker: PhantomData<GuardNoSend>,
 }
 
 impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
@@ -1008,11 +996,11 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
         F: FnOnce(&T) -> &U,
     {
         let raw = s.raw;
-        let data = f(unsafe { &*s.data });
+        let data = f(unsafe { &*s.data.as_ptr() });
         mem::forget(s);
         MappedReentrantMutexGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         }
     }
@@ -1035,14 +1023,14 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &*s.data }) {
+        let data = match f(unsafe { &*s.data.as_ptr() }) {
             Some(data) => data,
             None => return Err(s),
         };
         mem::forget(s);
         Ok(MappedReentrantMutexGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -1066,14 +1054,14 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
         F: FnOnce(&T) -> Result<&U, E>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &*s.data }) {
+        let data = match f(unsafe { &*s.data.as_ptr() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
         mem::forget(s);
         Ok(MappedReentrantMutexGuard {
             raw,
-            data,
+            data: SharedGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -1111,7 +1099,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Deref
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data }
+        unsafe { &*self.data.as_ptr() }
     }
 }
 

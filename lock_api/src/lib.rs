@@ -105,6 +105,7 @@ pub struct GuardNoSend(*mut ());
 
 unsafe impl Sync for GuardNoSend {}
 
+mod guard;
 mod mutex;
 pub use crate::mutex::*;
 

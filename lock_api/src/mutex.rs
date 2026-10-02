@@ -11,6 +11,8 @@ use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
 
+use crate::guard::ExclusiveGuardData;
+
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
 #[cfg(feature = "arc_lock")]
@@ -140,7 +142,6 @@ pub struct Mutex<R, T: ?Sized> {
     data: UnsafeCell<T>,
 }
 
-unsafe impl<R: RawMutex + Send, T: ?Sized + Send> Send for Mutex<R, T> {}
 unsafe impl<R: RawMutex + Sync, T: ?Sized + Send> Sync for Mutex<R, T> {}
 
 impl<R: RawMutex, T> Mutex<R, T> {
@@ -315,6 +316,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     unsafe fn make_arc_guard_unchecked(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
         ArcMutexGuard {
             mutex: self.clone(),
+            data_marker: PhantomData,
             marker: PhantomData,
         }
     }
@@ -512,8 +514,6 @@ pub struct MutexGuard<'a, R: RawMutex, T: ?Sized> {
     marker: PhantomData<(&'a mut T, R::GuardMarker)>,
 }
 
-unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync for MutexGuard<'a, R, T> {}
-
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// Returns a reference to the original `Mutex` object.
     pub fn mutex(s: &Self) -> &'a Mutex<R, T> {
@@ -538,7 +538,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         mem::forget(s);
         MappedMutexGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         }
     }
@@ -565,7 +565,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         mem::forget(s);
         Ok(MappedMutexGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -596,7 +596,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         mem::forget(s);
         Ok(MappedMutexGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -738,18 +738,8 @@ unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct ArcMutexGuard<R: RawMutex, T: ?Sized> {
     mutex: Arc<Mutex<R, T>>,
-    marker: PhantomData<*const ()>,
-}
-
-#[cfg(feature = "arc_lock")]
-unsafe impl<R: RawMutex + Send + Sync, T: Send + ?Sized> Send for ArcMutexGuard<R, T> where
-    R::GuardMarker: Send
-{
-}
-#[cfg(feature = "arc_lock")]
-unsafe impl<R: RawMutex + Sync, T: Sync + ?Sized> Sync for ArcMutexGuard<R, T> where
-    R::GuardMarker: Sync
-{
+    data_marker: PhantomData<T>,
+    marker: PhantomData<R::GuardMarker>,
 }
 
 #[cfg(feature = "arc_lock")]
@@ -880,19 +870,10 @@ impl<R: RawMutex, T: ?Sized> Drop for ArcMutexGuard<R, T> {
 /// thread.
 #[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
-pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized> {
+pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized + 'a> {
     raw: &'a R,
-    data: *mut T,
-    marker: PhantomData<&'a mut T>,
-}
-
-unsafe impl<'a, R: RawMutex + Sync + 'a, T: ?Sized + Sync + 'a> Sync
-    for MappedMutexGuard<'a, R, T>
-{
-}
-unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + Send + 'a> Send for MappedMutexGuard<'a, R, T> where
-    R::GuardMarker: Send
-{
+    data: ExclusiveGuardData<T>,
+    marker: PhantomData<R::GuardMarker>,
 }
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
@@ -910,11 +891,11 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
         F: FnOnce(&mut T) -> &mut U,
     {
         let raw = s.raw;
-        let data = f(unsafe { &mut *s.data });
+        let data = f(unsafe { &mut *s.data.as_ptr() });
         mem::forget(s);
         MappedMutexGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         }
     }
@@ -934,14 +915,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data }) {
+        let data = match f(unsafe { &mut *s.data.as_ptr() }) {
             Some(data) => data,
             None => return Err(s),
         };
         mem::forget(s);
         Ok(MappedMutexGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -965,14 +946,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Result<&mut U, E>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data }) {
+        let data = match f(unsafe { &mut *s.data.as_ptr() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
         mem::forget(s);
         Ok(MappedMutexGuard {
             raw,
-            data,
+            data: ExclusiveGuardData::new(data),
             marker: PhantomData,
         })
     }
@@ -1006,14 +987,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Deref for MappedMutexGuard<'a, R, T> 
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data }
+        unsafe { &*self.data.as_ptr() }
     }
 }
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> DerefMut for MappedMutexGuard<'a, R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data }
+        unsafe { &mut *self.data.as_ptr() }
     }
 }
 
