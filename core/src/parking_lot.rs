@@ -492,6 +492,9 @@ pub struct UnparkResult {
 
     /// Whether any threads remain parked with the original key after the
     /// operation.
+    ///
+    /// This is `false` if the operation was aborted before the queue was
+    /// inspected.
     pub have_more_threads: bool,
 }
 
@@ -884,10 +887,12 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
 /// should be aborted. See `RequeueOp` for details about the different possible
 /// return values.
 ///
-/// The `callback` function is also called while both queues are locked. It is
-/// passed the `RequeueOp` returned by `validate` and an `UnparkResult`
-/// indicating whether a thread was unparked and whether threads remain parked
-/// with `key_from`. Threads requeued to `key_to` are not included. This
+/// If `validate` returns [`RequeueOp::Abort`], the queues are left unchanged,
+/// `callback` is not called, and a default [`UnparkResult`] is returned.
+/// Otherwise, `callback` is called while both queues are locked. It is passed
+/// the `RequeueOp` returned by `validate` and an `UnparkResult` indicating
+/// whether a thread was unparked and whether threads remain parked with
+/// `key_from`. Threads requeued to `key_to` are not included. This
 /// `UnparkResult` value is also returned by `unpark_requeue`.
 ///
 /// The `callback` function should return an `UnparkToken` value which will be
