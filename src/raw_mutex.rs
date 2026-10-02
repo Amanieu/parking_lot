@@ -99,10 +99,21 @@ unsafe impl lock_api::RawMutex for RawMutex {
     #[inline]
     unsafe fn unlock(&self) {
         deadlock::release_resource(self as *const _ as usize);
-        if self
-            .state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
+        // We use this instead of CAS since CAS requires exclusive cache access
+        // which causes cache-bouncing and slows down the unlock path
+        // Not to mention, weak-CAS could spuriously fail whilst holding Exclusive access
+        //
+        // Instead, we do a pre-read (only needs Shared access) and if the lock isnt taken, we use the slow path
+        //
+        // If it was taken, we do an unconditional swap and if load and swap agree with the lock
+        // state, we unlock the lock and return
+        if
+            self
+                .state
+                .load(Ordering::Relaxed) == LOCKED_BIT &&
+            self
+                .state
+                .swap(0, Ordering::Release) == LOCKED_BIT
         {
             return;
         }
@@ -213,16 +224,29 @@ impl RawMutex {
         loop {
             // Grab the lock if it isn't locked, even if there is a queue on it
             if state & LOCKED_BIT == 0 {
-                match self.state.compare_exchange_weak(
-                    state,
-                    state | LOCKED_BIT,
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => return true,
-                    Err(x) => state = x,
+                // This branch is taken if the lock isnt taken already
+                // We dont care about the PARKED_BIT in this case
+                //
+                // We use this instead of CAS since CAS requires exclusive cache access
+                // which causes cache-bouncing and slows down this path
+                // Not to mention, weak-CAS could spuriously fail whilst holding Exclusive access
+                //
+                // Instead, we do a pre-read (only needs Shared access) and if the locks taken, we retry
+                //
+                // If it wasnt taken, we do an unconditional swap and if load and swap agree with the lock
+                // state, we take the lock and return true
+                if
+                    state & LOCKED_BIT == self
+                        .state
+                        .load(Ordering::Relaxed) & LOCKED_BIT &&
+                    state & LOCKED_BIT == self
+                        .state
+                        .swap(state | LOCKED_BIT, Ordering::Acquire) & LOCKED_BIT {
+                    return true;
+                } else {
+                    state = self.state.load(Ordering::Relaxed);
+                    continue;
                 }
-                continue;
             }
 
             // If there is no queue, try spinning a few times
