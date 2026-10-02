@@ -406,7 +406,7 @@ unsafe impl lock_api::RawRwLockUpgradeFair for RawRwLock {
                 return;
             }
         }
-        self.unlock_upgradable_slow(false);
+        self.unlock_upgradable_slow(true);
     }
 
     #[inline]
