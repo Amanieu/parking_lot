@@ -27,10 +27,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 ///
 /// # Safety
 ///
-/// Implementations of this trait must ensure that the `RwLock` is actually
-/// exclusive: an exclusive lock can't be acquired while an exclusive or shared
-/// lock exists, and a shared lock can't be acquire while an exclusive lock
-/// exists.
+/// Implementations must enforce the shared and exclusive locking constraints
+/// described by this trait: an exclusive lock can't be acquired while an
+/// exclusive or shared lock exists, and a shared lock can't be acquired while
+/// an exclusive lock exists.
+///
+/// Successful lock acquisitions must have acquire semantics, and lock releases
+/// must have release semantics. These requirements also apply to equivalent
+/// operations provided by subtraits.
 pub unsafe trait RawRwLock {
     /// Initial value for an unlocked `RwLock`.
     // A “non-constant” const item is a legacy way to supply an initialized value to downstream
@@ -100,6 +104,11 @@ pub unsafe trait RawRwLock {
 /// thread if there is one, without giving other threads the opportunity to
 /// "steal" the lock in the meantime. This is typically slower than unfair
 /// unlocking, but may be necessary in certain circumstances.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawRwLock`] for
+/// the additional methods provided by this trait.
 pub unsafe trait RawRwLockFair: RawRwLock {
     /// Releases a shared lock using a fair unlock protocol.
     ///
@@ -146,6 +155,12 @@ pub unsafe trait RawRwLockFair: RawRwLock {
 
 /// Additional methods for `RwLock`s which support atomically downgrading an
 /// exclusive lock to a shared lock.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawRwLock`] for
+/// the additional methods provided by this trait. Downgrading from exclusive
+/// access must release to subsequent lock acquisitions.
 pub unsafe trait RawRwLockDowngrade: RawRwLock {
     /// Atomically downgrades an exclusive lock into a shared lock without
     /// allowing any thread to take an exclusive lock in the meantime.
@@ -160,6 +175,11 @@ pub unsafe trait RawRwLockDowngrade: RawRwLock {
 ///
 /// The `Duration` and `Instant` types are specified as associated types so that
 /// this trait is usable even in `no_std` environments.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawRwLock`] for
+/// the additional methods provided by this trait.
 pub unsafe trait RawRwLockTimed: RawRwLock {
     /// Duration type used for `try_lock_for`.
     type Duration;
@@ -187,6 +207,11 @@ pub unsafe trait RawRwLockTimed: RawRwLock {
 /// to recursively lock a `RwLock`. However using this method can cause
 /// writers to starve since readers no longer block if a writer is waiting
 /// for the lock.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawRwLock`] for
+/// the additional methods provided by this trait.
 pub unsafe trait RawRwLockRecursive: RawRwLock {
     /// Acquires a shared lock without deadlocking in case of a recursive lock.
     fn lock_shared_recursive(&self);
@@ -196,6 +221,11 @@ pub unsafe trait RawRwLockRecursive: RawRwLock {
 }
 
 /// Additional methods for `RwLock`s which support recursive read locks and timeouts.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawRwLock`] for
+/// the additional methods provided by this trait.
 pub unsafe trait RawRwLockRecursiveTimed: RawRwLockRecursive + RawRwLockTimed {
     /// Attempts to acquire a shared lock until a timeout is reached, without
     /// deadlocking in case of a recursive lock.
@@ -212,6 +242,12 @@ pub unsafe trait RawRwLockRecursiveTimed: RawRwLockRecursive + RawRwLockTimed {
 /// This requires acquiring a special "upgradable read lock" instead of a
 /// normal shared lock. There may only be one upgradable lock at any time,
 /// otherwise deadlocks could occur when upgrading.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawRwLock`] for
+/// the additional methods provided by this trait. A successful upgrade to
+/// exclusive access must acquire from the shared-lock releases it replaces.
 pub unsafe trait RawRwLockUpgrade: RawRwLock {
     /// Acquires an upgradable lock, blocking the current thread until it is able to do so.
     fn lock_upgradable(&self);
@@ -244,6 +280,11 @@ pub unsafe trait RawRwLockUpgrade: RawRwLock {
 
 /// Additional methods for `RwLock`s which support upgradable locks and fair
 /// unlocking.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawRwLock`] for
+/// the additional methods provided by this trait.
 pub unsafe trait RawRwLockUpgradeFair: RawRwLockUpgrade + RawRwLockFair {
     /// Releases an upgradable lock using a fair unlock protocol.
     ///
@@ -269,6 +310,12 @@ pub unsafe trait RawRwLockUpgradeFair: RawRwLockUpgrade + RawRwLockFair {
 
 /// Additional methods for `RwLock`s which support upgradable locks and lock
 /// downgrading.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawRwLock`] for
+/// the additional methods provided by this trait. Downgrading from exclusive
+/// to upgradable access must release to subsequent lock acquisitions.
 pub unsafe trait RawRwLockUpgradeDowngrade: RawRwLockUpgrade + RawRwLockDowngrade {
     /// Downgrades an upgradable lock to a shared lock.
     ///
@@ -287,6 +334,11 @@ pub unsafe trait RawRwLockUpgradeDowngrade: RawRwLockUpgrade + RawRwLockDowngrad
 
 /// Additional methods for `RwLock`s which support upgradable locks and locking
 /// with timeouts.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawRwLock`] for
+/// the additional methods provided by this trait.
 pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
     /// Attempts to acquire an upgradable lock until a timeout is reached.
     fn try_lock_upgradable_for(&self, timeout: Self::Duration) -> bool;

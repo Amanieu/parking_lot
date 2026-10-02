@@ -27,8 +27,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 ///
 /// # Safety
 ///
-/// Implementations of this trait must ensure that the mutex is actually
-/// exclusive: a lock can't be acquired while the mutex is already locked.
+/// Implementations must enforce mutual exclusion: after a locking operation
+/// successfully acquires the mutex, no other locking operation may succeed
+/// until the mutex is unlocked.
+///
+/// Successful lock acquisitions must have acquire semantics, and unlocking
+/// operations must have release semantics. These requirements also apply to
+/// equivalent operations provided by subtraits.
 pub unsafe trait RawMutex {
     /// Initial value for an unlocked mutex.
     // A “non-constant” const item is a legacy way to supply an initialized value to downstream
@@ -80,6 +85,11 @@ pub unsafe trait RawMutex {
 /// thread if there is one, without giving other threads the opportunity to
 /// "steal" the lock in the meantime. This is typically slower than unfair
 /// unlocking, but may be necessary in certain circumstances.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawMutex`] for
+/// the additional methods provided by this trait.
 pub unsafe trait RawMutexFair: RawMutex {
     /// Unlocks this mutex using a fair unlock protocol.
     ///
@@ -109,6 +119,11 @@ pub unsafe trait RawMutexFair: RawMutex {
 ///
 /// The `Duration` and `Instant` types are specified as associated types so that
 /// this trait is usable even in `no_std` environments.
+///
+/// # Safety
+///
+/// Implementations must uphold the safety requirements of [`RawMutex`] for
+/// the additional methods provided by this trait.
 pub unsafe trait RawMutexTimed: RawMutex {
     /// Duration type used for `try_lock_for`.
     type Duration;
