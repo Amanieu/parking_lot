@@ -135,22 +135,17 @@ mod tests {
         let c2 = c.clone();
 
         let mut g = m.lock();
-        let _t = thread::spawn(move || {
+        let t = thread::spawn(move || {
             let _g = m2.lock();
             assert!(c2.notify_one());
         });
         c.wait(&mut g);
+        t.join().unwrap();
     }
 
     #[test]
     fn notify_one_return_false() {
-        let m = Arc::new(Mutex::new(()));
-        let c = Arc::new(Condvar::new());
-
-        let _t = thread::spawn(move || {
-            let _g = m.lock();
-            assert!(!c.notify_one());
-        });
+        assert!(!Condvar::new().notify_one());
     }
 
     #[test]
@@ -199,17 +194,18 @@ mod tests {
         let c2 = c.clone();
 
         let mut g = m.lock();
-        let no_timeout = c.wait_for(&mut g, Duration::from_millis(1));
-        assert!(no_timeout.timed_out());
+        let result = c.wait_for(&mut g, Duration::from_millis(1));
+        assert!(result.timed_out());
 
-        let _t = thread::spawn(move || {
+        let t = thread::spawn(move || {
             let _g = m2.lock();
             c2.notify_one();
         });
-        let timeout_res = c.wait_for(&mut g, Duration::from_secs(u64::MAX));
-        assert!(!timeout_res.timed_out());
+        let result = c.wait_for(&mut g, Duration::from_millis(u32::MAX as u64));
+        assert!(!result.timed_out());
 
         drop(g);
+        t.join().unwrap();
     }
 
     #[test]
@@ -220,18 +216,19 @@ mod tests {
         let c2 = c.clone();
 
         let mut g = m.lock();
-        let no_timeout = c.wait_until(&mut g, Instant::now() + Duration::from_millis(1));
-        assert!(no_timeout.timed_out());
-        let _t = thread::spawn(move || {
+        let result = c.wait_until(&mut g, Instant::now() + Duration::from_millis(1));
+        assert!(result.timed_out());
+        let t = thread::spawn(move || {
             let _g = m2.lock();
             c2.notify_one();
         });
-        let timeout_res = c.wait_until(
+        let result = c.wait_until(
             &mut g,
             Instant::now() + Duration::from_millis(u32::MAX as u64),
         );
-        assert!(!timeout_res.timed_out());
+        assert!(!result.timed_out());
         drop(g);
+        t.join().unwrap();
     }
 
     fn spawn_wait_while_notifier(
@@ -354,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "attempted to use a condition variable with more than one mutex")]
     fn two_mutexes() {
         let m = Arc::new(Mutex::new(()));
         let m2 = m.clone();

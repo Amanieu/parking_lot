@@ -103,7 +103,6 @@ mod tests {
     use rand::RngExt;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::mpsc::channel;
     use std::thread;
 
     #[cfg(feature = "serde")]
@@ -205,9 +204,8 @@ mod tests {
     fn test_ruw_arc() {
         let arc = Arc::new(RwLock::new(0));
         let arc2 = arc.clone();
-        let (tx, rx) = channel();
 
-        thread::spawn(move || {
+        let writer = thread::spawn(move || {
             for _ in 0..10 {
                 let mut lock = arc2.write();
                 let tmp = *lock;
@@ -215,7 +213,6 @@ mod tests {
                 thread::yield_now();
                 *lock = tmp + 1;
             }
-            tx.send(()).unwrap();
         });
 
         let mut children = Vec::new();
@@ -252,7 +249,7 @@ mod tests {
         }
 
         // Wait for writer to finish
-        rx.recv().unwrap();
+        writer.join().unwrap();
         let lock = arc.read();
         assert_eq!(*lock, 15);
     }
@@ -261,9 +258,8 @@ mod tests {
     fn test_rw_arc() {
         let arc = Arc::new(RwLock::new(0));
         let arc2 = arc.clone();
-        let (tx, rx) = channel();
 
-        thread::spawn(move || {
+        let writer = thread::spawn(move || {
             let mut lock = arc2.write();
             for _ in 0..10 {
                 let tmp = *lock;
@@ -271,7 +267,6 @@ mod tests {
                 thread::yield_now();
                 *lock = tmp + 1;
             }
-            tx.send(()).unwrap();
         });
 
         // Readers try to catch the writer in the act
@@ -290,7 +285,7 @@ mod tests {
         }
 
         // Wait for writer to finish
-        rx.recv().unwrap();
+        writer.join().unwrap();
         let lock = arc.read();
         assert_eq!(*lock, 10);
     }
@@ -327,6 +322,24 @@ mod tests {
         }
         let comp: &[i32] = &[4, 2, 5];
         assert_eq!(&*rw.read(), comp);
+    }
+
+    #[test]
+    fn test_read_with_waiting_writer() {
+        let lock = Arc::new(RwLock::new(()));
+        let reader = lock.read();
+
+        let lock2 = Arc::clone(&lock);
+        let writer = thread::spawn(move || drop(lock2.write()));
+        while !unsafe { lock.raw() }.has_parked_threads() {
+            thread::yield_now();
+        }
+
+        // A waiting writer blocks new readers even though no writer holds the lock.
+        assert!(lock.try_read().is_none());
+
+        drop(reader);
+        writer.join().unwrap();
     }
 
     #[test]
