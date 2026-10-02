@@ -2951,7 +2951,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
     /// used as `MappedRwLockReadGuard::try_map_or_err(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
     #[inline]
-    pub fn try_map_or_else<U: ?Sized, F, E>(
+    pub fn try_map_or_err<U: ?Sized, F, E>(
         s: Self,
         f: F,
     ) -> Result<MappedRwLockReadGuard<'a, R, U>, (Self, E)>
