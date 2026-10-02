@@ -15,18 +15,8 @@ use super::bindings::*;
 #[allow(non_snake_case)]
 pub struct KeyedEvent {
     handle: HANDLE,
-    NtReleaseKeyedEvent: extern "system" fn(
-        EventHandle: HANDLE,
-        Key: *mut ffi::c_void,
-        Alertable: BOOLEAN,
-        Timeout: *mut i64,
-    ) -> NTSTATUS,
-    NtWaitForKeyedEvent: extern "system" fn(
-        EventHandle: HANDLE,
-        Key: *mut ffi::c_void,
-        Alertable: BOOLEAN,
-        Timeout: *mut i64,
-    ) -> NTSTATUS,
+    NtReleaseKeyedEvent: NtReleaseKeyedEvent,
+    NtWaitForKeyedEvent: NtWaitForKeyedEvent,
 }
 
 // SAFETY: Keyed-event handles may be used from any thread, including concurrently.
@@ -36,12 +26,16 @@ unsafe impl Sync for KeyedEvent {}
 impl KeyedEvent {
     #[inline]
     unsafe fn wait_for(&self, key: *mut ffi::c_void, timeout: *mut i64) -> NTSTATUS {
-        (self.NtWaitForKeyedEvent)(self.handle, key, false.into(), timeout)
+        // SAFETY: The caller guarantees that `key` and `timeout` are valid for
+        // this wait, and `self.handle` is a live keyed-event handle.
+        unsafe { (self.NtWaitForKeyedEvent)(self.handle, key, false.into(), timeout) }
     }
 
     #[inline]
     unsafe fn release(&self, key: *mut ffi::c_void) -> NTSTATUS {
-        (self.NtReleaseKeyedEvent)(self.handle, key, false.into(), ptr::null_mut())
+        // SAFETY: The caller guarantees that `key` identifies a corresponding
+        // wait, and `self.handle` is a live keyed-event handle.
+        unsafe { (self.NtReleaseKeyedEvent)(self.handle, key, false.into(), ptr::null_mut()) }
     }
 
     #[allow(non_snake_case)]
@@ -58,19 +52,18 @@ impl KeyedEvent {
         let NtWaitForKeyedEvent =
             unsafe { GetProcAddress(ntdll, b"NtWaitForKeyedEvent\0".as_ptr())? };
 
-        let NtCreateKeyedEvent: extern "system" fn(
-            KeyedEventHandle: *mut HANDLE,
-            DesiredAccess: u32,
-            ObjectAttributes: *mut ffi::c_void,
-            Flags: u32,
-        ) -> NTSTATUS = unsafe { mem::transmute(NtCreateKeyedEvent) };
+        let NtCreateKeyedEvent: NtCreateKeyedEvent = unsafe { mem::transmute(NtCreateKeyedEvent) };
         let mut handle = MaybeUninit::uninit();
-        let status = NtCreateKeyedEvent(
-            handle.as_mut_ptr(),
-            GENERIC_READ | GENERIC_WRITE,
-            ptr::null_mut(),
-            0,
-        );
+        // SAFETY: The function was resolved from ntdll with the matching name,
+        // the output pointer is valid, and null object attributes are allowed.
+        let status = unsafe {
+            NtCreateKeyedEvent(
+                handle.as_mut_ptr(),
+                GENERIC_READ | GENERIC_WRITE,
+                ptr::null_mut(),
+                0,
+            )
+        };
         if status != STATUS_SUCCESS {
             return None;
         }

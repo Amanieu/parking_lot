@@ -18,6 +18,24 @@ pub type BOOL = i32;
 pub type BOOLEAN = u8;
 pub type NTSTATUS = i32;
 pub type FARPROC = Option<unsafe extern "system" fn() -> isize>;
+pub type NtCreateKeyedEvent = unsafe extern "system" fn(
+    KeyedEventHandle: *mut HANDLE,
+    DesiredAccess: u32,
+    ObjectAttributes: *mut std::ffi::c_void,
+    Flags: u32,
+) -> NTSTATUS;
+pub type NtReleaseKeyedEvent = unsafe extern "system" fn(
+    EventHandle: HANDLE,
+    Key: *mut std::ffi::c_void,
+    Alertable: BOOLEAN,
+    Timeout: *mut i64,
+) -> NTSTATUS;
+pub type NtWaitForKeyedEvent = unsafe extern "system" fn(
+    EventHandle: HANDLE,
+    Key: *mut std::ffi::c_void,
+    Alertable: BOOLEAN,
+    Timeout: *mut i64,
+) -> NTSTATUS;
 pub type WaitOnAddress = unsafe extern "system" fn(
     Address: *const std::ffi::c_void,
     CompareAddress: *const std::ffi::c_void,
