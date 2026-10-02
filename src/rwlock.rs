@@ -81,22 +81,13 @@ use crate::raw_rwlock::RawRwLock;
 /// ```
 pub type RwLock<T> = lock_api::RwLock<RawRwLock, T>;
 
-/// Creates a new instance of an `RwLock<T>` which is unlocked.
-///
-/// This allows creating a `RwLock<T>` in a constant context on stable Rust.
-pub const fn const_rwlock<T>(val: T) -> RwLock<T> {
-    RwLock::const_new(<RawRwLock as lock_api::RawRwLock>::INIT, val)
-}
-
-/// RAII structure used to release the shared read access of a lock when
-/// dropped.
+/// An RAII guard which releases shared read access when dropped.
 pub type RwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawRwLock, T>;
 
-/// RAII structure used to release the exclusive write access of a lock when
-/// dropped.
+/// An RAII guard which releases exclusive write access when dropped.
 pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawRwLock, T>;
 
-/// An RAII read lock guard returned by `RwLockReadGuard::map`, which can point to a
+/// An RAII read lock guard returned by [`RwLockReadGuard::map`], which can point to a
 /// subfield of the protected data.
 ///
 /// The main difference between `MappedRwLockReadGuard` and `RwLockReadGuard` is that the

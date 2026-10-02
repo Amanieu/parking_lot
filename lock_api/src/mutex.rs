@@ -180,16 +180,6 @@ impl<R, T> Mutex<R, T> {
         }
     }
 
-    /// Creates a new mutex based on a pre-existing raw mutex.
-    ///
-    /// This allows creating a mutex in a constant context on stable Rust.
-    ///
-    /// This method is a legacy alias for [`from_raw`](Self::from_raw).
-    #[inline]
-    pub const fn const_new(raw_mutex: R, val: T) -> Mutex<R, T> {
-        Self::from_raw(raw_mutex, val)
-    }
-
     /// Consumes this mutex, returning the underlying data and raw mutex.
     #[inline]
     pub fn into_inner_with_raw(self) -> (R, T) {
@@ -252,13 +242,18 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// Returns a mutable reference to the underlying data.
     ///
     /// Since this call borrows the `Mutex` mutably, no actual locking needs to
-    /// take place---the mutable borrow statically guarantees no locks exist.
+    /// take place -- the mutable borrow statically guarantees no new locks can
+    /// be acquired while the reference exists. This method does not clear a
+    /// lock previously abandoned by forgetting a [`MutexGuard`].
     #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.get() }
+    pub const fn get_mut(&mut self) -> &mut T {
+        self.data.get_mut()
     }
 
     /// Checks whether the mutex is currently locked.
+    ///
+    /// The result is a momentary snapshot and may be stale by the time it is
+    /// returned.
     #[inline]
     #[track_caller]
     pub fn is_locked(&self) -> bool {
@@ -298,17 +293,12 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 
     /// Returns a raw pointer to the underlying data.
     ///
-    /// This is useful when combined with `mem::forget` to hold a lock without
-    /// the need to maintain a `MutexGuard` object alive, for example when
-    /// dealing with FFI.
-    ///
-    /// # Safety
-    ///
-    /// You must ensure that there are no data races when dereferencing the
-    /// returned pointer, for example if the current thread logically owns
-    /// a `MutexGuard` but that guard has been discarded using `mem::forget`.
+    /// The returned pointer is always non-null and properly aligned, but the
+    /// caller must ensure that reads and writes through it are properly
+    /// synchronized and that the pointer is not used after the mutex is
+    /// dropped.
     #[inline]
-    pub fn data_ptr(&self) -> *mut T {
+    pub const fn data_ptr(&self) -> *mut T {
         self.data.get()
     }
 
@@ -539,19 +529,20 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
 
     /// Makes a new `MappedMutexGuard` for a component of the locked data.
     ///
-    /// This operation cannot fail as the `MutexGuard` passed
-    /// in already locked the mutex.
-    ///
     /// This is an associated function that needs to be
     /// used as `MutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
     where
         F: FnOnce(&mut T) -> &mut U,
     {
         let raw = &s.mutex.raw;
-        let data = f(unsafe { &mut *s.mutex.data.get() });
+        let data = f(unsafe { s.mutex.data.get().as_mut_unchecked() });
         mem::forget(s);
         MappedMutexGuard {
             raw,
@@ -563,19 +554,20 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// Attempts to make a new `MappedMutexGuard` for a component of the
     /// locked data. The original guard is returned if the closure returns `None`.
     ///
-    /// This operation cannot fail as the `MutexGuard` passed
-    /// in already locked the mutex.
-    ///
     /// This is an associated function that needs to be
     /// used as `MutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = &s.mutex.raw;
-        let Some(data) = f(unsafe { &mut *s.mutex.data.get() }) else {
+        let Some(data) = f(unsafe { s.mutex.data.get().as_mut_unchecked() }) else {
             return Err(s);
         };
         mem::forget(s);
@@ -605,7 +597,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Result<&mut U, E>,
     {
         let raw = &s.mutex.raw;
-        let data = match f(unsafe { &mut *s.mutex.data.get() }) {
+        let data = match f(unsafe { s.mutex.data.get().as_mut_unchecked() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
@@ -641,7 +633,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     /// This will leave the `Mutex` in a locked state.
     #[inline]
     pub fn leak(s: Self) -> &'a mut T {
-        let r = unsafe { &mut *s.mutex.data.get() };
+        let r = unsafe { s.mutex.data.get().as_mut_unchecked() };
         mem::forget(s);
         r
     }
@@ -709,14 +701,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Deref for MutexGuard<'a, R, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.mutex.data.get() }
+        unsafe { self.mutex.data.get().as_ref_unchecked() }
     }
 }
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> DerefMut for MutexGuard<'a, R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.mutex.data.get() }
+        unsafe { self.mutex.data.get().as_mut_unchecked() }
     }
 }
 
@@ -854,7 +846,7 @@ impl<R: RawMutex, T: ?Sized> Deref for ArcMutexGuard<R, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.mutex.data.get() }
+        unsafe { self.mutex.data.get().as_ref_unchecked() }
     }
 }
 
@@ -862,7 +854,7 @@ impl<R: RawMutex, T: ?Sized> Deref for ArcMutexGuard<R, T> {
 impl<R: RawMutex, T: ?Sized> DerefMut for ArcMutexGuard<R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.mutex.data.get() }
+        unsafe { self.mutex.data.get().as_mut_unchecked() }
     }
 }
 
@@ -895,23 +887,24 @@ pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized + 'a> {
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     /// Makes a new `MappedMutexGuard` for a component of the locked data.
     ///
-    /// This operation cannot fail as the `MappedMutexGuard` passed
-    /// in already locked the mutex.
-    ///
     /// This is an associated function that needs to be
     /// used as `MappedMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedMutexGuard<'a, R, U>
+    pub fn map<U: ?Sized, F>(mut s: Self, f: F) -> MappedMutexGuard<'a, R, U>
     where
         F: FnOnce(&mut T) -> &mut U,
     {
         let raw = s.raw;
-        let data = f(unsafe { &mut *s.data.as_ptr() });
+        let data = ExclusiveGuardData::new(f(unsafe { s.data.as_mut() }));
         mem::forget(s);
         MappedMutexGuard {
             raw,
-            data: ExclusiveGuardData::new(data),
+            data,
             marker: PhantomData,
         }
     }
@@ -919,25 +912,27 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     /// Attempts to make a new `MappedMutexGuard` for a component of the
     /// locked data. The original guard is returned if the closure returns `None`.
     ///
-    /// This operation cannot fail as the `MappedMutexGuard` passed
-    /// in already locked the mutex.
-    ///
     /// This is an associated function that needs to be
     /// used as `MappedMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
+    pub fn try_map<U: ?Sized, F>(mut s: Self, f: F) -> Result<MappedMutexGuard<'a, R, U>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = s.raw;
-        let Some(data) = f(unsafe { &mut *s.data.as_ptr() }) else {
+        let Some(data) = f(unsafe { s.data.as_mut() }) else {
             return Err(s);
         };
+        let data = ExclusiveGuardData::new(data);
         mem::forget(s);
         Ok(MappedMutexGuard {
             raw,
-            data: ExclusiveGuardData::new(data),
+            data,
             marker: PhantomData,
         })
     }
@@ -946,29 +941,31 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     /// locked data. The original guard is returned alongside arbitrary user data
     /// if the closure returns `Err`.
     ///
-    /// This operation cannot fail as the `MappedMutexGuard` passed
-    /// in already locked the mutex.
-    ///
     /// This is an associated function that needs to be
     /// used as `MappedMutexGuard::try_map_or_err(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map_or_err<U: ?Sized, F, E>(
-        s: Self,
+        mut s: Self,
         f: F,
     ) -> Result<MappedMutexGuard<'a, R, U>, (Self, E)>
     where
         F: FnOnce(&mut T) -> Result<&mut U, E>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data.as_ptr() }) {
+        let data = match f(unsafe { s.data.as_mut() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
+        let data = ExclusiveGuardData::new(data);
         mem::forget(s);
         Ok(MappedMutexGuard {
             raw,
-            data: ExclusiveGuardData::new(data),
+            data,
             marker: PhantomData,
         })
     }
@@ -1002,14 +999,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Deref for MappedMutexGuard<'a, R, T> 
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data.as_ptr() }
+        unsafe { self.data.as_ref() }
     }
 }
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> DerefMut for MappedMutexGuard<'a, R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.as_ptr() }
+        unsafe { self.data.as_mut() }
     }
 }
 

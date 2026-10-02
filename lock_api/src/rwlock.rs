@@ -414,18 +414,6 @@ impl<R, T> RwLock<R, T> {
         }
     }
 
-    /// Creates a new new instance of an `RwLock<T>` based on a pre-existing
-    /// `RawRwLock<T>`.
-    ///
-    /// This allows creating a `RwLock<T>` in a constant context on stable
-    /// Rust.
-    ///
-    /// This method is a legacy alias for [`from_raw`](Self::from_raw).
-    #[inline]
-    pub const fn const_new(raw_rwlock: R, val: T) -> RwLock<R, T> {
-        Self::from_raw(raw_rwlock, val)
-    }
-
     /// Consumes this read-write lock, returning the underlying data and raw lock.
     #[inline]
     pub fn into_inner_with_raw(self) -> (R, T) {
@@ -553,20 +541,29 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// Returns a mutable reference to the underlying data.
     ///
     /// Since this call borrows the `RwLock` mutably, no actual locking needs to
-    /// take place---the mutable borrow statically guarantees no locks exist.
+    /// take place -- the mutable borrow statically guarantees no new locks can
+    /// be acquired while the reference exists. This method does not clear locks
+    /// previously abandoned by forgetting a [`RwLockReadGuard`] or
+    /// [`RwLockWriteGuard`].
     #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.get() }
+    pub const fn get_mut(&mut self) -> &mut T {
+        self.data.get_mut()
     }
 
     /// Checks whether this `RwLock` is currently locked in any way.
+    ///
+    /// The result is a momentary snapshot and may be stale by the time it is
+    /// returned.
     #[inline]
     #[track_caller]
     pub fn is_locked(&self) -> bool {
         self.raw.is_locked()
     }
 
-    /// Check if this `RwLock` is currently exclusively locked.
+    /// Checks whether this `RwLock` is currently exclusively locked.
+    ///
+    /// The result is a momentary snapshot and may be stale by the time it is
+    /// returned.
     #[inline]
     #[track_caller]
     pub fn is_locked_exclusive(&self) -> bool {
@@ -623,18 +620,12 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
 
     /// Returns a raw pointer to the underlying data.
     ///
-    /// This is useful when combined with `mem::forget` to hold a lock without
-    /// the need to maintain a `RwLockReadGuard` or `RwLockWriteGuard` object
-    /// alive, for example when dealing with FFI.
-    ///
-    /// # Safety
-    ///
-    /// You must ensure that there are no data races when dereferencing the
-    /// returned pointer, for example if the current thread logically owns a
-    /// `RwLockReadGuard` or `RwLockWriteGuard` but that guard has been discarded
-    /// using `mem::forget`.
+    /// The returned pointer is always non-null and properly aligned, but the
+    /// caller must ensure that reads and writes through it are properly
+    /// synchronized and that the pointer is not used after the rwlock is
+    /// dropped.
     #[inline]
-    pub fn data_ptr(&self) -> *mut T {
+    pub const fn data_ptr(&self) -> *mut T {
         self.data.get()
     }
 
@@ -1224,21 +1215,22 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         s.rwlock
     }
 
-    /// Make a new `MappedRwLockReadGuard` for a component of the locked data.
-    ///
-    /// This operation cannot fail as the `RwLockReadGuard` passed
-    /// in already locked the data.
+    /// Makes a new `MappedRwLockReadGuard` for a component of the locked data.
     ///
     /// This is an associated function that needs to be
     /// used as `RwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
     where
         F: FnOnce(&T) -> &U,
     {
         let raw = &s.rwlock.raw;
-        let data = f(unsafe { &*s.rwlock.data.get() });
+        let data = f(unsafe { s.rwlock.data.get().as_ref_unchecked() });
         mem::forget(s);
         MappedRwLockReadGuard {
             raw,
@@ -1247,22 +1239,23 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         }
     }
 
-    /// Attempts to make  a new `MappedRwLockReadGuard` for a component of the
+    /// Attempts to make a new `MappedRwLockReadGuard` for a component of the
     /// locked data. Returns the original guard if the closure returns `None`.
-    ///
-    /// This operation cannot fail as the `RwLockReadGuard` passed
-    /// in already locked the data.
     ///
     /// This is an associated function that needs to be
     /// used as `RwLockReadGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
     where
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = &s.rwlock.raw;
-        let Some(data) = f(unsafe { &*s.rwlock.data.get() }) else {
+        let Some(data) = f(unsafe { s.rwlock.data.get().as_ref_unchecked() }) else {
             return Err(s);
         };
         mem::forget(s);
@@ -1292,7 +1285,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         F: FnOnce(&T) -> Result<&U, E>,
     {
         let raw = &s.rwlock.raw;
-        let data = match f(unsafe { &*s.rwlock.data.get() }) {
+        let data = match f(unsafe { s.rwlock.data.get().as_ref_unchecked() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
@@ -1385,7 +1378,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for RwLockReadGuard<'a, R, T> 
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.rwlock.data.get() }
+        unsafe { self.rwlock.data.get().as_ref_unchecked() }
     }
 }
 
@@ -1521,7 +1514,7 @@ impl<R: RawRwLock, T: ?Sized> Deref for ArcRwLockReadGuard<R, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.rwlock.data.get() }
+        unsafe { self.rwlock.data.get().as_ref_unchecked() }
     }
 }
 
@@ -1565,21 +1558,22 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         s.rwlock
     }
 
-    /// Make a new `MappedRwLockWriteGuard` for a component of the locked data.
-    ///
-    /// This operation cannot fail as the `RwLockWriteGuard` passed
-    /// in already locked the data.
+    /// Makes a new `MappedRwLockWriteGuard` for a component of the locked data.
     ///
     /// This is an associated function that needs to be
     /// used as `RwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
     where
         F: FnOnce(&mut T) -> &mut U,
     {
         let raw = &s.rwlock.raw;
-        let data = f(unsafe { &mut *s.rwlock.data.get() });
+        let data = f(unsafe { s.rwlock.data.get().as_mut_unchecked() });
         mem::forget(s);
         MappedRwLockWriteGuard {
             raw,
@@ -1588,22 +1582,23 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         }
     }
 
-    /// Attempts to make  a new `MappedRwLockWriteGuard` for a component of the
-    /// locked data. The original guard is return if the closure returns `None`.
-    ///
-    /// This operation cannot fail as the `RwLockWriteGuard` passed
-    /// in already locked the data.
+    /// Attempts to make a new `MappedRwLockWriteGuard` for a component of the
+    /// locked data. The original guard is returned if the closure returns `None`.
     ///
     /// This is an associated function that needs to be
     /// used as `RwLockWriteGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = &s.rwlock.raw;
-        let Some(data) = f(unsafe { &mut *s.rwlock.data.get() }) else {
+        let Some(data) = f(unsafe { s.rwlock.data.get().as_mut_unchecked() }) else {
             return Err(s);
         };
         mem::forget(s);
@@ -1633,7 +1628,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Result<&mut U, E>,
     {
         let raw = &s.rwlock.raw;
-        let data = match f(unsafe { &mut *s.rwlock.data.get() }) {
+        let data = match f(unsafe { s.rwlock.data.get().as_mut_unchecked() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
@@ -1770,14 +1765,14 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for RwLockWriteGuard<'a, R, T>
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.rwlock.data.get() }
+        unsafe { self.rwlock.data.get().as_ref_unchecked() }
     }
 }
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> DerefMut for RwLockWriteGuard<'a, R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.rwlock.data.get() }
+        unsafe { self.rwlock.data.get().as_mut_unchecked() }
     }
 }
 
@@ -1960,7 +1955,7 @@ impl<R: RawRwLock, T: ?Sized> Deref for ArcRwLockWriteGuard<R, T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.rwlock.data.get() }
+        unsafe { self.rwlock.data.get().as_ref_unchecked() }
     }
 }
 
@@ -1968,7 +1963,7 @@ impl<R: RawRwLock, T: ?Sized> Deref for ArcRwLockWriteGuard<R, T> {
 impl<R: RawRwLock, T: ?Sized> DerefMut for ArcRwLockWriteGuard<R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.rwlock.data.get() }
+        unsafe { self.rwlock.data.get().as_mut_unchecked() }
     }
 }
 
@@ -2168,7 +2163,7 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
         // Safety: We upgraded the lock, so we have mutable access to the data.
         // When this function returns, whether by drop or panic,
         // the drop guard will downgrade it back to an upgradeable lock.
-        f(unsafe { &mut *self.rwlock.data.get() })
+        f(unsafe { self.rwlock.data.get().as_mut_unchecked() })
     }
 
     /// First, tries to atomically upgrade an upgradable read lock into an exclusive write lock.
@@ -2191,7 +2186,7 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
             // the drop guard will downgrade it back to an upgradeable lock.
-            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+            Some(f(unsafe { self.rwlock.data.get().as_mut_unchecked() }))
         } else {
             None
         }
@@ -2282,7 +2277,7 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
             // the drop guard will downgrade it back to an upgradeable lock.
-            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+            Some(f(unsafe { self.rwlock.data.get().as_mut_unchecked() }))
         } else {
             None
         }
@@ -2316,7 +2311,7 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
             // the drop guard will downgrade it back to an upgradeable lock.
-            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+            Some(f(unsafe { self.rwlock.data.get().as_mut_unchecked() }))
         } else {
             None
         }
@@ -2327,7 +2322,7 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> Deref for RwLockUpgradableRea
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.rwlock.data.get() }
+        unsafe { self.rwlock.data.get().as_ref_unchecked() }
     }
 }
 
@@ -2552,7 +2547,7 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T>
         // Safety: We upgraded the lock, so we have mutable access to the data.
         // When this function returns, whether by drop or panic,
         // the drop guard will downgrade it back to an upgradeable lock.
-        f(unsafe { &mut *self.rwlock.data.get() })
+        f(unsafe { self.rwlock.data.get().as_mut_unchecked() })
     }
 
     /// First, tries to atomically upgrade an upgradable read lock into an exclusive write lock.
@@ -2575,7 +2570,7 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T>
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
             // the drop guard will downgrade it back to an upgradeable lock.
-            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+            Some(f(unsafe { self.rwlock.data.get().as_mut_unchecked() }))
         } else {
             None
         }
@@ -2672,7 +2667,7 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
             // the drop guard will downgrade it back to an upgradeable lock.
-            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+            Some(f(unsafe { self.rwlock.data.get().as_mut_unchecked() }))
         } else {
             None
         }
@@ -2706,7 +2701,7 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
             // the drop guard will downgrade it back to an upgradeable lock.
-            Some(f(unsafe { &mut *self.rwlock.data.get() }))
+            Some(f(unsafe { self.rwlock.data.get().as_mut_unchecked() }))
         } else {
             None
         }
@@ -2718,7 +2713,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> Deref for ArcRwLockUpgradableReadGuard<R, T
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.rwlock.data.get() }
+        unsafe { self.rwlock.data.get().as_ref_unchecked() }
     }
 }
 
@@ -2767,65 +2762,69 @@ pub struct MappedRwLockReadGuard<'a, R: RawRwLock, T: ?Sized + 'a> {
 }
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
-    /// Make a new `MappedRwLockReadGuard` for a component of the locked data.
-    ///
-    /// This operation cannot fail as the `MappedRwLockReadGuard` passed
-    /// in already locked the data.
+    /// Makes a new `MappedRwLockReadGuard` for a component of the locked data.
     ///
     /// This is an associated function that needs to be
     /// used as `MappedRwLockReadGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedRwLockReadGuard<'a, R, U>
     where
         F: FnOnce(&T) -> &U,
     {
         let raw = s.raw;
-        let data = f(unsafe { &*s.data.as_ptr() });
+        let data = SharedGuardData::new(f(unsafe { s.data.as_ref() }));
         mem::forget(s);
         MappedRwLockReadGuard {
             raw,
-            data: SharedGuardData::new(data),
+            data,
             marker: PhantomData,
         }
     }
 
-    /// Attempts to make  a new `MappedRwLockReadGuard` for a component of the
-    /// locked data. The original guard is return if the closure returns `None`.
-    ///
-    /// This operation cannot fail as the `MappedRwLockReadGuard` passed
-    /// in already locked the data.
+    /// Attempts to make a new `MappedRwLockReadGuard` for a component of the
+    /// locked data. The original guard is returned if the closure returns `None`.
     ///
     /// This is an associated function that needs to be
     /// used as `MappedRwLockReadGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockReadGuard<'a, R, U>, Self>
     where
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = s.raw;
-        let Some(data) = f(unsafe { &*s.data.as_ptr() }) else {
+        let Some(data) = f(unsafe { s.data.as_ref() }) else {
             return Err(s);
         };
+        let data = SharedGuardData::new(data);
         mem::forget(s);
         Ok(MappedRwLockReadGuard {
             raw,
-            data: SharedGuardData::new(data),
+            data,
             marker: PhantomData,
         })
     }
 
-    /// Attempts to make  a new `MappedRwLockReadGuard` for a component of the
+    /// Attempts to make a new `MappedRwLockReadGuard` for a component of the
     /// locked data. The original guard is returned alongside arbitrary user data
     /// if the closure returns `Err`.
-    ///
-    /// This operation cannot fail as the `MappedRwLockReadGuard` passed
-    /// in already locked the data.
     ///
     /// This is an associated function that needs to be
     /// used as `MappedRwLockReadGuard::try_map_or_err(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map_or_err<U: ?Sized, F, E>(
         s: Self,
@@ -2835,14 +2834,15 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
         F: FnOnce(&T) -> Result<&U, E>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &*s.data.as_ptr() }) {
+        let data = match f(unsafe { s.data.as_ref() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
+        let data = SharedGuardData::new(data);
         mem::forget(s);
         Ok(MappedRwLockReadGuard {
             raw,
-            data: SharedGuardData::new(data),
+            data,
             marker: PhantomData,
         })
     }
@@ -2876,7 +2876,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for MappedRwLockReadGuard<'a, 
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data.as_ptr() }
+        unsafe { self.data.as_ref() }
     }
 }
 
@@ -2928,82 +2928,90 @@ pub struct MappedRwLockWriteGuard<'a, R: RawRwLock, T: ?Sized + 'a> {
 }
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
-    /// Make a new `MappedRwLockWriteGuard` for a component of the locked data.
-    ///
-    /// This operation cannot fail as the `MappedRwLockWriteGuard` passed
-    /// in already locked the data.
+    /// Makes a new `MappedRwLockWriteGuard` for a component of the locked data.
     ///
     /// This is an associated function that needs to be
     /// used as `MappedRwLockWriteGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
-    pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
+    pub fn map<U: ?Sized, F>(mut s: Self, f: F) -> MappedRwLockWriteGuard<'a, R, U>
     where
         F: FnOnce(&mut T) -> &mut U,
     {
         let raw = s.raw;
-        let data = f(unsafe { &mut *s.data.as_ptr() });
+        let data = ExclusiveGuardData::new(f(unsafe { s.data.as_mut() }));
         mem::forget(s);
         MappedRwLockWriteGuard {
             raw,
-            data: ExclusiveGuardData::new(data),
+            data,
             marker: PhantomData,
         }
     }
 
-    /// Attempts to make  a new `MappedRwLockWriteGuard` for a component of the
-    /// locked data. The original guard is return if the closure returns `None`.
-    ///
-    /// This operation cannot fail as the `MappedRwLockWriteGuard` passed
-    /// in already locked the data.
+    /// Attempts to make a new `MappedRwLockWriteGuard` for a component of the
+    /// locked data. The original guard is returned if the closure returns `None`.
     ///
     /// This is an associated function that needs to be
     /// used as `MappedRwLockWriteGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
+    pub fn try_map<U: ?Sized, F>(
+        mut s: Self,
+        f: F,
+    ) -> Result<MappedRwLockWriteGuard<'a, R, U>, Self>
     where
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = s.raw;
-        let Some(data) = f(unsafe { &mut *s.data.as_ptr() }) else {
+        let Some(data) = f(unsafe { s.data.as_mut() }) else {
             return Err(s);
         };
+        let data = ExclusiveGuardData::new(data);
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {
             raw,
-            data: ExclusiveGuardData::new(data),
+            data,
             marker: PhantomData,
         })
     }
 
-    /// Attempts to make  a new `MappedRwLockWriteGuard` for a component of the
+    /// Attempts to make a new `MappedRwLockWriteGuard` for a component of the
     /// locked data. The original guard is returned alongside arbitrary user data
     /// if the closure returns `Err`.
-    ///
-    /// This operation cannot fail as the `MappedRwLockWriteGuard` passed
-    /// in already locked the data.
     ///
     /// This is an associated function that needs to be
     /// used as `MappedRwLockWriteGuard::try_map_or_err(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map_or_err<U: ?Sized, F, E>(
-        s: Self,
+        mut s: Self,
         f: F,
     ) -> Result<MappedRwLockWriteGuard<'a, R, U>, (Self, E)>
     where
         F: FnOnce(&mut T) -> Result<&mut U, E>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data.as_ptr() }) {
+        let data = match f(unsafe { s.data.as_mut() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
+        let data = ExclusiveGuardData::new(data);
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {
             raw,
-            data: ExclusiveGuardData::new(data),
+            data,
             marker: PhantomData,
         })
     }
@@ -3037,14 +3045,14 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> Deref for MappedRwLockWriteGuard<'a,
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data.as_ptr() }
+        unsafe { self.data.as_ref() }
     }
 }
 
 impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> DerefMut for MappedRwLockWriteGuard<'a, R, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.as_ptr() }
+        unsafe { self.data.as_mut() }
     }
 }
 

@@ -66,21 +66,14 @@ use crate::raw_fair_mutex::RawFairMutex;
 /// ```
 pub type FairMutex<T> = lock_api::Mutex<RawFairMutex, T>;
 
-/// Creates a new fair mutex in an unlocked state ready for use.
-///
-/// This allows creating a fair mutex in a constant context on stable Rust.
-pub const fn const_fair_mutex<T>(val: T) -> FairMutex<T> {
-    FairMutex::const_new(<RawFairMutex as lock_api::RawMutex>::INIT, val)
-}
-
-/// An RAII implementation of a "scoped lock" of a mutex. When this structure is
-/// dropped (falls out of scope), the lock will be unlocked.
+/// An RAII guard which unlocks the mutex when dropped.
 ///
 /// The data protected by the mutex can be accessed through this guard via its
-/// `Deref` and `DerefMut` implementations.
+/// [`Deref`](core::ops::Deref) and [`DerefMut`](core::ops::DerefMut)
+/// implementations.
 pub type FairMutexGuard<'a, T> = lock_api::MutexGuard<'a, RawFairMutex, T>;
 
-/// An RAII mutex guard returned by `FairMutexGuard::map`, which can point to a
+/// An RAII mutex guard returned by [`FairMutexGuard::map`], which can point to a
 /// subfield of the protected data.
 ///
 /// The main difference between `MappedFairMutexGuard` and `FairMutexGuard` is that the

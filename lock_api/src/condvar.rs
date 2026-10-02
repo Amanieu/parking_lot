@@ -120,20 +120,19 @@ where
     }
 }
 
-/// A type indicating whether a timed wait on a condition variable returned
-/// due to a time out or not.
+/// A type indicating whether a timed wait on a condition variable timed out.
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct WaitTimeoutResult(bool);
 
 impl WaitTimeoutResult {
-    /// Returns whether the wait was known to have timed out.
+    /// Returns `true` if the wait was known to have timed out.
     #[inline]
-    pub fn timed_out(self) -> bool {
+    pub const fn timed_out(self) -> bool {
         self.0
     }
 }
 
-/// A Condition Variable
+/// A condition variable.
 ///
 /// Condition variables represent the ability to block a thread such that it
 /// consumes no CPU time while waiting for an event to occur. Condition

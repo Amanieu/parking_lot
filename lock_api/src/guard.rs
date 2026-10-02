@@ -1,15 +1,17 @@
+use core::ptr::NonNull;
+
 /// A raw pointer carrying shared guard access to `T`.
-pub(crate) struct SharedGuardData<T: ?Sized>(*const T);
+pub(crate) struct SharedGuardData<T: ?Sized>(NonNull<T>);
 
 impl<T: ?Sized> SharedGuardData<T> {
     #[inline]
-    pub(crate) fn new(data: *const T) -> Self {
-        Self(data)
+    pub(crate) fn new(data: &T) -> Self {
+        Self(NonNull::from(data))
     }
 
     #[inline]
-    pub(crate) fn as_ptr(&self) -> *const T {
-        self.0
+    pub(crate) unsafe fn as_ref(&self) -> &T {
+        unsafe { self.0.as_ref() }
     }
 }
 
@@ -21,17 +23,24 @@ unsafe impl<T: Sync + ?Sized> Send for SharedGuardData<T> {}
 unsafe impl<T: Sync + ?Sized> Sync for SharedGuardData<T> {}
 
 /// A raw pointer carrying exclusive guard access to `T`.
+// This deliberately uses `*mut T` instead of `NonNull<T>` to preserve the
+// invariance of exclusive access over `T`.
 pub(crate) struct ExclusiveGuardData<T: ?Sized>(*mut T);
 
 impl<T: ?Sized> ExclusiveGuardData<T> {
     #[inline]
-    pub(crate) fn new(data: *mut T) -> Self {
+    pub(crate) fn new(data: &mut T) -> Self {
         Self(data)
     }
 
     #[inline]
-    pub(crate) fn as_ptr(&self) -> *mut T {
-        self.0
+    pub(crate) unsafe fn as_ref(&self) -> &T {
+        unsafe { self.0.as_ref_unchecked() }
+    }
+
+    #[inline]
+    pub(crate) unsafe fn as_mut(&mut self) -> &mut T {
+        unsafe { self.0.as_mut_unchecked() }
     }
 }
 

@@ -259,18 +259,6 @@ impl<R, G, T> ReentrantMutex<R, G, T> {
         }
     }
 
-    /// Creates a new reentrant mutex based on a pre-existing raw mutex and a
-    /// helper to get the thread ID.
-    ///
-    /// This allows creating a reentrant mutex in a constant context on stable
-    /// Rust.
-    ///
-    /// This method is a legacy alias for [`from_raw`](Self::from_raw).
-    #[inline]
-    pub const fn const_new(raw_mutex: R, get_thread_id: G, val: T) -> ReentrantMutex<R, G, T> {
-        Self::from_raw(raw_mutex, get_thread_id, val)
-    }
-
     /// Consumes this mutex, returning the underlying data, raw mutex and
     /// thread ID helper.
     #[inline]
@@ -338,14 +326,20 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
 
     /// Returns a mutable reference to the underlying data.
     ///
-    /// Since this call borrows the `ReentrantMutex` mutably, no actual locking needs to
-    /// take place---the mutable borrow statically guarantees no locks exist.
+    /// Since this call borrows the `ReentrantMutex` mutably, no actual locking
+    /// needs to take place -- the mutable borrow statically guarantees no new
+    /// locks can be acquired while the reference exists. This method does not
+    /// clear a lock previously abandoned by forgetting a
+    /// [`ReentrantMutexGuard`].
     #[inline]
-    pub fn get_mut(&mut self) -> &mut T {
-        unsafe { &mut *self.data.get() }
+    pub const fn get_mut(&mut self) -> &mut T {
+        self.data.get_mut()
     }
 
     /// Checks whether the mutex is currently locked.
+    ///
+    /// The result is a momentary snapshot and may be stale by the time it is
+    /// returned.
     #[inline]
     #[track_caller]
     pub fn is_locked(&self) -> bool {
@@ -392,18 +386,14 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
 
     /// Returns a raw pointer to the underlying data.
     ///
-    /// This is useful when combined with `mem::forget` to hold a lock without
-    /// the need to maintain a `ReentrantMutexGuard` object alive, for example
-    /// when dealing with FFI.
-    ///
-    /// # Safety
-    ///
-    /// You must ensure that there are no data races when dereferencing the
-    /// returned pointer, for example if the current thread logically owns a
-    /// `ReentrantMutexGuard` but that guard has been discarded using
-    /// `mem::forget`.
+    /// The returned pointer is always non-null and properly aligned, but the
+    /// caller must ensure that accesses through it are valid and properly
+    /// synchronized and that the pointer is not used after the mutex is
+    /// dropped. In particular, writing requires exclusive access to the data;
+    /// merely holding the reentrant mutex does not provide that because
+    /// multiple guards can coexist on the same thread.
     #[inline]
-    pub fn data_ptr(&self) -> *mut T {
+    pub const fn data_ptr(&self) -> *mut T {
         self.data.get()
     }
 
@@ -650,19 +640,20 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
 
     /// Makes a new `MappedReentrantMutexGuard` for a component of the locked data.
     ///
-    /// This operation cannot fail as the `ReentrantMutexGuard` passed
-    /// in already locked the mutex.
-    ///
     /// This is an associated function that needs to be
     /// used as `ReentrantMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedReentrantMutexGuard<'a, R, G, U>
     where
         F: FnOnce(&T) -> &U,
     {
         let raw = &s.remutex.raw;
-        let data = f(unsafe { &*s.remutex.data.get() });
+        let data = f(unsafe { s.remutex.data.get().as_ref_unchecked() });
         mem::forget(s);
         MappedReentrantMutexGuard {
             raw,
@@ -689,7 +680,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = &s.remutex.raw;
-        let Some(data) = f(unsafe { &*s.remutex.data.get() }) else {
+        let Some(data) = f(unsafe { s.remutex.data.get().as_ref_unchecked() }) else {
             return Err(s);
         };
         mem::forget(s);
@@ -719,7 +710,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         F: FnOnce(&T) -> Result<&U, E>,
     {
         let raw = &s.remutex.raw;
-        let data = match f(unsafe { &*s.remutex.data.get() }) {
+        let data = match f(unsafe { s.remutex.data.get().as_ref_unchecked() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
@@ -814,7 +805,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Deref
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.remutex.data.get() }
+        unsafe { self.remutex.data.get().as_ref_unchecked() }
     }
 }
 
@@ -961,7 +952,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> Deref for ArcReentrantMutexGuard<R,
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.remutex.data.get() }
+        unsafe { self.remutex.data.get().as_ref_unchecked() }
     }
 }
 
@@ -996,36 +987,38 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
 {
     /// Makes a new `MappedReentrantMutexGuard` for a component of the locked data.
     ///
-    /// This operation cannot fail as the `MappedReentrantMutexGuard` passed
-    /// in already locked the mutex.
-    ///
     /// This is an associated function that needs to be
     /// used as `MappedReentrantMutexGuard::map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn map<U: ?Sized, F>(s: Self, f: F) -> MappedReentrantMutexGuard<'a, R, G, U>
     where
         F: FnOnce(&T) -> &U,
     {
         let raw = s.raw;
-        let data = f(unsafe { &*s.data.as_ptr() });
+        let data = SharedGuardData::new(f(unsafe { s.data.as_ref() }));
         mem::forget(s);
         MappedReentrantMutexGuard {
             raw,
-            data: SharedGuardData::new(data),
+            data,
             marker: PhantomData,
         }
     }
 
-    /// Attempts to make  a new `MappedReentrantMutexGuard` for a component of the
-    /// locked data. The original guard is return if the closure returns `None`.
-    ///
-    /// This operation cannot fail as the `MappedReentrantMutexGuard` passed
-    /// in already locked the mutex.
+    /// Attempts to make a new `MappedReentrantMutexGuard` for a component of the
+    /// locked data. The original guard is returned if the closure returns `None`.
     ///
     /// This is an associated function that needs to be
     /// used as `MappedReentrantMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map<U: ?Sized, F>(
         s: Self,
@@ -1035,27 +1028,29 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = s.raw;
-        let Some(data) = f(unsafe { &*s.data.as_ptr() }) else {
+        let Some(data) = f(unsafe { s.data.as_ref() }) else {
             return Err(s);
         };
+        let data = SharedGuardData::new(data);
         mem::forget(s);
         Ok(MappedReentrantMutexGuard {
             raw,
-            data: SharedGuardData::new(data),
+            data,
             marker: PhantomData,
         })
     }
 
-    /// Attempts to make  a new `MappedReentrantMutexGuard` for a component of the
+    /// Attempts to make a new `MappedReentrantMutexGuard` for a component of the
     /// locked data. The original guard is returned alongside arbitrary user data
     /// if the closure returns `Err`.
-    ///
-    /// This operation cannot fail as the `MappedReentrantMutexGuard` passed
-    /// in already locked the mutex.
     ///
     /// This is an associated function that needs to be
     /// used as `MappedReentrantMutexGuard::try_map_or_err(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map_or_err<U: ?Sized, F, E>(
         s: Self,
@@ -1065,14 +1060,15 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
         F: FnOnce(&T) -> Result<&U, E>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &*s.data.as_ptr() }) {
+        let data = match f(unsafe { s.data.as_ref() }) {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
+        let data = SharedGuardData::new(data);
         mem::forget(s);
         Ok(MappedReentrantMutexGuard {
             raw,
-            data: SharedGuardData::new(data),
+            data,
             marker: PhantomData,
         })
     }
@@ -1110,7 +1106,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> Deref
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        unsafe { &*self.data.as_ptr() }
+        unsafe { self.data.as_ref() }
     }
 }
 

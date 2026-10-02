@@ -35,9 +35,9 @@ Notable features of the primitives provided by this library include:
    starvation, whereas the standard library version makes no guarantees.
 6. `Condvar` is guaranteed not to produce spurious wakeups. A thread will
     only be woken up if it timed out or it was woken up by a notification.
-7. `Condvar::notify_all` will only wake up a single thread and requeue the
-    rest to wait on the associated `Mutex`. This avoids a thundering herd
-    problem where all threads try to acquire the lock at the same time.
+7. `Condvar::notify_all` requeues waiters directly onto the associated `Mutex`
+   and wakes them as the lock becomes available. This avoids a thundering herd
+   where every thread immediately tries to acquire the mutex.
 8. `RwLock` supports atomically downgrading a write lock into a read lock.
 9. `Mutex` and `RwLock` allow raw unlocking without a RAII guard object.
 10. `Mutex<()>` and `RwLock<()>` allow raw locking without a RAII guard
@@ -62,9 +62,9 @@ Notable features of the primitives provided by this library include:
 
 To keep these primitives small, all thread queuing and suspending
 functionality is offloaded to the *parking lot*. The idea behind this is
-based on the Webkit [`WTF::ParkingLot`](https://webkit.org/blog/6161/locking-in-webkit/)
+based on the WebKit [`WTF::ParkingLot`](https://webkit.org/blog/6161/locking-in-webkit/)
 class, which essentially consists of a hash table mapping of lock addresses
-to queues of parked (sleeping) threads. The Webkit parking lot was itself
+to queues of parked (sleeping) threads. The WebKit parking lot was itself
 inspired by Linux [futexes](https://man7.org/linux/man-pages/man2/futex.2.html),
 but it is more powerful since it allows invoking callbacks while holding a queue
 lock.

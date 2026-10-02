@@ -33,8 +33,8 @@ type GuardMarker = lock_api::GuardSend;
 type GuardMarker = lock_api::GuardNoSend;
 
 pub use self::condvar::{Condvar, WaitTimeoutResult};
-pub use self::fair_mutex::{FairMutex, FairMutexGuard, MappedFairMutexGuard, const_fair_mutex};
-pub use self::mutex::{MappedMutexGuard, Mutex, MutexGuard, const_mutex};
+pub use self::fair_mutex::{FairMutex, FairMutexGuard, MappedFairMutexGuard};
+pub use self::mutex::{MappedMutexGuard, Mutex, MutexGuard};
 pub use self::once::{Once, OnceState};
 pub use self::raw_condvar::RawCondvar;
 pub use self::raw_fair_mutex::RawFairMutex;
@@ -46,11 +46,10 @@ pub use self::recursive_rwlock::{
 };
 pub use self::remutex::{
     MappedReentrantMutexGuard, RawThreadId, ReentrantMutex, ReentrantMutexGuard,
-    const_reentrant_mutex,
 };
 pub use self::rwlock::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
-    RwLockUpgradableReadGuard, RwLockWriteGuard, const_rwlock,
+    RwLockUpgradableReadGuard, RwLockWriteGuard,
 };
 pub use ::lock_api;
 

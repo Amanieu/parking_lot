@@ -20,38 +20,42 @@ unsafe impl GetThreadId for RawThreadId {
     }
 }
 
-/// A mutex which can be recursively locked by a single thread.
+/// A reentrant mutual exclusion lock.
 ///
-/// This type is identical to `Mutex` except for the following points:
+/// This lock blocks other threads waiting for it to become available. A thread
+/// which already holds the lock can acquire it additional times without
+/// blocking.
 ///
-/// - Locking multiple times from the same thread will work correctly instead of
-///   deadlocking.
-/// - `ReentrantMutexGuard` does not give mutable references to the locked data.
-///   Use a `RefCell` if you need this.
+/// Unlike [`Mutex`](crate::Mutex), [`ReentrantMutexGuard`] does not provide
+/// mutable references to the locked data, because multiple guards can coexist
+/// on the same thread. Use interior mutability, such as [`RefCell`](core::cell::RefCell),
+/// to mutate the guarded data.
 ///
 /// See [`Mutex`](crate::Mutex) for more details about the underlying mutex
 /// primitive.
+///
+/// # Examples
+///
+/// ```
+/// use parking_lot::ReentrantMutex;
+/// use std::cell::RefCell;
+///
+/// let lock = ReentrantMutex::new(RefCell::new(0));
+/// let first = lock.lock();
+/// let second = lock.lock();
+/// *first.borrow_mut() += 1;
+/// *second.borrow_mut() += 1;
+/// assert_eq!(*lock.lock().borrow(), 2);
+/// ```
 pub type ReentrantMutex<T> = lock_api::ReentrantMutex<RawMutex, RawThreadId, T>;
 
-/// Creates a new reentrant mutex in an unlocked state ready for use.
-///
-/// This allows creating a reentrant mutex in a constant context on stable Rust.
-pub const fn const_reentrant_mutex<T>(val: T) -> ReentrantMutex<T> {
-    ReentrantMutex::const_new(
-        <RawMutex as lock_api::RawMutex>::INIT,
-        <RawThreadId as lock_api::GetThreadId>::INIT,
-        val,
-    )
-}
-
-/// An RAII implementation of a "scoped lock" of a reentrant mutex. When this structure
-/// is dropped (falls out of scope), the lock will be unlocked.
+/// An RAII guard which releases one level of recursive locking when dropped.
 ///
 /// The data protected by the mutex can be accessed through this guard via its
-/// `Deref` implementation.
+/// [`Deref`](core::ops::Deref) implementation.
 pub type ReentrantMutexGuard<'a, T> = lock_api::ReentrantMutexGuard<'a, RawMutex, RawThreadId, T>;
 
-/// An RAII mutex guard returned by `ReentrantMutexGuard::map`, which can point to a
+/// An RAII mutex guard returned by [`ReentrantMutexGuard::map`], which can point to a
 /// subfield of the protected data.
 ///
 /// The main difference between `MappedReentrantMutexGuard` and `ReentrantMutexGuard` is that the
