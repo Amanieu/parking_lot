@@ -35,8 +35,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// # Safety
 ///
 /// Implementations of this trait must ensure that no two active threads share
-/// the same thread ID. However the ID of a thread that has exited can be
-/// reused since that thread is no longer active.
+/// the same thread ID. Repeated calls on the same `GetThreadId` value from the
+/// same active thread must return the same thread ID. However the ID of a
+/// thread that has exited can be reused since that thread is no longer active.
 pub unsafe trait GetThreadId {
     /// Initial value.
     // A “non-constant” const item is a legacy way to supply an initialized value to downstream
@@ -296,6 +297,11 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ///
     /// Calling this function when a guard has already been produced is undefined behavior unless
     /// the guard was forgotten with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[inline]
     pub unsafe fn make_guard_unchecked(&self) -> ReentrantMutexGuard<'_, R, G, T> {
         ReentrantMutexGuard {
@@ -389,6 +395,10 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// `ReentrantMutexGuard` but that guard has been discarded using
     /// `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
+    ///
+    /// The caller must ensure that releasing the lock does not invalidate any
+    /// outstanding references to the protected data. Any subsequent access
+    /// through previously obtained pointers must be properly synchronized.
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock(&self) {
@@ -402,8 +412,12 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ///
     /// # Safety
     ///
-    /// This method is unsafe because it allows unlocking a mutex while
-    /// still holding a reference to a `ReentrantMutexGuard`.
+    /// The caller must ensure that operations on the raw lock preserve the
+    /// validity of all live guards and references to the protected data.
+    /// A guard must not be used or dropped while its lock is released, and any
+    /// access through previously obtained pointers must be properly synchronized.
+    /// Raw operations must also preserve the reentrant mutex's owner and
+    /// recursion count bookkeeping.
     #[inline]
     pub unsafe fn raw(&self) -> &R {
         &self.raw.mutex
@@ -430,6 +444,11 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ///
     /// Calling this function when a guard has already been produced is undefined behavior unless
     /// the guard was forgotten with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[cfg(feature = "arc_lock")]
     #[inline]
     pub unsafe fn make_arc_guard_unchecked(self: &Arc<Self>) -> ArcReentrantMutexGuard<R, G, T> {
@@ -491,6 +510,10 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// `ReentrantMutexGuard` but that guard has been discarded using
     /// `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
+    ///
+    /// The caller must ensure that releasing the lock does not invalidate any
+    /// outstanding references to the protected data. Any subsequent access
+    /// through previously obtained pointers must be properly synchronized.
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_fair(&self) {

@@ -35,6 +35,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// operations must have release semantics. These requirements also apply to
 /// equivalent operations provided by subtraits.
 ///
+/// A raw mutex may be moved or dropped while locked. Implementations must
+/// remain sound when this happens.
+///
 /// Methods which acquire the mutex may unwind, but if they do then the current
 /// context must not acquire the mutex. Methods which release or temporarily
 /// yield the mutex must not unwind.
@@ -205,6 +208,11 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     ///
     /// Calling this function when a guard has already been produced is undefined behavior unless
     /// the guard was forgotten with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[inline]
     pub unsafe fn make_guard_unchecked(&self) -> MutexGuard<'_, R, T> {
         MutexGuard {
@@ -286,6 +294,10 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// This method must only be called if the current thread logically owns a
     /// `MutexGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
+    ///
+    /// The caller must ensure that releasing the lock does not invalidate any
+    /// outstanding references to the protected data. Any subsequent access
+    /// through previously obtained pointers must be properly synchronized.
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock(&self) {
@@ -299,8 +311,10 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     ///
     /// # Safety
     ///
-    /// This method is unsafe because it allows unlocking a mutex while
-    /// still holding a reference to a `MutexGuard`.
+    /// The caller must ensure that operations on the raw lock preserve the
+    /// validity of all live guards and references to the protected data.
+    /// A guard must not be used or dropped while its lock is released, and any
+    /// access through previously obtained pointers must be properly synchronized.
     #[inline]
     pub unsafe fn raw(&self) -> &R {
         &self.raw
@@ -325,6 +339,11 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     ///
     /// Calling this function when a guard has already been produced is undefined behavior unless
     /// the guard was forgotten with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[cfg(feature = "arc_lock")]
     #[inline]
     unsafe fn make_arc_guard_unchecked(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
@@ -377,6 +396,10 @@ impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
     /// This method must only be called if the current thread logically owns a
     /// `MutexGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
+    ///
+    /// The caller must ensure that releasing the lock does not invalidate any
+    /// outstanding references to the protected data. Any subsequent access
+    /// through previously obtained pointers must be properly synchronized.
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_fair(&self) {

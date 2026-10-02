@@ -36,6 +36,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// must have release semantics. These requirements also apply to equivalent
 /// operations provided by subtraits.
 ///
+/// A raw reader-writer lock may be moved or dropped while locked.
+/// Implementations must remain sound when this happens.
+///
 /// Methods which acquire a new lock may unwind, but if they do then the current
 /// context must not acquire the requested lock. Methods which release or
 /// temporarily yield a held lock must not unwind. Upgrade and downgrade methods
@@ -253,6 +256,8 @@ pub unsafe trait RawRwLockUpgrade: RawRwLock {
     /// Attempts to upgrade an upgradable lock to an exclusive lock without
     /// blocking.
     ///
+    /// If this method returns `false`, the upgradable lock must remain held.
+    ///
     /// # Safety
     ///
     /// This method may only be called if an upgradable lock is held in the current context.
@@ -340,6 +345,8 @@ pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
     ///
     /// See [`RawRwLockTimed::try_lock_exclusive_for`] for timeout behavior.
     ///
+    /// If this method returns `false`, the upgradable lock must remain held.
+    ///
     /// # Safety
     ///
     /// This method may only be called if an upgradable lock is held in the current context.
@@ -349,6 +356,8 @@ pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
     /// timeout is reached.
     ///
     /// See [`RawRwLockTimed::try_lock_exclusive_until`] for timeout behavior.
+    ///
+    /// If this method returns `false`, the upgradable lock must remain held.
     ///
     /// # Safety
     ///
@@ -450,6 +459,11 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// This function does not increment the read count of the lock. Calling this function when a
     /// guard has already been produced is undefined behavior unless the guard was forgotten
     /// with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[inline]
     pub unsafe fn make_read_guard_unchecked(&self) -> RwLockReadGuard<'_, R, T> {
         RwLockReadGuard {
@@ -466,6 +480,11 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     ///
     /// Calling this function when a guard has already been produced is undefined behavior unless
     /// the guard was forgotten with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[inline]
     pub unsafe fn make_write_guard_unchecked(&self) -> RwLockWriteGuard<'_, R, T> {
         RwLockWriteGuard {
@@ -609,6 +628,10 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// This method must only be called if the current thread logically owns a
     /// `RwLockReadGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a rwlock is read-unlocked when not read-locked.
+    ///
+    /// The caller must ensure that releasing the lock does not invalidate any
+    /// outstanding references to the protected data. Any subsequent access
+    /// through previously obtained pointers must be properly synchronized.
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_read(&self) {
@@ -626,6 +649,10 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// This method must only be called if the current thread logically owns a
     /// `RwLockWriteGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a rwlock is write-unlocked when not write-locked.
+    ///
+    /// The caller must ensure that releasing the lock does not invalidate any
+    /// outstanding references to the protected data. Any subsequent access
+    /// through previously obtained pointers must be properly synchronized.
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_write(&self) {
@@ -640,8 +667,10 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     ///
     /// # Safety
     ///
-    /// This method is unsafe because it allows unlocking a reader-writer lock while
-    /// still holding a reference to a lock guard.
+    /// The caller must ensure that operations on the raw lock preserve the
+    /// validity of all live guards and references to the protected data.
+    /// A guard must not be used or dropped while its lock is released, and any
+    /// access through previously obtained pointers must be properly synchronized.
     pub unsafe fn raw(&self) -> &R {
         &self.raw
     }
@@ -666,6 +695,11 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     /// This function does not increment the read count of the lock. Calling this function when a
     /// guard has already been produced is undefined behavior unless the guard was forgotten
     /// with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[cfg(feature = "arc_lock")]
     #[inline]
     pub unsafe fn make_arc_read_guard_unchecked(self: &Arc<Self>) -> ArcRwLockReadGuard<R, T> {
@@ -683,6 +717,11 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     ///
     /// Calling this function when a guard has already been produced is undefined behavior unless
     /// the guard was forgotten with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[cfg(feature = "arc_lock")]
     #[inline]
     pub unsafe fn make_arc_write_guard_unchecked(self: &Arc<Self>) -> ArcRwLockWriteGuard<R, T> {
@@ -773,6 +812,10 @@ impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
     /// This method must only be called if the current thread logically owns a
     /// `RwLockReadGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a rwlock is read-unlocked when not read-locked.
+    ///
+    /// The caller must ensure that releasing the lock does not invalidate any
+    /// outstanding references to the protected data. Any subsequent access
+    /// through previously obtained pointers must be properly synchronized.
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_read_fair(&self) {
@@ -790,6 +833,10 @@ impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
     /// This method must only be called if the current thread logically owns a
     /// `RwLockWriteGuard` but that guard has been discarded using `mem::forget`.
     /// Behavior is undefined if a rwlock is write-unlocked when not write-locked.
+    ///
+    /// The caller must ensure that releasing the lock does not invalidate any
+    /// outstanding references to the protected data. Any subsequent access
+    /// through previously obtained pointers must be properly synchronized.
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_write_fair(&self) {
@@ -989,6 +1036,11 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     /// This function does not increment the read count of the lock. Calling this function when a
     /// guard has already been produced is undefined behavior unless the guard was forgotten
     /// with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[inline]
     pub unsafe fn make_upgradable_guard_unchecked(&self) -> RwLockUpgradableReadGuard<'_, R, T> {
         RwLockUpgradableReadGuard {
@@ -1051,6 +1103,11 @@ impl<R: RawRwLockUpgrade, T: ?Sized> RwLock<R, T> {
     /// This function does not increment the read count of the lock. Calling this function when a
     /// guard has already been produced is undefined behavior unless the guard was forgotten
     /// with `mem::forget`.
+    ///
+    /// The caller must ensure that existing references to the protected data
+    /// remain valid when the returned guard is used or dropped. In particular,
+    /// the returned guard must not permit accesses that conflict with existing
+    /// references.
     #[cfg(feature = "arc_lock")]
     #[inline]
     pub unsafe fn make_upgradable_arc_guard_unchecked(
