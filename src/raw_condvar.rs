@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::raw_mutex::{RawMutex, TOKEN_HANDOFF, TOKEN_NORMAL};
 use crate::{deadlock, util};
 use core::{
@@ -12,17 +5,16 @@ use core::{
     sync::atomic::{AtomicPtr, Ordering},
 };
 use lock_api::RawMutex as RawMutex_;
-use parking_lot_core::{self, ParkResult, RequeueOp, UnparkResult, DEFAULT_PARK_TOKEN};
+use parking_lot_core::{self, DEFAULT_PARK_TOKEN, ParkResult, RequeueOp, UnparkResult};
 use std::time::{Duration, Instant};
 
-/// A Raw Condition Variable
+/// A raw condition variable.
 pub struct RawCondvar {
     state: AtomicPtr<RawMutex>,
 }
 
-// SAFETY:
-// Implementation will safely panic when used on different `RawMutex`'s
-// simultaneously.
+// SAFETY: Waiting atomically releases and re-acquires the mutex, does not wake
+// spuriously, and safely panics if used with distinct mutexes simultaneously.
 unsafe impl lock_api::RawCondvar for RawCondvar {
     const INIT: Self = RawCondvar {
         state: AtomicPtr::new(ptr::null_mut()),
@@ -57,9 +49,8 @@ unsafe impl lock_api::RawCondvar for RawCondvar {
     }
 }
 
-// SAFETY:
-// Implementation will safely panic when used on different `RawMutex`'s
-// simultaneously.
+// SAFETY: The timed waits uphold the same requirements as the untimed wait and
+// accurately distinguish notification from timeout.
 unsafe impl lock_api::RawCondvarTimed for RawCondvar {
     fn checked_duration_to_instant(timeout: &Duration) -> Option<Instant> {
         util::to_deadline(*timeout)
@@ -79,8 +70,8 @@ impl RawCondvar {
     #[cold]
     fn notify_one_slow(&self, mutex: *mut RawMutex) -> bool {
         // Unpark one thread and requeue the rest onto the mutex
-        let from = self as *const _ as usize;
-        let to = mutex as usize;
+        let from = ptr::from_ref(self).addr();
+        let to = mutex.addr();
         let validate = || {
             // Make sure that our atomic state still points to the same
             // mutex. If not then it means that all threads on the current
@@ -118,8 +109,8 @@ impl RawCondvar {
     #[cold]
     fn notify_all_slow(&self, mutex: *mut RawMutex) -> usize {
         // Unpark one thread and requeue the rest onto the mutex
-        let from = self as *const _ as usize;
-        let to = mutex as usize;
+        let from = ptr::from_ref(self).addr();
+        let to = mutex.addr();
         let validate = || {
             // Make sure that our atomic state still points to the same
             // mutex. If not then it means that all threads on the current
@@ -166,7 +157,7 @@ impl RawCondvar {
         let mut bad_mutex = false;
         let mut requeued = false;
         {
-            let addr = self as *const _ as usize;
+            let addr = ptr::from_ref(self).addr();
             let lock_addr = mutex as *const _ as *mut _;
             let validate = || {
                 // Ensure we don't use two different mutexes with the same
@@ -219,7 +210,7 @@ impl RawCondvar {
 
         // ... and re-lock it once we are done sleeping
         if result == ParkResult::Unparked(TOKEN_HANDOFF) {
-            unsafe { deadlock::acquire_resource(mutex as *const _ as usize) };
+            unsafe { deadlock::acquire_resource(ptr::from_ref(mutex).addr()) };
         } else {
             mutex.lock();
         }

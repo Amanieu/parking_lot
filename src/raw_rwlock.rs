@@ -468,23 +468,19 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
 
     #[cold]
     fn try_lock_shared_slow(&self) -> bool {
-        let mut state = self.state.load(Ordering::Relaxed);
-        loop {
-            if state & WRITER_BIT != 0 && (!RECURSIVE || state & READERS_MASK == 0) {
-                return false;
-            }
-            match self.state.compare_exchange_weak(
-                state,
-                state
-                    .checked_add(ONE_READER)
-                    .expect("RwLock reader count overflow"),
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return true,
-                Err(x) => state = x,
-            }
-        }
+        self.state
+            .try_update(Ordering::Acquire, Ordering::Relaxed, |state| {
+                if state & WRITER_BIT != 0 && (!RECURSIVE || state & READERS_MASK == 0) {
+                    None
+                } else {
+                    Some(
+                        state
+                            .checked_add(ONE_READER)
+                            .expect("RwLock reader count overflow"),
+                    )
+                }
+            })
+            .is_ok()
     }
 
     #[inline(always)]
@@ -508,25 +504,20 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
 
     #[cold]
     fn try_lock_upgradable_slow(&self) -> bool {
-        let mut state = self.state.load(Ordering::Relaxed);
-        loop {
-            // This mirrors the condition in try_lock_upgradable_fast
-            if state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
-                return false;
-            }
-
-            match self.state.compare_exchange_weak(
-                state,
-                state
-                    .checked_add(ONE_READER | UPGRADABLE_BIT)
-                    .expect("RwLock reader count overflow"),
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return true,
-                Err(x) => state = x,
-            }
-        }
+        self.state
+            .try_update(Ordering::Acquire, Ordering::Relaxed, |state| {
+                // This mirrors the condition in try_lock_upgradable_fast.
+                if state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
+                    None
+                } else {
+                    Some(
+                        state
+                            .checked_add(ONE_READER | UPGRADABLE_BIT)
+                            .expect("RwLock reader count overflow"),
+                    )
+                }
+            })
+            .is_ok()
     }
 
     #[cold]
@@ -753,21 +744,12 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
 
     #[cold]
     fn try_upgrade_slow(&self) -> bool {
-        let mut state = self.state.load(Ordering::Relaxed);
-        loop {
-            if state & READERS_MASK != ONE_READER {
-                return false;
-            }
-            match self.state.compare_exchange_weak(
-                state,
-                state - (ONE_READER | UPGRADABLE_BIT) + WRITER_BIT,
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return true,
-                Err(x) => state = x,
-            }
-        }
+        self.state
+            .try_update(Ordering::Acquire, Ordering::Relaxed, |state| {
+                (state & READERS_MASK == ONE_READER)
+                    .then_some(state - (ONE_READER | UPGRADABLE_BIT) + WRITER_BIT)
+            })
+            .is_ok()
     }
 
     #[cold]

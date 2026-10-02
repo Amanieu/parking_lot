@@ -1,7 +1,7 @@
 use core::{
     ffi,
     mem::{self, MaybeUninit},
-    ptr,
+    ptr::{self, NonNull},
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -28,6 +28,10 @@ pub struct KeyedEvent {
         Timeout: *mut i64,
     ) -> NTSTATUS,
 }
+
+// SAFETY: Keyed-event handles may be used from any thread, including concurrently.
+unsafe impl Send for KeyedEvent {}
+unsafe impl Sync for KeyedEvent {}
 
 impl KeyedEvent {
     #[inline]
@@ -129,12 +133,12 @@ impl KeyedEvent {
         // If the state was STATE_PARKED then we need to wake up the thread
         if key.swap(STATE_UNPARKED, Ordering::Relaxed) == STATE_PARKED {
             UnparkHandle {
-                key: key,
+                key: Some(NonNull::from(key)),
                 keyed_event: self,
             }
         } else {
             UnparkHandle {
-                key: ptr::null(),
+                key: None,
                 keyed_event: self,
             }
         }
@@ -155,7 +159,7 @@ impl Drop for KeyedEvent {
 // as unparked while holding the queue lock, but we delay the actual unparking
 // until after the queue lock is released.
 pub struct UnparkHandle {
-    key: *const AtomicUsize,
+    key: Option<NonNull<AtomicUsize>>,
     keyed_event: &'static KeyedEvent,
 }
 
@@ -164,8 +168,8 @@ impl UnparkHandle {
     // released to avoid blocking the queue for too long.
     #[inline]
     pub unsafe fn unpark(self) {
-        if !self.key.is_null() {
-            let status = unsafe { self.keyed_event.release(self.key as *mut ffi::c_void) };
+        if let Some(key) = self.key {
+            let status = unsafe { self.keyed_event.release(key.as_ptr().cast::<ffi::c_void>()) };
             debug_assert_eq!(status, STATUS_SUCCESS);
         }
     }

@@ -2,12 +2,12 @@ use std::time::Instant;
 
 /// Trait for the platform thread parker implementation.
 ///
-/// All unsafe methods are unsafe because the Unix thread parker is based on
-/// pthread mutexes and condvars. Those primitives must not be moved and used
-/// from any other memory address than the one they were located at when they
-/// were initialized. As such, it's UB to call any unsafe method on
-/// `ThreadParkerT` if the implementing instance has moved since the last
-/// call to any of the unsafe methods.
+/// The unsafe methods form a protocol and implementations may rely on the
+/// parker remaining at a stable address once it has been used. In particular,
+/// the Unix implementation contains initialized pthread mutexes and condition
+/// variables which must not be moved. Calling an unsafe method after moving the
+/// parker from the address at which a previous unsafe method was called is
+/// undefined behavior.
 pub trait ThreadParkerT {
     type UnparkHandle: UnparkHandleT;
 

@@ -1,4 +1,4 @@
-//! A simple spin lock based thread parker. Used on platforms without better
+//! A simple atomic-flag-based thread parker. Used on platforms without better
 //! parking facilities available.
 
 use core::sync::atomic::{AtomicBool, Ordering};

@@ -3,6 +3,7 @@ use core::ptr;
 use core::{
     cell::{Cell, UnsafeCell},
     mem::MaybeUninit,
+    ptr::NonNull,
 };
 use libc;
 use std::time::Instant;
@@ -116,7 +117,7 @@ impl super::ThreadParkerT for ThreadParker {
         debug_assert_eq!(r, 0);
 
         UnparkHandle {
-            thread_parker: self,
+            thread_parker: NonNull::from(self),
         }
     }
 }
@@ -151,7 +152,7 @@ impl Drop for ThreadParker {
         // On DragonFly pthread_mutex_destroy() returns EINVAL if called on a
         // mutex that was just initialized with libc::PTHREAD_MUTEX_INITIALIZER.
         // Once it is used (locked/unlocked) or pthread_mutex_init() is called,
-        // this behaviour no longer occurs. The same applies to condvars.
+        // this behavior no longer occurs. The same applies to condvars.
         unsafe {
             let r = libc::pthread_mutex_destroy(self.mutex.get());
             debug_assert!(r == 0 || r == libc::EINVAL);
@@ -162,13 +163,13 @@ impl Drop for ThreadParker {
 }
 
 pub struct UnparkHandle {
-    thread_parker: *const ThreadParker,
+    thread_parker: NonNull<ThreadParker>,
 }
 
 impl super::UnparkHandleT for UnparkHandle {
     #[inline]
     unsafe fn unpark(self) {
-        let thread_parker = unsafe { &*self.thread_parker };
+        let thread_parker = unsafe { self.thread_parker.as_ref() };
         thread_parker.should_park.set(false);
 
         // We notify while holding the lock here to avoid races with the target

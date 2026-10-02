@@ -23,9 +23,6 @@ jobs:
           - channel: nightly
             feature: nightly
             os: ubuntu
-          - channel: nightly
-            feature: hardware-lock-elision
-            os: ubuntu
 
     steps:
     - uses: actions/checkout@v4

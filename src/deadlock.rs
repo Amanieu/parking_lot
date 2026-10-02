@@ -1,6 +1,7 @@
 //! \[Experimental\] Deadlock detection
 //!
-//! This feature is optional and can be enabled via the `deadlock_detection` feature flag.
+//! This feature is optional and can be enabled with the `deadlock_detection`
+//! Cargo feature.
 //!
 //! # Example
 //!
@@ -20,11 +21,11 @@
 //!             continue;
 //!         }
 //!
-//!         println!("{} deadlocks detected", deadlocks.len());
+//!         println!("{} deadlock cycles detected", deadlocks.len());
 //!         for (i, threads) in deadlocks.iter().enumerate() {
 //!             println!("Deadlock #{}", i);
 //!             for t in threads {
-//!                 println!("Thread Id {:#?}", t.thread_id());
+//!                 println!("Thread ID {:#?}", t.thread_id());
 //!                 println!("{:#?}", t.backtrace());
 //!             }
 //!         }
@@ -46,7 +47,7 @@ mod tests {
     use std::time::Duration;
 
     // We need to serialize these tests since deadlock detection uses global state
-    static DEADLOCK_DETECTION_LOCK: Mutex<()> = crate::const_mutex(());
+    static DEADLOCK_DETECTION_LOCK: Mutex<()> = Mutex::new(());
 
     fn check_deadlock() -> bool {
         use parking_lot_core::deadlock::check_deadlock;
@@ -74,19 +75,19 @@ mod tests {
         let _t1 = thread::spawn(move || {
             let _g = m1.lock();
             b1.wait();
-            let _ = m2_.lock();
+            let _blocked = m2_.lock();
         });
 
         let _t2 = thread::spawn(move || {
             let _g = m2.lock();
             b2.wait();
-            let _ = m3_.lock();
+            let _blocked = m3_.lock();
         });
 
         let _t3 = thread::spawn(move || {
             let _g = m3.lock();
             b3.wait();
-            let _ = m1_.lock();
+            let _blocked = m1_.lock();
         });
 
         assert!(!check_deadlock());
@@ -108,7 +109,7 @@ mod tests {
 
         let _t1 = thread::spawn(move || {
             let _g = m1.lock();
-            let _ = m1.lock();
+            let _blocked = m1.lock();
         });
 
         sleep(Duration::from_millis(50));
@@ -198,7 +199,7 @@ mod tests {
         let _t3 = thread::spawn(move || {
             let _g = m3.read();
             b3.wait();
-            let _ = m1_.write();
+            let _blocked = m1_.write();
         });
 
         assert!(!check_deadlock());

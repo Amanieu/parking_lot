@@ -1,5 +1,5 @@
 use core::{
-    ptr,
+    ptr::{self, NonNull},
     sync::atomic::{AtomicI32, Ordering},
 };
 use std::thread;
@@ -84,7 +84,9 @@ impl super::ThreadParkerT for ThreadParker {
         // We don't need to lock anything, just clear the state
         self.futex.store(0, Ordering::Release);
 
-        UnparkHandle { futex: &self.futex }
+        UnparkHandle {
+            futex: NonNull::from(&self.futex),
+        }
     }
 }
 
@@ -116,7 +118,7 @@ impl ThreadParker {
 }
 
 pub struct UnparkHandle {
-    futex: *const AtomicI32,
+    futex: NonNull<AtomicI32>,
 }
 
 impl super::UnparkHandleT for UnparkHandle {
@@ -127,7 +129,7 @@ impl super::UnparkHandleT for UnparkHandle {
         let r = unsafe {
             libc::syscall(
                 libc::SYS_futex,
-                self.futex.cast::<u32>(),
+                self.futex.as_ptr().cast::<u32>(),
                 libc::FUTEX_WAKE | libc::FUTEX_PRIVATE_FLAG,
                 1,
             )

@@ -19,13 +19,13 @@ pub struct SpinWait {
 impl SpinWait {
     /// Creates a new `SpinWait`.
     #[inline]
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self { counter: 0 }
     }
 
     /// Resets a `SpinWait` to its initial state.
     #[inline]
-    pub fn reset(&mut self) {
+    pub const fn reset(&mut self) {
         self.counter = 0;
     }
 

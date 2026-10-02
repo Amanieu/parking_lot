@@ -34,11 +34,11 @@ pub struct RawMutex {
     ///     0      |     1      | The mutex is locked by exactly one thread. No other thread is
     ///            |            | waiting for it.
     /// -----------+------------+------------------------------------------------------------------
-    ///     1      |     0      | The mutex is not locked. One or more thread is parked or about to
-    ///            |            | park. At least one of the parked threads are just about to be
+    ///     1      |     0      | The mutex is not locked. One or more threads are parked or about to
+    ///            |            | park. At least one of the parked threads is just about to be
     ///            |            | unparked, or a thread heading for parking might abort the park.
     /// -----------+------------+------------------------------------------------------------------
-    ///     1      |     1      | The mutex is locked by exactly one thread. One or more thread is
+    ///     1      |     1      | The mutex is locked by exactly one thread. One or more threads are
     ///            |            | parked or about to park, waiting for the lock to become available.
     ///            |            | In this state, PARKED_BIT is only ever cleared when a bucket lock
     ///            |            | is held (i.e. in a parking_lot_core callback). This ensures that
@@ -69,23 +69,17 @@ unsafe impl lock_api::RawMutex for RawMutex {
 
     #[inline]
     fn try_lock(&self) -> bool {
-        let mut state = self.state.load(Ordering::Relaxed);
-        loop {
-            if state & LOCKED_BIT != 0 {
-                return false;
-            }
-            match self.state.compare_exchange_weak(
-                state,
-                state | LOCKED_BIT,
-                Ordering::Acquire,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => {
-                    unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
-                    return true;
-                }
-                Err(x) => state = x,
-            }
+        if self
+            .state
+            .try_update(Ordering::Acquire, Ordering::Relaxed, |state| {
+                (state & LOCKED_BIT == 0).then_some(state | LOCKED_BIT)
+            })
+            .is_ok()
+        {
+            unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
+            true
+        } else {
+            false
         }
     }
 
@@ -175,21 +169,11 @@ impl RawMutex {
     // holding the queue lock.
     #[inline]
     pub(crate) fn mark_parked_if_locked(&self) -> bool {
-        let mut state = self.state.load(Ordering::Relaxed);
-        loop {
-            if state & LOCKED_BIT == 0 {
-                return false;
-            }
-            match self.state.compare_exchange_weak(
-                state,
-                state | PARKED_BIT,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return true,
-                Err(x) => state = x,
-            }
-        }
+        self.state
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
+                (state & LOCKED_BIT != 0).then_some(state | PARKED_BIT)
+            })
+            .is_ok()
     }
 
     // Used by Condvar when requeuing threads to us, must be called while

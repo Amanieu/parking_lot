@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 
-//! Manual bindings to the win32 API to avoid dependencies on windows-sys or winapi
-//! as these bindings will **never** change and `parking_lot_core` is a foundational
-//! dependency for the Rust ecosystem, so the dependencies used by it have an
-//! outsize affect
+//! Manual bindings to the small subset of the Win32 API used by this module.
+//!
+//! Keeping these stable system interfaces here avoids adding `windows-sys` or
+//! `winapi` as a dependency of the foundational `parking_lot_core` crate.
 
 pub const INFINITE: u32 = 4294967295;
 pub const ERROR_TIMEOUT: u32 = 1460;

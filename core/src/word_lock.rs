@@ -57,7 +57,7 @@ fn with_thread_data<T>(f: impl FnOnce(&ThreadData) -> T) -> T {
         thread_data_ptr = thread_data_storage.get_or_insert_with(ThreadData::new);
     }
 
-    f(unsafe { &*thread_data_ptr })
+    f(unsafe { thread_data_ptr.as_ref_unchecked() })
 }
 
 const LOCKED_BIT: usize = 1;
@@ -283,6 +283,7 @@ impl WordLock {
     }
 }
 
+#[allow(clippy::wrong_self_convention)]
 trait LockState {
     fn is_locked(self) -> bool;
     fn is_queue_locked(self) -> bool;

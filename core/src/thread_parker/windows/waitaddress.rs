@@ -1,5 +1,6 @@
 use core::{
     mem,
+    ptr::NonNull,
     sync::atomic::{AtomicUsize, Ordering},
 };
 use std::{ffi, time::Instant};
@@ -73,7 +74,7 @@ impl WaitAddress {
         key.store(0, Ordering::Release);
 
         UnparkHandle {
-            key: key,
+            key: NonNull::from(key),
             waitaddress: self,
         }
     }
@@ -96,7 +97,7 @@ impl WaitAddress {
 // as unparked while holding the queue lock, but we delay the actual unparking
 // until after the queue lock is released.
 pub struct UnparkHandle {
-    key: *const AtomicUsize,
+    key: NonNull<AtomicUsize>,
     waitaddress: &'static WaitAddress,
 }
 
@@ -105,6 +106,8 @@ impl UnparkHandle {
     // released to avoid blocking the queue for too long.
     #[inline]
     pub fn unpark(self) {
-        unsafe { (self.waitaddress.WakeByAddressSingle)(self.key as *mut ffi::c_void) };
+        unsafe {
+            (self.waitaddress.WakeByAddressSingle)(self.key.as_ptr().cast::<ffi::c_void>())
+        };
     }
 }
