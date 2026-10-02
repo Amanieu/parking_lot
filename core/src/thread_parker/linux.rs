@@ -111,7 +111,7 @@ impl ThreadParker {
         let r = unsafe {
             libc::syscall(
                 libc::SYS_futex,
-                &self.futex,
+                self.futex.as_ptr().cast::<u32>(),
                 libc::FUTEX_WAIT | libc::FUTEX_PRIVATE_FLAG,
                 1,
                 ts_ptr,
@@ -139,7 +139,7 @@ impl super::UnparkHandleT for UnparkHandle {
         // matter since the syscall will just return EFAULT in that case.
         let r = libc::syscall(
             libc::SYS_futex,
-            self.futex,
+            self.futex.cast::<u32>(),
             libc::FUTEX_WAKE | libc::FUTEX_PRIVATE_FLAG,
             1,
         );
