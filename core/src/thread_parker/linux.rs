@@ -67,14 +67,9 @@ impl super::ThreadParkerT for ThreadParker {
                 return false;
             }
             let diff = timeout - now;
-            if diff.as_secs() as libc::time_t as u64 != diff.as_secs() {
-                // Timeout overflowed, just sleep indefinitely
-                unsafe { self.park() };
-                return true;
-            }
             // SAFETY: libc::timespec is zero initializable.
             let mut ts: libc::timespec = unsafe { std::mem::zeroed() };
-            ts.tv_sec = diff.as_secs() as libc::time_t;
+            ts.tv_sec = libc::time_t::try_from(diff.as_secs()).unwrap_or(libc::time_t::MAX);
             ts.tv_nsec = diff.subsec_nanos() as tv_nsec_t;
             self.futex_wait(Some(ts));
         }

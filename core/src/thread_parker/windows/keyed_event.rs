@@ -96,47 +96,32 @@ impl KeyedEvent {
 
     #[inline]
     pub unsafe fn park_until(&'static self, key: &AtomicUsize, timeout: Instant) -> bool {
-        let now = Instant::now();
-        if timeout <= now {
-            // If another thread unparked us, we need to call
-            // NtWaitForKeyedEvent otherwise that thread will stay stuck at
-            // NtReleaseKeyedEvent.
-            if key.swap(STATE_TIMED_OUT, Ordering::Relaxed) == STATE_UNPARKED {
-                unsafe { self.park(key) };
+        loop {
+            let now = Instant::now();
+            if timeout <= now {
+                // If another thread unparked us, we need to call
+                // NtWaitForKeyedEvent otherwise that thread will stay stuck at
+                // NtReleaseKeyedEvent.
+                if key.swap(STATE_TIMED_OUT, Ordering::Relaxed) == STATE_UNPARKED {
+                    unsafe { self.park(key) };
+                    return true;
+                }
+                return false;
+            }
+
+            // NT uses a timeout in units of 100ns. We use a negative value to
+            // indicate a relative timeout based on a monotonic clock.
+            let diff = timeout - now;
+            let ticks = diff.as_nanos().div_ceil(100).min(i64::MAX as u128);
+            let mut nt_timeout = -(ticks as i64);
+
+            let status =
+                unsafe { self.wait_for(key as *const _ as *mut ffi::c_void, &mut nt_timeout) };
+            if status == STATUS_SUCCESS {
                 return true;
             }
-            return false;
+            debug_assert_eq!(status, STATUS_TIMEOUT);
         }
-
-        // NT uses a timeout in units of 100ns. We use a negative value to
-        // indicate a relative timeout based on a monotonic clock.
-        let diff = timeout - now;
-        let value = (diff.as_secs() as i64)
-            .checked_mul(-10000000)
-            .and_then(|x| x.checked_sub((diff.subsec_nanos() as i64 + 99) / 100));
-
-        let mut nt_timeout = match value {
-            Some(x) => x,
-            None => {
-                // Timeout overflowed, just sleep indefinitely
-                unsafe { self.park(key) };
-                return true;
-            }
-        };
-
-        let status = unsafe { self.wait_for(key as *const _ as *mut ffi::c_void, &mut nt_timeout) };
-        if status == STATUS_SUCCESS {
-            return true;
-        }
-        debug_assert_eq!(status, STATUS_TIMEOUT);
-
-        // If another thread unparked us, we need to call NtWaitForKeyedEvent
-        // otherwise that thread will stay stuck at NtReleaseKeyedEvent.
-        if key.swap(STATE_TIMED_OUT, Ordering::Relaxed) == STATE_UNPARKED {
-            unsafe { self.park(key) };
-            return true;
-        }
-        false
     }
 
     #[inline]

@@ -57,17 +57,9 @@ impl WaitAddress {
             }
             let diff = timeout - now;
             let timeout = diff
-                .as_secs()
-                .checked_mul(1000)
-                .and_then(|x| x.checked_add((diff.subsec_nanos() as u64 + 999999) / 1000000))
-                .map(|ms| {
-                    if ms > std::u32::MAX as u64 {
-                        INFINITE
-                    } else {
-                        ms as u32
-                    }
-                })
-                .unwrap_or(INFINITE);
+                .as_nanos()
+                .div_ceil(1_000_000)
+                .min((INFINITE - 1) as u128) as u32;
             if self.wait_on_address(key, timeout) == false.into() {
                 debug_assert_eq!(unsafe { GetLastError() }, ERROR_TIMEOUT);
             }

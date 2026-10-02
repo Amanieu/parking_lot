@@ -119,7 +119,6 @@ pub unsafe trait RawMutexFair: RawMutex {
 ///
 /// The `Duration` and `Instant` types are specified as associated types so that
 /// this trait is usable even in `no_std` environments.
-///
 /// # Safety
 ///
 /// Implementations must uphold the safety requirements of [`RawMutex`] for
@@ -132,9 +131,17 @@ pub unsafe trait RawMutexTimed: RawMutex {
     type Instant;
 
     /// Attempts to acquire this lock until a timeout is reached.
+    ///
+    /// A successful operation may return early. An unsuccessful operation must
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
     fn try_lock_for(&self, timeout: Self::Duration) -> bool;
 
     /// Attempts to acquire this lock until a timeout is reached.
+    ///
+    /// A successful operation may return early. An unsuccessful operation must
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
     fn try_lock_until(&self, timeout: Self::Instant) -> bool;
 }
 
@@ -385,6 +392,10 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     /// If the lock could not be acquired before the timeout expired, then
     /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
     /// be unlocked when the guard is dropped.
+    ///
+    /// A successful operation may return early. An unsuccessful operation will
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
     #[inline]
     #[track_caller]
     pub fn try_lock_for(&self, timeout: R::Duration) -> Option<MutexGuard<'_, R, T>> {
@@ -401,6 +412,10 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     /// If the lock could not be acquired before the timeout expired, then
     /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
     /// be unlocked when the guard is dropped.
+    ///
+    /// A successful operation may return early. An unsuccessful operation will
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
     #[inline]
     #[track_caller]
     pub fn try_lock_until(&self, timeout: R::Instant) -> Option<MutexGuard<'_, R, T>> {

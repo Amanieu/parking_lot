@@ -568,6 +568,10 @@ pub const DEFAULT_PARK_TOKEN: ParkToken = ParkToken(0);
 /// `unpark_requeue` was called. It is also passed a bool which indicates
 /// whether it was the last thread in the queue.
 ///
+/// A timeout is the earliest point at which this function may return
+/// [`ParkResult::TimedOut`]. Scheduling and platform-specific behavior may
+/// delay the actual return.
+///
 /// # Safety
 ///
 /// You should only call this function with an address that you control, since

@@ -99,7 +99,8 @@ impl super::ThreadParkerT for ThreadParker {
                     debug_assert!(r == 0 || r == libc::ETIMEDOUT);
                 }
             } else {
-                // Timeout calculation overflowed, just sleep indefinitely
+                // The platform cannot represent this absolute deadline, so use
+                // an untimed wait.
                 let r = unsafe { libc::pthread_cond_wait(self.condvar.get(), self.mutex.get()) };
                 debug_assert_eq!(r, 0);
             }

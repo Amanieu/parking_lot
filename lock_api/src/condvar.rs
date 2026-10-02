@@ -110,9 +110,9 @@ where
             match Self::checked_duration_to_instant(timeout) {
                 Some(timeout) => self.wait_until(mutex, &timeout),
                 None => {
-                    // If the timeout could not be computed, we know the result  must
-                    // be `false`, indicating we did not timeout.
-                    <Self as RawCondvar>::wait(&self, mutex);
+                    // No absolute deadline can be constructed, so fall back to
+                    // an untimed wait.
+                    <Self as RawCondvar>::wait(self, mutex);
                     false
                 }
             }
@@ -254,8 +254,8 @@ impl<R: RawMutexTimed, C: RawCondvarTimed<RawMutex = R>> Condvar<C> {
     /// measured with a monotonic clock, and not affected by the changes made to
     /// the system time.
     ///
-    /// The returned `WaitTimeoutResult` value indicates if the timeout is
-    /// known to have elapsed.
+    /// The returned [`WaitTimeoutResult`] indicates whether the wait ended
+    /// because the timeout elapsed rather than because of a notification.
     ///
     /// Like `wait`, the lock specified will be re-acquired when this function
     /// returns, regardless of whether the timeout elapsed or not.
@@ -289,8 +289,8 @@ impl<R: RawMutexTimed, C: RawCondvarTimed<RawMutex = R>> Condvar<C> {
     /// measured with a monotonic clock, and not affected by the changes made to
     /// the system time.
     ///
-    /// The returned `WaitTimeoutResult` value indicates if the timeout is
-    /// known to have elapsed.
+    /// The returned [`WaitTimeoutResult`] indicates whether the wait ended
+    /// because the timeout elapsed rather than because of a notification.
     ///
     /// Like `wait`, the lock specified will be re-acquired when this function
     /// returns, regardless of whether the timeout elapsed or not.
@@ -328,8 +328,8 @@ impl<R: RawMutexTimed, C: RawCondvarTimed<RawMutex = R>> Condvar<C> {
     /// measured with a monotonic clock, and not affected by the changes made to
     /// the system time.
     ///
-    /// The returned `WaitTimeoutResult` value indicates if the timeout is
-    /// known to have elapsed.
+    /// The returned [`WaitTimeoutResult`] indicates whether the wait timed out
+    /// while the condition remained `true`.
     ///
     /// Like `wait`, the lock specified will be re-acquired when this function
     /// returns, regardless of whether the timeout elapsed or not.
@@ -377,8 +377,8 @@ impl<R: RawMutexTimed, C: RawCondvarTimed<RawMutex = R>> Condvar<C> {
     /// measured with a monotonic clock, and not affected by the changes made to
     /// the system time.
     ///
-    /// The returned `WaitTimeoutResult` value indicates if the timeout is
-    /// known to have elapsed.
+    /// The returned [`WaitTimeoutResult`] indicates whether the wait timed out
+    /// while the condition remained `true`.
     ///
     /// Like `wait`, the lock specified will be re-acquired when this function
     /// returns, regardless of whether the timeout elapsed or not.
@@ -400,8 +400,8 @@ impl<R: RawMutexTimed, C: RawCondvarTimed<RawMutex = R>> Condvar<C> {
         match C::checked_duration_to_instant(&timeout) {
             Some(timeout) => self.wait_while_until(mutex_guard, condition, timeout),
             None => {
-                // If the timeout could not be computed, we know the `WaitTimeoutResult`
-                // must be `false`, indicating we did not timeout.
+                // No absolute deadline can be constructed, so fall back to an
+                // untimed wait.
                 self.wait_while(mutex_guard, condition);
                 WaitTimeoutResult(false)
             }

@@ -29,6 +29,9 @@ pub trait ThreadParkerT {
     /// Parks the thread until it is unparked or the timeout is reached. This
     /// should be called after it has been added to the queue, after unlocking
     /// the queue. Returns true if we were unparked and false if we timed out.
+    ///
+    /// The timeout is the earliest point at which this method may return false,
+    /// but scheduling and platform-specific behavior may delay the return.
     unsafe fn park_until(&self, timeout: Instant) -> bool;
 
     /// Locks the parker to prevent the target thread from exiting. This is

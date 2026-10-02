@@ -184,12 +184,16 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
 
 impl<R: RawMutexTimed, G: GetThreadId> RawReentrantMutex<R, G> {
     /// Attempts to acquire this lock until a timeout is reached.
+    ///
+    /// See [`RawMutexTimed::try_lock_until`] for timeout behavior.
     #[inline]
     pub fn try_lock_until(&self, timeout: R::Instant) -> bool {
         self.lock_internal(|| self.mutex.try_lock_until(timeout))
     }
 
     /// Attempts to acquire this lock until a timeout is reached.
+    ///
+    /// See [`RawMutexTimed::try_lock_for`] for timeout behavior.
     #[inline]
     pub fn try_lock_for(&self, timeout: R::Duration) -> bool {
         self.lock_internal(|| self.mutex.try_lock_for(timeout))
@@ -476,6 +480,14 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// If the lock could not be acquired before the timeout expired, then
     /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
     /// be unlocked when the guard is dropped.
+    ///
+    /// A successful operation may return early. An unsuccessful operation will
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[inline]
     #[track_caller]
     pub fn try_lock_for(&self, timeout: R::Duration) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
@@ -492,6 +504,14 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// If the lock could not be acquired before the timeout expired, then
     /// `None` is returned. Otherwise, an RAII guard is returned. The lock will
     /// be unlocked when the guard is dropped.
+    ///
+    /// A successful operation may return early. An unsuccessful operation will
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[inline]
     #[track_caller]
     pub fn try_lock_until(&self, timeout: R::Instant) -> Option<ReentrantMutexGuard<'_, R, G, T>> {

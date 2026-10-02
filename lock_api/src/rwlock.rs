@@ -175,7 +175,6 @@ pub unsafe trait RawRwLockDowngrade: RawRwLock {
 ///
 /// The `Duration` and `Instant` types are specified as associated types so that
 /// this trait is usable even in `no_std` environments.
-///
 /// # Safety
 ///
 /// Implementations must uphold the safety requirements of [`RawRwLock`] for
@@ -188,15 +187,31 @@ pub unsafe trait RawRwLockTimed: RawRwLock {
     type Instant;
 
     /// Attempts to acquire a shared lock until a timeout is reached.
+    ///
+    /// A successful operation may return early. An unsuccessful operation must
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
     fn try_lock_shared_for(&self, timeout: Self::Duration) -> bool;
 
     /// Attempts to acquire a shared lock until a timeout is reached.
+    ///
+    /// A successful operation may return early. An unsuccessful operation must
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
     fn try_lock_shared_until(&self, timeout: Self::Instant) -> bool;
 
     /// Attempts to acquire an exclusive lock until a timeout is reached.
+    ///
+    /// A successful operation may return early. An unsuccessful operation must
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
     fn try_lock_exclusive_for(&self, timeout: Self::Duration) -> bool;
 
     /// Attempts to acquire an exclusive lock until a timeout is reached.
+    ///
+    /// A successful operation may return early. An unsuccessful operation must
+    /// not return before the timeout, but may return later due to scheduling or
+    /// platform-specific behavior.
     fn try_lock_exclusive_until(&self, timeout: Self::Instant) -> bool;
 }
 
@@ -229,10 +244,14 @@ pub unsafe trait RawRwLockRecursive: RawRwLock {
 pub unsafe trait RawRwLockRecursiveTimed: RawRwLockRecursive + RawRwLockTimed {
     /// Attempts to acquire a shared lock until a timeout is reached, without
     /// deadlocking in case of a recursive lock.
+    ///
+    /// See [`RawRwLockTimed::try_lock_shared_for`] for timeout behavior.
     fn try_lock_shared_recursive_for(&self, timeout: Self::Duration) -> bool;
 
     /// Attempts to acquire a shared lock until a timeout is reached, without
     /// deadlocking in case of a recursive lock.
+    ///
+    /// See [`RawRwLockTimed::try_lock_shared_until`] for timeout behavior.
     fn try_lock_shared_recursive_until(&self, timeout: Self::Instant) -> bool;
 }
 
@@ -341,13 +360,19 @@ pub unsafe trait RawRwLockUpgradeDowngrade: RawRwLockUpgrade + RawRwLockDowngrad
 /// the additional methods provided by this trait.
 pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
     /// Attempts to acquire an upgradable lock until a timeout is reached.
+    ///
+    /// See [`RawRwLockTimed::try_lock_shared_for`] for timeout behavior.
     fn try_lock_upgradable_for(&self, timeout: Self::Duration) -> bool;
 
     /// Attempts to acquire an upgradable lock until a timeout is reached.
+    ///
+    /// See [`RawRwLockTimed::try_lock_shared_until`] for timeout behavior.
     fn try_lock_upgradable_until(&self, timeout: Self::Instant) -> bool;
 
     /// Attempts to upgrade an upgradable lock to an exclusive lock until a
     /// timeout is reached.
+    ///
+    /// See [`RawRwLockTimed::try_lock_exclusive_for`] for timeout behavior.
     ///
     /// # Safety
     ///
@@ -356,6 +381,8 @@ pub unsafe trait RawRwLockUpgradeTimed: RawRwLockUpgrade + RawRwLockTimed {
 
     /// Attempts to upgrade an upgradable lock to an exclusive lock until a
     /// timeout is reached.
+    ///
+    /// See [`RawRwLockTimed::try_lock_exclusive_until`] for timeout behavior.
     ///
     /// # Safety
     ///
@@ -790,6 +817,8 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the shared access when it is dropped.
+    ///
+    /// See [`RawRwLockTimed::try_lock_shared_for`] for timeout behavior.
     #[inline]
     #[track_caller]
     pub fn try_read_for(&self, timeout: R::Duration) -> Option<RwLockReadGuard<'_, R, T>> {
@@ -807,6 +836,8 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the shared access when it is dropped.
+    ///
+    /// See [`RawRwLockTimed::try_lock_shared_until`] for timeout behavior.
     #[inline]
     #[track_caller]
     pub fn try_read_until(&self, timeout: R::Instant) -> Option<RwLockReadGuard<'_, R, T>> {
@@ -824,6 +855,8 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the exclusive access when it is dropped.
+    ///
+    /// See [`RawRwLockTimed::try_lock_exclusive_for`] for timeout behavior.
     #[inline]
     #[track_caller]
     pub fn try_write_for(&self, timeout: R::Duration) -> Option<RwLockWriteGuard<'_, R, T>> {
@@ -841,6 +874,8 @@ impl<R: RawRwLockTimed, T: ?Sized> RwLock<R, T> {
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the exclusive access when it is dropped.
+    ///
+    /// See [`RawRwLockTimed::try_lock_exclusive_until`] for timeout behavior.
     #[inline]
     #[track_caller]
     pub fn try_write_until(&self, timeout: R::Instant) -> Option<RwLockWriteGuard<'_, R, T>> {
@@ -1012,6 +1047,9 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the shared access when it is dropped.
     ///
+    /// See [`RawRwLockRecursiveTimed::try_lock_shared_recursive_for`] for
+    /// timeout behavior.
+    ///
     /// This method is guaranteed to succeed without blocking if another read
     /// lock is held at the time of the call. See the documentation for
     /// `read_recursive` for details.
@@ -1035,6 +1073,9 @@ impl<R: RawRwLockRecursiveTimed, T: ?Sized> RwLock<R, T> {
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the shared access when it is dropped.
+    ///
+    /// See [`RawRwLockRecursiveTimed::try_lock_shared_recursive_until`] for
+    /// timeout behavior.
     #[inline]
     #[track_caller]
     pub fn try_read_recursive_until(
@@ -1198,6 +1239,9 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the shared access when it is dropped.
+    ///
+    /// See [`RawRwLockUpgradeTimed::try_lock_upgradable_for`] for timeout
+    /// behavior.
     #[inline]
     #[track_caller]
     pub fn try_upgradable_read_for(
@@ -1218,6 +1262,9 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned. Otherwise, an RAII guard is returned which will
     /// release the shared access when it is dropped.
+    ///
+    /// See [`RawRwLockUpgradeTimed::try_lock_upgradable_until`] for timeout
+    /// behavior.
     #[inline]
     #[track_caller]
     pub fn try_upgradable_read_until(
@@ -2294,6 +2341,8 @@ impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuar
     ///
     /// If the access could not be granted before the timeout expires, then
     /// the current guard is returned.
+    ///
+    /// See [`RawRwLockUpgradeTimed::try_upgrade_for`] for timeout behavior.
     #[track_caller]
     pub fn try_upgrade_for(
         s: Self,
@@ -2317,6 +2366,8 @@ impl<'a, R: RawRwLockUpgradeTimed + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuar
     ///
     /// If the access could not be granted before the timeout expires, then
     /// the current guard is returned.
+    ///
+    /// See [`RawRwLockUpgradeTimed::try_upgrade_until`] for timeout behavior.
     #[inline]
     #[track_caller]
     pub fn try_upgrade_until(
@@ -2345,6 +2396,8 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
     ///
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned.
+    ///
+    /// See [`RawRwLockUpgradeTimed::try_upgrade_for`] for timeout behavior.
     ///
     /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
     /// and finally downgrades the lock back to an upgradable read lock.
@@ -2377,6 +2430,8 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
     ///
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned.
+    ///
+    /// See [`RawRwLockUpgradeTimed::try_upgrade_until`] for timeout behavior.
     ///
     /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
     /// and finally downgrades the lock back to an upgradable read lock.
@@ -2671,6 +2726,8 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
     ///
     /// If the access could not be granted before the timeout expires, then
     /// the current guard is returned.
+    ///
+    /// See [`RawRwLockUpgradeTimed::try_upgrade_for`] for timeout behavior.
     #[track_caller]
     pub fn try_upgrade_for(
         s: Self,
@@ -2696,6 +2753,8 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
     ///
     /// If the access could not be granted before the timeout expires, then
     /// the current guard is returned.
+    ///
+    /// See [`RawRwLockUpgradeTimed::try_upgrade_until`] for timeout behavior.
     #[inline]
     #[track_caller]
     pub fn try_upgrade_until(
@@ -2728,6 +2787,8 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned.
     ///
+    /// See [`RawRwLockUpgradeTimed::try_upgrade_for`] for timeout behavior.
+    ///
     /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
     /// and finally downgrades the lock back to an upgradable read lock.
     /// The closure's return value is wrapped in `Some` and returned.
@@ -2759,6 +2820,8 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
     ///
     /// If the access could not be granted before the timeout expires, then
     /// `None` is returned.
+    ///
+    /// See [`RawRwLockUpgradeTimed::try_upgrade_until`] for timeout behavior.
     ///
     /// Otherwise, calls the provided closure with an exclusive reference to the lock's data,
     /// and finally downgrades the lock back to an upgradable read lock.

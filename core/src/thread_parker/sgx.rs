@@ -62,10 +62,8 @@ impl super::ThreadParkerT for ThreadParker {
             let remaining_nanos =
                 u128::min(remaining.as_nanos(), WAIT_INDEFINITE as u128 - 1) as u64;
 
-            if let Err(e) = usercalls::wait(EV_UNPARK, remaining_nanos)
-                && (e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::WouldBlock)
-            {
-                return false;
+            if let Err(e) = usercalls::wait(EV_UNPARK, remaining_nanos) {
+                debug_assert!(e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::WouldBlock);
             }
         }
         true
