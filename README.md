@@ -43,32 +43,29 @@ in the Rust standard library:
    sections.
 5. `Condvar`, `RwLock` and `Once` work on Windows XP, unlike the standard
    library versions of those types.
-6. `RwLock` takes advantage of hardware lock elision on processors that
-   support it, which can lead to huge performance wins with many readers.
-   This must be enabled with the `hardware-lock-elision` feature.
-7. `RwLock` uses a task-fair locking policy, which avoids reader and writer
+6. `RwLock` uses a task-fair locking policy, which avoids reader and writer
    starvation, whereas the standard library version makes no guarantees.
-8. `Condvar` is guaranteed not to produce spurious wakeups. A thread will
+7. `Condvar` is guaranteed not to produce spurious wakeups. A thread will
     only be woken up if it timed out or it was woken up by a notification.
-9. `Condvar::notify_all` will only wake up a single thread and requeue the
+8. `Condvar::notify_all` will only wake up a single thread and requeue the
     rest to wait on the associated `Mutex`. This avoids a thundering herd
     problem where all threads try to acquire the lock at the same time.
-10. `RwLock` supports atomically downgrading a write lock into a read lock.
-11. `Mutex` and `RwLock` allow raw unlocking without a RAII guard object.
-12. `Mutex<()>` and `RwLock<()>` allow raw locking without a RAII guard
+9. `RwLock` supports atomically downgrading a write lock into a read lock.
+10. `Mutex` and `RwLock` allow raw unlocking without a RAII guard object.
+11. `Mutex<()>` and `RwLock<()>` allow raw locking without a RAII guard
     object.
-13. `Mutex` and `RwLock` support [eventual fairness](https://trac.webkit.org/changeset/203350)
+12. `Mutex` and `RwLock` support [eventual fairness](https://trac.webkit.org/changeset/203350)
     which allows them to be fair on average without sacrificing performance.
-14. A `ReentrantMutex` type which supports recursive locking.
-15. An *experimental* deadlock detector that works for `Mutex`,
+13. A `ReentrantMutex` type which supports recursive locking.
+14. An *experimental* deadlock detector that works for `Mutex`,
     `RwLock` and `ReentrantMutex`. This feature is disabled by default and
     can be enabled via the `deadlock_detection` feature.
-16. `RwLock` supports atomically upgrading an "upgradable" read lock into a
+15. `RwLock` supports atomically upgrading an "upgradable" read lock into a
     write lock.
-17. Optional support for [serde](https://docs.serde.rs/serde/).  Enable via the
+16. Optional support for [serde](https://docs.serde.rs/serde/).  Enable via the
     feature `serde`.  **NOTE!** this support is for `Mutex`, `ReentrantMutex`,
     and `RwLock` only; `Condvar` and `Once` are not currently supported.
-18. Lock guards can be sent to other threads when the `send_guard` feature is
+17. Lock guards can be sent to other threads when the `send_guard` feature is
     enabled.
 
 ## The parking lot
@@ -121,9 +118,6 @@ To allow sending `MutexGuard`s and `RwLock*Guard`s to other threads, enable the
 
 Note that the `deadlock_detection` and `send_guard` features are incompatible
 and cannot be used together.
-
-Hardware lock elision support for x86 can be enabled with the
-`hardware-lock-elision` feature.
 
 The core parking lot API is provided by the `parking_lot_core` crate. It is
 separate from the synchronization primitives in the `parking_lot` crate so that

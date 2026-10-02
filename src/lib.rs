@@ -6,7 +6,6 @@
 #![warn(rust_2018_idioms)]
 
 mod condvar;
-mod elision;
 mod fair_mutex;
 mod mutex;
 mod once;

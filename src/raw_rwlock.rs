@@ -1,4 +1,3 @@
-use crate::elision::{AtomicElisionExt, have_elision};
 use crate::raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use crate::util;
 use core::{
@@ -121,11 +120,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
     #[inline]
     unsafe fn unlock_shared(&self) {
         self.deadlock_release();
-        let state = if have_elision() {
-            self.state.elision_fetch_sub_release(ONE_READER)
-        } else {
-            self.state.fetch_sub(ONE_READER, Ordering::Release)
-        };
+        let state = self.state.fetch_sub(ONE_READER, Ordering::Release);
         if state & (READERS_MASK | WRITER_PARKED_BIT) == (ONE_READER | WRITER_PARKED_BIT) {
             self.unlock_shared_slow();
         }
@@ -512,14 +507,7 @@ impl RawRwLock {
             }
         }
 
-        // Use hardware lock elision to avoid cache conflicts when multiple
-        // readers try to acquire the lock. We only do this if the lock is
-        // completely empty since elision handles conflicts poorly.
-        if have_elision() && state == 0 {
-            self.state
-                .elision_compare_exchange_acquire(0, ONE_READER)
-                .is_ok()
-        } else if let Some(new_state) = state.checked_add(ONE_READER) {
+        if let Some(new_state) = state.checked_add(ONE_READER) {
             self.state
                 .compare_exchange_weak(state, new_state, Ordering::Acquire, Ordering::Relaxed)
                 .is_ok()
@@ -539,23 +527,16 @@ impl RawRwLock {
                     return false;
                 }
             }
-            if have_elision() && state == 0 {
-                match self.state.elision_compare_exchange_acquire(0, ONE_READER) {
-                    Ok(_) => return true,
-                    Err(x) => state = x,
-                }
-            } else {
-                match self.state.compare_exchange_weak(
-                    state,
-                    state
-                        .checked_add(ONE_READER)
-                        .expect("RwLock reader count overflow"),
-                    Ordering::Acquire,
-                    Ordering::Relaxed,
-                ) {
-                    Ok(_) => return true,
-                    Err(x) => state = x,
-                }
+            match self.state.compare_exchange_weak(
+                state,
+                state
+                    .checked_add(ONE_READER)
+                    .expect("RwLock reader count overflow"),
+                Ordering::Acquire,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(x) => state = x,
             }
         }
     }
@@ -671,16 +652,6 @@ impl RawRwLock {
         let try_lock = |state: &mut usize| {
             let mut spinwait_shared = SpinWait::new();
             loop {
-                // Use hardware lock elision to avoid cache conflicts when multiple
-                // readers try to acquire the lock. We only do this if the lock is
-                // completely empty since elision handles conflicts poorly.
-                if have_elision() && *state == 0 {
-                    match self.state.elision_compare_exchange_acquire(0, ONE_READER) {
-                        Ok(_) => return true,
-                        Err(x) => *state = x,
-                    }
-                }
-
                 // This is the same condition as try_lock_shared_fast
                 #[allow(clippy::collapsible_if)]
                 if *state & WRITER_BIT != 0 {
