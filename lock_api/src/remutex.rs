@@ -1,6 +1,6 @@
 use crate::{
     GuardNoSend,
-    guard::SharedGuardData,
+    guard::{SharedGuardData, abort_on_panic},
     mutex::{RawMutex, RawMutexFair, RawMutexTimed},
 };
 use core::{
@@ -785,6 +785,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     ///
     /// This releases only one level of recursive locking. The underlying mutex
     /// remains locked if the current thread has acquired it more than once.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the mutex panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -795,7 +799,7 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         unsafe {
             s.remutex.raw.unlock();
         }
-        defer!(s.remutex.raw.lock());
+        defer!(abort_on_panic(|| s.remutex.raw.lock()));
         f()
     }
 }
@@ -819,6 +823,10 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     ///
     /// This releases only one level of recursive locking. A fair unlock is
     /// performed only if this releases the final level.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the mutex panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -829,7 +837,7 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
         unsafe {
             s.remutex.raw.unlock_fair();
         }
-        defer!(s.remutex.raw.lock());
+        defer!(abort_on_panic(|| s.remutex.raw.lock()));
         f()
     }
 
@@ -842,9 +850,7 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: A ReentrantMutexGuard always holds the lock
-        unsafe {
-            s.remutex.raw.bump();
-        }
+        unsafe { s.remutex.raw.bump() };
     }
 }
 
@@ -931,6 +937,10 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
     ///
     /// This releases only one level of recursive locking. The underlying mutex
     /// remains locked if the current thread has acquired it more than once.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the mutex panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -941,7 +951,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
         unsafe {
             s.remutex.raw.unlock();
         }
-        defer!(s.remutex.raw.lock());
+        defer!(abort_on_panic(|| s.remutex.raw.lock()));
         f()
     }
 }
@@ -973,6 +983,10 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
     ///
     /// This releases only one level of recursive locking. A fair unlock is
     /// performed only if this releases the final level.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the mutex panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -983,7 +997,7 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
         unsafe {
             s.remutex.raw.unlock_fair();
         }
-        defer!(s.remutex.raw.lock());
+        defer!(abort_on_panic(|| s.remutex.raw.lock()));
         f()
     }
 
@@ -994,9 +1008,7 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
     #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: A ReentrantMutexGuard always holds the lock
-        unsafe {
-            s.remutex.raw.bump();
-        }
+        unsafe { s.remutex.raw.bump() };
     }
 }
 

@@ -5,7 +5,7 @@ use core::mem;
 use core::ops::{Deref, DerefMut};
 use scopeguard::defer;
 
-use crate::guard::ExclusiveGuardData;
+use crate::guard::{ExclusiveGuardData, abort_on_panic};
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
@@ -34,6 +34,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Successful lock acquisitions must have acquire semantics, and unlocking
 /// operations must have release semantics. These requirements also apply to
 /// equivalent operations provided by subtraits.
+///
+/// Methods which acquire the mutex may unwind, but if they do then the current
+/// context must not acquire the mutex. Methods which release or temporarily
+/// yield the mutex must not unwind.
 pub unsafe trait RawMutex {
     /// Initial value for an unlocked mutex.
     // A “non-constant” const item is a legacy way to supply an initialized value to downstream
@@ -102,9 +106,13 @@ pub unsafe trait RawMutexFair: RawMutex {
     ///
     /// This method may only be called if the mutex is held in the current context, see
     /// the documentation of [`unlock`](RawMutex::unlock).
+    ///
+    /// # Aborts
+    ///
+    /// The default implementation aborts if re-locking the mutex panics.
     unsafe fn bump(&self) {
         unsafe { self.unlock_fair() };
-        self.lock();
+        abort_on_panic(|| self.lock());
     }
 }
 
@@ -627,6 +635,10 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the mutex panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -637,7 +649,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         unsafe {
             s.mutex.raw.unlock();
         }
-        defer!(s.mutex.raw.lock());
+        defer!(abort_on_panic(|| s.mutex.raw.lock()));
         f()
     }
 
@@ -675,6 +687,10 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the mutex panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -685,7 +701,7 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         unsafe {
             s.mutex.raw.unlock_fair();
         }
-        defer!(s.mutex.raw.lock());
+        defer!(abort_on_panic(|| s.mutex.raw.lock()));
         f()
     }
 
@@ -698,9 +714,7 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: A MutexGuard always holds the lock.
-        unsafe {
-            s.mutex.raw.bump();
-        }
+        unsafe { s.mutex.raw.bump() };
     }
 }
 
@@ -782,6 +796,10 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the mutex.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the mutex panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -792,7 +810,7 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
         unsafe {
             s.mutex.raw.unlock();
         }
-        defer!(s.mutex.raw.lock());
+        defer!(abort_on_panic(|| s.mutex.raw.lock()));
         f()
     }
 }
@@ -822,6 +840,10 @@ impl<R: RawMutexFair, T: ?Sized> ArcMutexGuard<R, T> {
     /// Temporarily unlocks the mutex to execute the given function.
     ///
     /// This is functionally identical to the `unlocked_fair` method on [`MutexGuard`].
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the mutex panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -832,7 +854,7 @@ impl<R: RawMutexFair, T: ?Sized> ArcMutexGuard<R, T> {
         unsafe {
             s.mutex.raw.unlock_fair();
         }
-        defer!(s.mutex.raw.lock());
+        defer!(abort_on_panic(|| s.mutex.raw.lock()));
         f()
     }
 

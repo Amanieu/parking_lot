@@ -5,7 +5,7 @@ use core::mem;
 use core::ops::{Deref, DerefMut};
 use scopeguard::defer;
 
-use crate::guard::{ExclusiveGuardData, SharedGuardData};
+use crate::guard::{ExclusiveGuardData, SharedGuardData, abort_on_panic};
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
@@ -35,6 +35,12 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Successful lock acquisitions must have acquire semantics, and lock releases
 /// must have release semantics. These requirements also apply to equivalent
 /// operations provided by subtraits.
+///
+/// Methods which acquire a new lock may unwind, but if they do then the current
+/// context must not acquire the requested lock. Methods which release or
+/// temporarily yield a held lock must not unwind. Upgrade and downgrade methods
+/// may unwind, but must leave the current context holding the lock in its
+/// original mode.
 pub unsafe trait RawRwLock {
     /// Initial value for an unlocked `RwLock`.
     // A “non-constant” const item is a legacy way to supply an initialized value to downstream
@@ -120,9 +126,13 @@ pub unsafe trait RawRwLockFair: RawRwLock {
     /// # Safety
     ///
     /// This method may only be called if a shared lock is held in the current context.
+    ///
+    /// # Aborts
+    ///
+    /// The default implementation aborts if re-locking the `RwLock` panics.
     unsafe fn bump_shared(&self) {
         unsafe { self.unlock_shared_fair() };
-        self.lock_shared();
+        abort_on_panic(|| self.lock_shared());
     }
 
     /// Temporarily yields an exclusive lock to a waiting thread if there is one.
@@ -134,9 +144,13 @@ pub unsafe trait RawRwLockFair: RawRwLock {
     /// # Safety
     ///
     /// This method may only be called if an exclusive lock is held in the current context.
+    ///
+    /// # Aborts
+    ///
+    /// The default implementation aborts if re-locking the `RwLock` panics.
     unsafe fn bump_exclusive(&self) {
         unsafe { self.unlock_exclusive_fair() };
-        self.lock_exclusive();
+        abort_on_panic(|| self.lock_exclusive());
     }
 }
 
@@ -269,9 +283,13 @@ pub unsafe trait RawRwLockUpgradeFair: RawRwLockUpgrade + RawRwLockFair {
     /// # Safety
     ///
     /// This method may only be called if an upgradable lock is held in the current context.
+    ///
+    /// # Aborts
+    ///
+    /// The default implementation aborts if re-locking the `RwLock` panics.
     unsafe fn bump_upgradable(&self) {
         unsafe { self.unlock_upgradable_fair() };
-        self.lock_upgradable();
+        abort_on_panic(|| self.lock_upgradable());
     }
 }
 
@@ -1322,6 +1340,10 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     ///
     /// The mutable reference ensures that no references derived from this guard
     /// are live while the lock is temporarily released.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -1332,7 +1354,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         unsafe {
             s.rwlock.raw.unlock_shared();
         }
-        defer!(s.rwlock.raw.lock_shared());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_shared()));
         f()
     }
 }
@@ -1359,6 +1381,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     ///
     /// The mutable reference ensures that no references derived from this guard
     /// are live while the lock is temporarily released.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -1369,7 +1395,7 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         unsafe {
             s.rwlock.raw.unlock_shared_fair();
         }
-        defer!(s.rwlock.raw.lock_shared());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_shared()));
         f()
     }
 
@@ -1382,9 +1408,7 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
     #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: An RwLockReadGuard always holds a shared lock.
-        unsafe {
-            s.rwlock.raw.bump_shared();
-        }
+        unsafe { s.rwlock.raw.bump_shared() };
     }
 }
 
@@ -1457,6 +1481,10 @@ impl<R: RawRwLock, T: ?Sized> ArcRwLockReadGuard<R, T> {
     /// Temporarily unlocks the `RwLock` to execute the given function.
     ///
     /// This is functionally identical to the `unlocked` method on [`RwLockReadGuard`].
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -1467,7 +1495,7 @@ impl<R: RawRwLock, T: ?Sized> ArcRwLockReadGuard<R, T> {
         unsafe {
             s.rwlock.raw.unlock_shared();
         }
-        defer!(s.rwlock.raw.lock_shared());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_shared()));
         f()
     }
 }
@@ -1497,6 +1525,10 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockReadGuard<R, T> {
     /// Temporarily unlocks the `RwLock` to execute the given function.
     ///
     /// This is functionally identical to the `unlocked_fair` method on [`RwLockReadGuard`].
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -1507,7 +1539,7 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockReadGuard<R, T> {
         unsafe {
             s.rwlock.raw.unlock_shared_fair();
         }
-        defer!(s.rwlock.raw.lock_shared());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_shared()));
         f()
     }
 
@@ -1518,9 +1550,7 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockReadGuard<R, T> {
     #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: An RwLockReadGuard always holds a shared lock.
-        unsafe {
-            s.rwlock.raw.bump_shared();
-        }
+        unsafe { s.rwlock.raw.bump_shared() };
     }
 }
 
@@ -1662,6 +1692,10 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the `RwLock`.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -1672,7 +1706,7 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         unsafe {
             s.rwlock.raw.unlock_exclusive();
         }
-        defer!(s.rwlock.raw.lock_exclusive());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_exclusive()));
         f()
     }
 }
@@ -1743,6 +1777,10 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     ///
     /// This is safe because `&mut` guarantees that there exist no other
     /// references to the data protected by the `RwLock`.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -1753,7 +1791,7 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         unsafe {
             s.rwlock.raw.unlock_exclusive_fair();
         }
-        defer!(s.rwlock.raw.lock_exclusive());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_exclusive()));
         f()
     }
 
@@ -1766,9 +1804,7 @@ impl<'a, R: RawRwLockFair + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
     #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: An RwLockWriteGuard always holds an exclusive lock.
-        unsafe {
-            s.rwlock.raw.bump_exclusive();
-        }
+        unsafe { s.rwlock.raw.bump_exclusive() };
     }
 }
 
@@ -1847,6 +1883,10 @@ impl<R: RawRwLock, T: ?Sized> ArcRwLockWriteGuard<R, T> {
     /// Temporarily unlocks the `RwLock` to execute the given function.
     ///
     /// This is functionally equivalent to the `unlocked` method on [`RwLockWriteGuard`].
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -1857,7 +1897,7 @@ impl<R: RawRwLock, T: ?Sized> ArcRwLockWriteGuard<R, T> {
         unsafe {
             s.rwlock.raw.unlock_exclusive();
         }
-        defer!(s.rwlock.raw.lock_exclusive());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_exclusive()));
         f()
     }
 }
@@ -1935,6 +1975,10 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockWriteGuard<R, T> {
     /// Temporarily unlocks the `RwLock` to execute the given function.
     ///
     /// This is functionally equivalent to the `unlocked_fair` method on [`RwLockWriteGuard`].
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -1945,7 +1989,7 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockWriteGuard<R, T> {
         unsafe {
             s.rwlock.raw.unlock_exclusive_fair();
         }
-        defer!(s.rwlock.raw.lock_exclusive());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_exclusive()));
         f()
     }
 
@@ -1956,9 +2000,7 @@ impl<R: RawRwLockFair, T: ?Sized> ArcRwLockWriteGuard<R, T> {
     #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: An RwLockWriteGuard always holds an exclusive lock.
-        unsafe {
-            s.rwlock.raw.bump_exclusive();
-        }
+        unsafe { s.rwlock.raw.bump_exclusive() };
     }
 }
 
@@ -2026,6 +2068,10 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
     ///
     /// The mutable reference ensures that no references derived from this guard
     /// are live while the lock is temporarily released.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -2036,7 +2082,7 @@ impl<'a, R: RawRwLockUpgrade + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard<'a,
         unsafe {
             s.rwlock.raw.unlock_upgradable();
         }
-        defer!(s.rwlock.raw.lock_upgradable());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_upgradable()));
         f()
     }
 
@@ -2101,6 +2147,10 @@ impl<'a, R: RawRwLockUpgradeFair + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard
     ///
     /// The mutable reference ensures that no references derived from this guard
     /// are live while the lock is temporarily released.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -2111,7 +2161,7 @@ impl<'a, R: RawRwLockUpgradeFair + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard
         unsafe {
             s.rwlock.raw.unlock_upgradable_fair();
         }
-        defer!(s.rwlock.raw.lock_upgradable());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_upgradable()));
         f()
     }
 
@@ -2124,9 +2174,7 @@ impl<'a, R: RawRwLockUpgradeFair + 'a, T: ?Sized + 'a> RwLockUpgradableReadGuard
     #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
-        unsafe {
-            s.rwlock.raw.bump_upgradable();
-        }
+        unsafe { s.rwlock.raw.bump_upgradable() };
     }
 }
 
@@ -2163,6 +2211,10 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
     ///
     /// This function only requires a mutable reference to the guard, unlike
     /// `upgrade` which takes the guard by value.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if downgrading back to an upgradable read lock panics.
     #[track_caller]
     pub fn with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(&mut self, f: F) -> Ret {
         unsafe {
@@ -2171,7 +2223,9 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
 
         // Safety: We just upgraded the lock, so we have mutable access to the data.
         // This will restore the state the lock was in at the start of the function.
-        defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
+        defer!(abort_on_panic(|| unsafe {
+            self.rwlock.raw.downgrade_to_upgradable()
+        }));
 
         // Safety: We upgraded the lock, so we have mutable access to the data.
         // When this function returns, whether by drop or panic,
@@ -2189,12 +2243,18 @@ impl<'a, R: RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 'a> RwLockUpgradableRead
     ///
     /// This function only requires a mutable reference to the guard, unlike
     /// `try_upgrade` which takes the guard by value.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if downgrading back to an upgradable read lock panics.
     #[track_caller]
     pub fn try_with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(&mut self, f: F) -> Option<Ret> {
         if unsafe { self.rwlock.raw.try_upgrade() } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
+            defer!(abort_on_panic(|| unsafe {
+                self.rwlock.raw.downgrade_to_upgradable()
+            }));
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
@@ -2276,6 +2336,10 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
     ///
     /// This function only requires a mutable reference to the guard, unlike
     /// `try_upgrade_for` which takes the guard by value.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if downgrading back to an upgradable read lock panics.
     #[track_caller]
     pub fn try_with_upgraded_for<Ret, F: FnOnce(&mut T) -> Ret>(
         &mut self,
@@ -2285,7 +2349,9 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
         if unsafe { self.rwlock.raw.try_upgrade_for(timeout) } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
+            defer!(abort_on_panic(|| unsafe {
+                self.rwlock.raw.downgrade_to_upgradable()
+            }));
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
@@ -2310,6 +2376,10 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
     ///
     /// This function only requires a mutable reference to the guard, unlike
     /// `try_upgrade_until` which takes the guard by value.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if downgrading back to an upgradable read lock panics.
     #[track_caller]
     pub fn try_with_upgraded_until<Ret, F: FnOnce(&mut T) -> Ret>(
         &mut self,
@@ -2319,7 +2389,9 @@ impl<'a, R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade + 'a, T: ?Sized + 
         if unsafe { self.rwlock.raw.try_upgrade_until(timeout) } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
+            defer!(abort_on_panic(|| unsafe {
+                self.rwlock.raw.downgrade_to_upgradable()
+            }));
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
@@ -2405,6 +2477,10 @@ impl<R: RawRwLockUpgrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
     /// Temporarily unlocks the `RwLock` to execute the given function.
     ///
     /// This is functionally identical to the `unlocked` method on [`RwLockUpgradableReadGuard`].
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -2415,7 +2491,7 @@ impl<R: RawRwLockUpgrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
         unsafe {
             s.rwlock.raw.unlock_upgradable();
         }
-        defer!(s.rwlock.raw.lock_upgradable());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_upgradable()));
         f()
     }
 
@@ -2489,6 +2565,10 @@ impl<R: RawRwLockUpgradeFair, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
     /// Temporarily unlocks the `RwLock` to execute the given function.
     ///
     /// This is functionally equivalent to the `unlocked_fair` method on [`RwLockUpgradableReadGuard`].
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if re-locking the `RwLock` panics.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -2499,7 +2579,7 @@ impl<R: RawRwLockUpgradeFair, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
         unsafe {
             s.rwlock.raw.unlock_upgradable_fair();
         }
-        defer!(s.rwlock.raw.lock_upgradable());
+        defer!(abort_on_panic(|| s.rwlock.raw.lock_upgradable()));
         f()
     }
 
@@ -2510,9 +2590,7 @@ impl<R: RawRwLockUpgradeFair, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T> {
     #[track_caller]
     pub fn bump(s: &mut Self) {
         // Safety: An RwLockUpgradableReadGuard always holds an upgradable lock.
-        unsafe {
-            s.rwlock.raw.bump_upgradable();
-        }
+        unsafe { s.rwlock.raw.bump_upgradable() };
     }
 }
 
@@ -2553,6 +2631,10 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T>
     ///
     /// This function only requires a mutable reference to the guard, unlike
     /// `upgrade` which takes the guard by value.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if downgrading back to an upgradable read lock panics.
     #[track_caller]
     pub fn with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(&mut self, f: F) -> Ret {
         unsafe {
@@ -2561,7 +2643,9 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T>
 
         // Safety: We just upgraded the lock, so we have mutable access to the data.
         // This will restore the state the lock was in at the start of the function.
-        defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
+        defer!(abort_on_panic(|| unsafe {
+            self.rwlock.raw.downgrade_to_upgradable()
+        }));
 
         // Safety: We upgraded the lock, so we have mutable access to the data.
         // When this function returns, whether by drop or panic,
@@ -2579,12 +2663,18 @@ impl<R: RawRwLockUpgradeDowngrade, T: ?Sized> ArcRwLockUpgradableReadGuard<R, T>
     ///
     /// This function only requires a mutable reference to the guard, unlike
     /// `try_upgrade` which takes the guard by value.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if downgrading back to an upgradable read lock panics.
     #[track_caller]
     pub fn try_with_upgraded<Ret, F: FnOnce(&mut T) -> Ret>(&mut self, f: F) -> Option<Ret> {
         if unsafe { self.rwlock.raw.try_upgrade() } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
+            defer!(abort_on_panic(|| unsafe {
+                self.rwlock.raw.downgrade_to_upgradable()
+            }));
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
@@ -2672,6 +2762,10 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
     ///
     /// This function only requires a mutable reference to the guard, unlike
     /// `try_upgrade_for` which takes the guard by value.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if downgrading back to an upgradable read lock panics.
     #[track_caller]
     pub fn try_with_upgraded_for<Ret, F: FnOnce(&mut T) -> Ret>(
         &mut self,
@@ -2681,7 +2775,9 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
         if unsafe { self.rwlock.raw.try_upgrade_for(timeout) } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
+            defer!(abort_on_panic(|| unsafe {
+                self.rwlock.raw.downgrade_to_upgradable()
+            }));
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,
@@ -2706,6 +2802,10 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
     ///
     /// This function only requires a mutable reference to the guard, unlike
     /// `try_upgrade_until` which takes the guard by value.
+    ///
+    /// # Aborts
+    ///
+    /// Aborts if downgrading back to an upgradable read lock panics.
     #[track_caller]
     pub fn try_with_upgraded_until<Ret, F: FnOnce(&mut T) -> Ret>(
         &mut self,
@@ -2715,7 +2815,9 @@ impl<R: RawRwLockUpgradeTimed + RawRwLockUpgradeDowngrade, T: ?Sized>
         if unsafe { self.rwlock.raw.try_upgrade_until(timeout) } {
             // Safety: We just upgraded the lock, so we have mutable access to the data.
             // This will restore the state the lock was in at the start of the function.
-            defer!(unsafe { self.rwlock.raw.downgrade_to_upgradable() });
+            defer!(abort_on_panic(|| unsafe {
+                self.rwlock.raw.downgrade_to_upgradable()
+            }));
 
             // Safety: We upgraded the lock, so we have mutable access to the data.
             // When this function returns, whether by drop or panic,

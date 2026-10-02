@@ -1,5 +1,25 @@
 use core::ptr::NonNull;
 
+/// Runs `f`, aborting the process if it unwinds.
+///
+/// This is used for raw lock operations whose panic behavior would otherwise
+/// leave a safe guard with unknown lock ownership.
+#[inline]
+pub(crate) fn abort_on_panic<T>(f: impl FnOnce() -> T) -> T {
+    struct AbortOnDrop;
+
+    impl Drop for AbortOnDrop {
+        fn drop(&mut self) {
+            panic!("aborting due to panic while changing lock ownership");
+        }
+    }
+
+    let guard = AbortOnDrop;
+    let result = f();
+    core::mem::forget(guard);
+    result
+}
+
 /// A raw pointer carrying shared guard access to `T`.
 pub(crate) struct SharedGuardData<T: ?Sized>(NonNull<T>);
 
