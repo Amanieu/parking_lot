@@ -122,7 +122,8 @@ impl super::ThreadParkerT for ThreadParker {
 }
 
 impl ThreadParker {
-    /// Initializes the condvar to use CLOCK_MONOTONIC instead of CLOCK_REALTIME.
+    /// No initialization is needed on platforms which don't support selecting
+    /// the condvar clock.
     #[cfg(any(target_vendor = "apple", target_os = "android", target_os = "espidf"))]
     #[inline]
     unsafe fn init(&self) {}
@@ -198,9 +199,9 @@ fn timespec_now() -> libc::timespec {
 #[inline]
 fn timespec_now() -> libc::timespec {
     let mut now = MaybeUninit::<libc::timespec>::uninit();
-    let clock = if cfg!(target_os = "android") {
-        // Android doesn't support pthread_condattr_setclock, so we need to
-        // specify the timeout in CLOCK_REALTIME.
+    let clock = if cfg!(any(target_os = "android", target_os = "espidf")) {
+        // These platforms don't support pthread_condattr_setclock, so we need
+        // to specify the timeout in CLOCK_REALTIME.
         libc::CLOCK_REALTIME
     } else {
         libc::CLOCK_MONOTONIC
