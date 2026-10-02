@@ -9,12 +9,12 @@ use crate::raw_fair_mutex::RawFairMutex;
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
 /// ever accessed when the mutex is locked.
 ///
-/// The regular mutex provided by `parking_lot` uses eventual fairness, whereas
-/// this mutex always uses a fair unlock. When there are parked waiters, a fair
-/// unlock hands the mutex directly to one of them instead of making the mutex
-/// available for the unlocking thread to immediately re-acquire. Fair mutexes
-/// are generally slower, but can be useful when predictable handoff is more
-/// important than throughput.
+/// The regular mutex provided by `parking_lot` uses unfair unlocking by
+/// default, whereas this mutex always uses a fair unlock. When there are parked
+/// waiters, a fair unlock hands the mutex directly to one of them instead of
+/// making the mutex available for the unlocking thread to immediately
+/// re-acquire. Fair mutexes are generally slower, but can be useful when
+/// predictable handoff is more important than throughput.
 ///
 /// Fair unlocking does not imply strict first-in first-out ordering: threads
 /// may acquire the mutex while spinning or through `try_lock` without joining

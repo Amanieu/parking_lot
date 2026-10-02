@@ -11,20 +11,13 @@ use crate::raw_mutex::RawMutex;
 ///
 /// # Fairness
 ///
-/// A typical unfair lock can often end up in a situation where a single thread
-/// quickly acquires and releases the same mutex in succession, which can starve
-/// other threads waiting to acquire the mutex. While this improves throughput
-/// because it doesn't force a context switch when a thread tries to re-acquire
-/// a mutex it has just released, this can starve other threads.
+/// This mutex uses unfair unlocking by default, which allows the unlocking
+/// thread to re-acquire the mutex before a waiting thread and generally
+/// improves throughput. This can starve waiting threads.
 ///
-/// This mutex uses [eventual fairness](https://trac.webkit.org/changeset/203350)
-/// to ensure that the lock will be fair on average without sacrificing
-/// throughput. Fair unlocks are forced periodically, with intervals averaging
-/// 0.5ms per parking-lot hash bucket. A fair unlock hands the mutex to a
-/// waiting thread instead of allowing a newly arriving thread to acquire it.
-///
-/// You can also force a fair unlock by calling `MutexGuard::unlock_fair` when
-/// unlocking a mutex instead of simply dropping the `MutexGuard`.
+/// Fair unlocking can be requested explicitly by calling
+/// `MutexGuard::unlock_fair` instead of simply dropping the `MutexGuard`. A
+/// fair unlock hands the mutex directly to a waiting thread.
 ///
 /// # Differences from the standard library `Mutex`
 ///
@@ -32,8 +25,7 @@ use crate::raw_mutex::RawMutex;
 /// - Only requires 1 byte of lock state.
 /// - Supports locking with a timeout.
 /// - Allows raw locking & unlocking without a guard.
-/// - Supports eventual fairness so that the mutex is fair on average.
-/// - Optionally allows making the mutex fair by calling `MutexGuard::unlock_fair`.
+/// - Supports explicit fair unlocking through `MutexGuard::unlock_fair`.
 ///
 /// # Examples
 ///

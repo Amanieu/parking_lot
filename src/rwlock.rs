@@ -7,11 +7,11 @@ use crate::raw_rwlock::RawRwLock;
 /// of the underlying data (exclusive access) and the read portion of this lock
 /// typically allows for read-only access (shared access).
 ///
-/// This lock uses a task-fair locking policy which avoids both reader and
-/// writer starvation. This means that readers trying to acquire the lock will
-/// block even if the lock is unlocked when there are writers waiting to acquire
-/// the lock. Because of this, attempts to recursively acquire a read lock
-/// within a single thread may result in a deadlock.
+/// This lock uses a task-fair locking policy which generally gives waiting
+/// writers priority over new readers. This means that readers trying to acquire
+/// the lock will block even if the lock is unlocked when there are writers
+/// waiting to acquire the lock. Because of this, attempts to recursively acquire
+/// a read lock within a single thread may result in a deadlock.
 ///
 /// Use [`RecursiveRwLock`](crate::RecursiveRwLock) instead if recursive read
 /// locking is required.
@@ -24,21 +24,14 @@ use crate::raw_rwlock::RawRwLock;
 ///
 /// # Fairness
 ///
-/// A typical unfair lock can often end up in a situation where a single thread
-/// quickly acquires and releases the same lock in succession, which can starve
-/// other threads waiting to acquire the rwlock. While this improves throughput
-/// because it doesn't force a context switch when a thread tries to re-acquire
-/// a rwlock it has just released, this can starve other threads.
+/// This rwlock uses unfair unlocking by default, which allows newly arriving
+/// threads to acquire the lock before a waiting thread and generally improves
+/// throughput. This can starve waiting threads.
 ///
-/// This rwlock uses [eventual fairness](https://trac.webkit.org/changeset/203350)
-/// to ensure that the lock will be fair on average without sacrificing
-/// throughput. Fair unlocks are forced periodically, with intervals averaging
-/// 0.5ms per parking-lot hash bucket. A fair unlock gives waiting threads
-/// priority over newly arriving threads.
-///
-/// You can also force a fair unlock by calling `RwLockReadGuard::unlock_fair`
-/// or `RwLockWriteGuard::unlock_fair` when unlocking a reader-writer lock instead of simply
-/// dropping the guard.
+/// Fair unlocking can be requested explicitly by calling
+/// `RwLockReadGuard::unlock_fair` or `RwLockWriteGuard::unlock_fair` instead of
+/// simply dropping the guard. A fair unlock gives waiting threads priority over
+/// newly arriving threads.
 ///
 /// # Differences from the standard library `RwLock`
 ///
@@ -48,8 +41,7 @@ use crate::raw_rwlock::RawRwLock;
 /// - Supports upgradable read locks and atomic upgrades to write locks.
 /// - Supports locking with a timeout.
 /// - Allows raw locking & unlocking without a guard.
-/// - Supports eventual fairness so that the rwlock is fair on average.
-/// - Optionally allows making the rwlock fair by calling
+/// - Supports explicit fair unlocking by calling
 ///   `RwLockReadGuard::unlock_fair` and `RwLockWriteGuard::unlock_fair`.
 ///
 /// # Examples

@@ -31,8 +31,8 @@ Notable features of the primitives provided by this library include:
 4. The locks are adaptive and will suspend a thread after a few failed spin
    attempts. This makes the locks suitable for both long and short critical
    sections.
-5. `RwLock` uses a task-fair locking policy, which avoids reader and writer
-   starvation, whereas the standard library version makes no guarantees.
+5. `RwLock` uses a task-fair locking policy which generally gives waiting
+   writers priority over new readers.
 6. `Condvar` is guaranteed not to produce spurious wakeups. A thread will
     only be woken up if it timed out or it was woken up by a notification.
 7. `Condvar::notify_all` requeues waiters directly onto the associated `Mutex`
@@ -42,8 +42,8 @@ Notable features of the primitives provided by this library include:
 9. `Mutex` and `RwLock` allow raw unlocking without a RAII guard object.
 10. `Mutex<()>` and `RwLock<()>` allow raw locking without a RAII guard
     object.
-11. `Mutex` and `RwLock` support [eventual fairness](https://trac.webkit.org/changeset/203350)
-    which allows them to be fair on average without sacrificing performance.
+11. `Mutex` and `RwLock` support explicit fair unlocking, which hands the lock
+    directly to a waiting thread.
 12. `ReentrantMutex` and `RecursiveRwLock` types which support recursive
     locking.
 13. An *experimental* deadlock detector that works for `Mutex`, `RwLock`,

@@ -554,12 +554,12 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     }
 
     #[cold]
-    fn unlock_exclusive_slow(&self, force_fair: bool) {
+    fn unlock_exclusive_slow(&self, fair: bool) {
         // There are threads to unpark. Try to unpark as many as we can.
         let callback = |mut new_state, result: UnparkResult| {
             // If we are using a fair unlock then we should keep the
             // rwlock locked and hand it off to the unparked threads.
-            if result.unparked_threads != 0 && (force_fair || result.be_fair) {
+            if result.unparked_threads != 0 && fair {
                 if result.have_more_threads {
                     new_state |= PARKED_BIT;
                 }
@@ -674,7 +674,7 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     }
 
     #[cold]
-    fn unlock_upgradable_slow(&self, force_fair: bool) {
+    fn unlock_upgradable_slow(&self, fair: bool) {
         // Just release the lock if there are no parked threads.
         let mut state = self.state.load(Ordering::Relaxed);
         while state & PARKED_BIT == 0 {
@@ -694,7 +694,7 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
             // If we are using a fair unlock then we should keep the
             // rwlock locked and hand it off to the unparked threads.
             let mut state = self.state.load(Ordering::Relaxed);
-            if force_fair || result.be_fair {
+            if fair {
                 // Fall back to normal unpark on overflow. Panicking is
                 // not allowed in parking_lot callbacks.
                 while let Some(mut new_state) =

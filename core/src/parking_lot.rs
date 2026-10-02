@@ -1,38 +1,12 @@
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use crate::word_lock::WordLock;
 use core::{
-    cell::{Cell, UnsafeCell},
+    cell::Cell,
     ptr::{self, NonNull},
     sync::atomic::{AtomicPtr, AtomicUsize, Ordering},
 };
 use smallvec::SmallVec;
-use std::time::{Duration, Instant};
-
-// Don't use Instant on wasm32-unknown-unknown, it just panics.
-cfg_select! {
-    all(
-        target_family = "wasm",
-        target_os = "unknown",
-        target_vendor = "unknown"
-    ) => {
-        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-        struct TimeoutInstant;
-        impl TimeoutInstant {
-            fn now() -> TimeoutInstant {
-                TimeoutInstant
-            }
-        }
-        impl core::ops::Add<Duration> for TimeoutInstant {
-            type Output = Self;
-            fn add(self, _rhs: Duration) -> Self::Output {
-                TimeoutInstant
-            }
-        }
-    }
-    _ => {
-        use std::time::Instant as TimeoutInstant;
-    }
-}
+use std::time::Instant;
 
 static NUM_THREADS: AtomicUsize = AtomicUsize::new(0);
 
@@ -65,11 +39,9 @@ impl HashTable {
         let new_size = (num_threads * LOAD_FACTOR).next_power_of_two();
         let hash_bits = 0usize.leading_zeros() - new_size.leading_zeros() - 1;
 
-        let now = TimeoutInstant::now();
         let mut entries = Vec::with_capacity(new_size);
-        for i in 0..new_size {
-            // We must ensure the seed is not zero
-            entries.push(Bucket::new(now, i as u32 + 1));
+        for _ in 0..new_size {
+            entries.push(Bucket::new());
         }
 
         Box::new(HashTable {
@@ -88,57 +60,16 @@ struct Bucket {
     // Linked list of threads waiting on this bucket
     queue_head: Cell<Option<NonNull<ThreadData>>>,
     queue_tail: Cell<Option<NonNull<ThreadData>>>,
-
-    // Next time at which point be_fair should be set
-    fair_timeout: UnsafeCell<FairTimeout>,
 }
 
 impl Bucket {
     #[inline]
-    pub fn new(timeout: TimeoutInstant, seed: u32) -> Self {
+    pub fn new() -> Self {
         Self {
             mutex: WordLock::new(),
             queue_head: Cell::new(None),
             queue_tail: Cell::new(None),
-            fair_timeout: UnsafeCell::new(FairTimeout::new(timeout, seed)),
         }
-    }
-}
-
-struct FairTimeout {
-    // Next time at which point be_fair should be set
-    timeout: TimeoutInstant,
-
-    // the PRNG state for calculating the next timeout
-    seed: u32,
-}
-
-impl FairTimeout {
-    #[inline]
-    fn new(timeout: TimeoutInstant, seed: u32) -> FairTimeout {
-        FairTimeout { timeout, seed }
-    }
-
-    // Determine whether we should force a fair unlock, and update the timeout
-    #[inline]
-    fn should_timeout(&mut self) -> bool {
-        let now = TimeoutInstant::now();
-        if now > self.timeout {
-            // Time between 0 and 1ms.
-            let nanos = self.gen_u32() % 1_000_000;
-            self.timeout = now + Duration::new(0, nanos);
-            true
-        } else {
-            false
-        }
-    }
-
-    // Pseudorandom number generator from the "Xorshift RNGs" paper by George Marsaglia.
-    fn gen_u32(&mut self) -> u32 {
-        self.seed ^= self.seed << 13;
-        self.seed ^= self.seed >> 17;
-        self.seed ^= self.seed << 5;
-        self.seed
     }
 }
 
@@ -495,10 +426,6 @@ pub struct UnparkResult {
     /// Whether any threads remain parked with the original key after the
     /// operation.
     pub have_more_threads: bool,
-
-    /// Whether this operation should use a fair unlocking mechanism. This is
-    /// set periodically, on average once every 0.5ms per hash bucket.
-    pub be_fair: bool,
 }
 
 /// Operation that `unpark_requeue` should perform.
@@ -766,7 +693,6 @@ pub unsafe fn unpark_one(
 
             // Invoke the callback before waking up the thread
             result.unparked_threads = 1;
-            result.be_fair = unsafe { (*bucket.fair_timeout.get()).should_timeout() };
             let token = callback(result);
 
             // Set the token for the target thread
@@ -985,9 +911,6 @@ pub unsafe fn unpark_requeue(
     }
 
     // Invoke the callback before waking up the thread
-    if result.unparked_threads != 0 {
-        result.be_fair = unsafe { (*bucket_from.fair_timeout.get()).should_timeout() };
-    }
     let token = callback(op, result);
 
     // See comment in unpark_one for why we mess with the locking
@@ -1089,9 +1012,6 @@ pub unsafe fn unpark_filter(
 
     // Invoke the callback before waking up the threads
     result.unparked_threads = threads.len();
-    if result.unparked_threads != 0 {
-        result.be_fair = unsafe { (*bucket.fair_timeout.get()).should_timeout() };
-    }
     let token = callback(result);
 
     // Pass the token to all threads that are going to be unparked and prepare

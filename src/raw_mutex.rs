@@ -266,14 +266,14 @@ impl RawMutex {
     }
 
     #[cold]
-    fn unlock_slow(&self, force_fair: bool) {
+    fn unlock_slow(&self, fair: bool) {
         // Unpark one thread and leave the parked bit set if there might
         // still be parked threads on this address.
         let addr = core::ptr::from_ref(self).addr();
         let callback = |result: UnparkResult| {
             // If we are using a fair unlock then we should keep the
             // mutex locked and hand it off to the unparked thread.
-            if result.unparked_threads != 0 && (force_fair || result.be_fair) {
+            if result.unparked_threads != 0 && fair {
                 // Clear the parked bit if there are no more parked
                 // threads.
                 if !result.have_more_threads {
