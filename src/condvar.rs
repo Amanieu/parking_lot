@@ -309,11 +309,29 @@ mod tests {
         let timeout_result = cv.wait_while_until(&mut mutex_guard, condition, timeout);
 
         assert!(timeout_result.timed_out());
-        assert!(*mutex_guard == num_iters + 1);
+        assert!(*mutex_guard == num_iters + 2);
 
         // prevent deadlock with notifier
         drop(mutex_guard);
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn wait_while_until_internal_rechecks_condition_after_timeout() {
+        let mutex = Mutex::new(());
+        let cv = Condvar::new();
+        let mut calls = 0;
+        let condition = |_: &mut ()| {
+            calls += 1;
+            calls == 1
+        };
+
+        let mut mutex_guard = mutex.lock();
+        let timeout_result =
+            cv.wait_while_until(&mut mutex_guard, condition, Instant::now());
+
+        assert!(!timeout_result.timed_out());
+        assert_eq!(calls, 2);
     }
 
     #[test]

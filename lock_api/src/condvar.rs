@@ -351,14 +351,18 @@ impl<R: RawMutexTimed, C: RawCondvarTimed<RawMutex = R>> Condvar<C> {
     {
         let mut result = WaitTimeoutResult(false);
 
-        while !result.timed_out() && condition(mutex_guard.deref_mut()) {
+        loop {
+            if !condition(mutex_guard.deref_mut()) {
+                return WaitTimeoutResult(false);
+            }
+            if result.timed_out() {
+                return result;
+            }
             result = WaitTimeoutResult(unsafe {
                 self.inner
                     .wait_until(MutexGuard::mutex(mutex_guard).raw(), &timeout)
             });
         }
-
-        result
     }
 
     /// Waits on this condition variable for a notification, timing out after a
