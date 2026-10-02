@@ -140,7 +140,7 @@ unsafe impl lock_api::RawRwLock for RawRwLock {
     #[inline]
     fn is_locked_exclusive(&self) -> bool {
         let state = self.state.load(Ordering::Relaxed);
-        state & (WRITER_BIT) != 0
+        state & (WRITER_BIT | READERS_MASK) == WRITER_BIT
     }
 }
 

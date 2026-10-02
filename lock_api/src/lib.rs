@@ -48,6 +48,10 @@
 //!     unsafe fn unlock(&self) {
 //!         self.0.store(false, Ordering::Release);
 //!     }
+//!
+//!     fn is_locked(&self) -> bool {
+//!         self.0.load(Ordering::Relaxed)
+//!     }
 //! }
 //!
 //! // 3. Export the wrappers. This are the types that your users will actually use.
