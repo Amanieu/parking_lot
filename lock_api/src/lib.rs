@@ -76,11 +76,14 @@
 //!
 //! # Cargo features
 //!
-//! This crate supports three cargo features:
+//! This crate provides the following Cargo features:
 //!
-//! - `owning_ref`: Allows your lock types to be used with the `owning_ref` crate.
-//! - `arc_lock`: Enables locking from an `Arc`. This enables types such as `ArcMutexGuard`. Note that this
-//!   requires the `alloc` crate to be present.
+//! - `atomic_usize`: Enables reentrant mutex types, which require pointer-sized
+//!   atomic operations. This feature is enabled by default.
+//! - `arc_lock`: Enables locking from an `Arc` and types such as
+//!   `ArcMutexGuard`. This requires the `alloc` crate.
+//! - `owning_ref`: Allows lock guards to be used with the `owning_ref` crate.
+//! - `serde`: Enables serialization and deserialization of lock types.
 
 #![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg))]

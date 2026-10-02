@@ -32,8 +32,6 @@ use crate::raw_mutex::RawMutex;
 /// # Differences from the standard library `Mutex`
 ///
 /// - No poisoning, the lock is released normally on panic.
-/// - Only requires 1 byte of space, whereas the standard library boxes the
-///   `Mutex` due to platform limitations.
 /// - Can be statically constructed.
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.

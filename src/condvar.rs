@@ -24,8 +24,6 @@ pub use lock_api::WaitTimeoutResult;
 /// - `Condvar::notify_all` will only wake up a single thread, the rest are
 ///   requeued to wait for the `Mutex` to be unlocked by the thread that was
 ///   woken up.
-/// - Only requires 1 word of space, whereas the standard library boxes the
-///   `Condvar` due to platform limitations.
 /// - Can be statically constructed.
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.

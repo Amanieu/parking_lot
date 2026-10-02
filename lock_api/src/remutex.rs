@@ -733,8 +733,8 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
 
     /// Temporarily unlocks the mutex to execute the given function.
     ///
-    /// This is safe because `&mut` guarantees that there exist no other
-    /// references to the data protected by the mutex.
+    /// This releases only one level of recursive locking. The underlying mutex
+    /// remains locked if the current thread has acquired it more than once.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -777,10 +777,8 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
 
     /// Temporarily unlocks the mutex to execute the given function.
     ///
-    /// The mutex is unlocked a fair unlock protocol.
-    ///
-    /// This is safe because `&mut` guarantees that there exist no other
-    /// references to the data protected by the mutex.
+    /// This releases only one level of recursive locking. A fair unlock is
+    /// performed only if this releases the final level.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U
@@ -888,8 +886,8 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
 
     /// Temporarily unlocks the mutex to execute the given function.
     ///
-    /// This is safe because `&mut` guarantees that there exist no other
-    /// references to the data protected by the mutex.
+    /// This releases only one level of recursive locking. The underlying mutex
+    /// remains locked if the current thread has acquired it more than once.
     #[inline]
     #[track_caller]
     pub fn unlocked<F, U>(s: &mut Self, f: F) -> U
@@ -929,7 +927,8 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
 
     /// Temporarily unlocks the mutex to execute the given function.
     ///
-    /// This is functionally identical to the `unlocked_fair` method on [`ReentrantMutexGuard`].
+    /// This releases only one level of recursive locking. A fair unlock is
+    /// performed only if this releases the final level.
     #[inline]
     #[track_caller]
     pub fn unlocked_fair<F, U>(s: &mut Self, f: F) -> U

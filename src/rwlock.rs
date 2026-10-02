@@ -17,7 +17,7 @@ use crate::raw_rwlock::RawRwLock;
 /// required that `T` satisfies `Send` to be shared across threads and `Sync` to
 /// allow concurrent access through readers. The RAII guards returned from the
 /// locking methods implement `Deref` (and `DerefMut` for the `write` methods)
-/// to allow access to the contained of the lock.
+/// to allow access to the contents of the lock.
 ///
 /// # Fairness
 ///
@@ -45,8 +45,6 @@ use crate::raw_rwlock::RawRwLock;
 /// - Supports atomically downgrading a write lock into a read lock.
 /// - Task-fair locking policy instead of an unspecified platform default.
 /// - No poisoning, the lock is released normally on panic.
-/// - Only requires 1 word of space, whereas the standard library boxes the
-///   `RwLock` due to platform limitations.
 /// - Can be statically constructed.
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.

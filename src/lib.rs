@@ -1,6 +1,5 @@
-//! This library provides implementations of `Mutex`, `RwLock`, `Condvar` and
-//! `Once` that are smaller, faster and more flexible than those in the Rust
-//! standard library. It also provides a `ReentrantMutex` type.
+//! This library provides compact and efficient implementations of `Mutex`,
+//! `RwLock`, `Condvar` and `Once`. It also provides a `ReentrantMutex` type.
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]

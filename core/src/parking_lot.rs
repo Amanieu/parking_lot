@@ -496,8 +496,8 @@ pub struct UnparkResult {
     /// The number of threads that were requeued.
     pub requeued_threads: usize,
 
-    /// Whether there are any threads remaining in the queue. This only returns
-    /// true if a thread was unparked.
+    /// Whether any threads remain parked with the original key after the
+    /// operation.
     pub have_more_threads: bool,
 
     /// This is set to true on average once every 0.5ms for any given key. It
@@ -865,9 +865,9 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
 ///
 /// The `callback` function is also called while both queues are locked. It is
 /// passed the `RequeueOp` returned by `validate` and an `UnparkResult`
-/// indicating whether a thread was unparked and whether there are threads still
-/// parked in the new queue. This `UnparkResult` value is also returned by
-/// `unpark_requeue`.
+/// indicating whether a thread was unparked and whether threads remain parked
+/// with `key_from`. Threads requeued to `key_to` are not included. This
+/// `UnparkResult` value is also returned by `unpark_requeue`.
 ///
 /// The `callback` function should return an `UnparkToken` value which will be
 /// passed to the thread that is unparked. If no thread is unparked then the

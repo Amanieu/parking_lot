@@ -47,14 +47,6 @@ impl OnceState {
 /// initialization. Useful for one-time initialization for globals, FFI or
 /// related functionality.
 ///
-/// # Differences from the standard library `Once`
-///
-/// - Only requires 1 byte of space, instead of 1 word.
-/// - Not required to be `'static`.
-/// - Relaxed memory barriers in the fast path, which can significantly improve
-///   performance on some architectures.
-/// - Efficient handling of micro-contention using adaptive spinning.
-///
 /// # Examples
 ///
 /// ```
@@ -119,12 +111,15 @@ impl Once {
     /// This method will block the calling thread if another initialization
     /// routine is currently running.
     ///
-    /// When this function returns, it is guaranteed that some initialization
-    /// has run and completed (it may not be the closure specified). It is also
-    /// guaranteed that any memory writes performed by the executed closure can
-    /// be reliably observed by other threads at this point (there is a
-    /// happens-before relation between the closure and code executing after the
-    /// return).
+    /// When this function returns, the `Once` is in the completed state. If an
+    /// initialization closure was run, all writes performed by that closure
+    /// happen before this function returns. A `Once` created with
+    /// [`new_completed`](Self::new_completed) is already completed and has no
+    /// associated initialization closure.
+    ///
+    /// If the given closure recursively invokes `call_once` on the same `Once`
+    /// instance, the exact behavior is not specified: allowed outcomes are a
+    /// panic or a deadlock.
     ///
     /// # Examples
     ///
@@ -186,6 +181,10 @@ impl Once {
     /// The closure `f` is yielded a structure which can be used to query the
     /// state of this `Once` (whether initialization has previously panicked or
     /// not).
+    ///
+    /// If the given closure recursively invokes `call_once` or
+    /// `call_once_force` on the same `Once` instance, the exact behavior is not
+    /// specified: allowed outcomes are a panic or a deadlock.
     #[inline]
     pub fn call_once_force<F>(&self, f: F)
     where

@@ -1,6 +1,6 @@
 use crate::raw_fair_mutex::RawFairMutex;
 
-/// A mutual exclusive primitive that is always fair, useful for protecting shared data
+/// A mutual exclusion primitive that uses fair unlocking, useful for protecting shared data
 ///
 /// This mutex will block threads waiting for the lock to become available. The
 /// mutex can be statically initialized or created by the `new`
@@ -9,24 +9,21 @@ use crate::raw_fair_mutex::RawFairMutex;
 /// returned from `lock` and `try_lock`, which guarantees that the data is only
 /// ever accessed when the mutex is locked.
 ///
-/// The regular mutex provided by `parking_lot` uses eventual fairness
-/// (after some time it will default to the fair algorithm), but eventual
-/// fairness does not provide the same guarantees an always fair method would.
-/// Fair mutexes are generally slower, but sometimes needed.
+/// The regular mutex provided by `parking_lot` uses eventual fairness, whereas
+/// this mutex always uses a fair unlock. When there are parked waiters, a fair
+/// unlock hands the mutex directly to one of them instead of making the mutex
+/// available for the unlocking thread to immediately re-acquire. Fair mutexes
+/// are generally slower, but can be useful when predictable handoff is more
+/// important than throughput.
 ///
-/// In a fair mutex the waiters form a queue, and the lock is always granted to
-/// the next requester in the queue, in first-in first-out order. This ensures
-/// that one thread cannot starve others by quickly re-acquiring the lock after
-/// releasing it.
-///
-/// A fair mutex may not be interesting if threads have different priorities (this is known as
-/// priority inversion).
+/// Fair unlocking does not imply strict first-in first-out ordering: threads
+/// may acquire the mutex while spinning or through `try_lock` without joining
+/// the queue of parked waiters.
 ///
 /// # Differences from the standard library `Mutex`
 ///
 /// - No poisoning, the lock is released normally on panic.
-/// - Only requires 1 byte of space, whereas the standard library boxes the
-///   `FairMutex` due to platform limitations.
+/// - Only requires 1 byte of lock state.
 /// - Can be statically constructed.
 /// - Does not require any drop glue when dropped.
 /// - Inline fast path for the uncontended case.
