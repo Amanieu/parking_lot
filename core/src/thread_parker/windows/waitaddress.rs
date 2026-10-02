@@ -45,7 +45,7 @@ impl WaitAddress {
     pub fn park(&'static self, key: &AtomicUsize) {
         while key.load(Ordering::Acquire) != 0 {
             let r = self.wait_on_address(key, INFINITE);
-            debug_assert!(r == true.into());
+            assert_ne!(r, false.into());
         }
     }
 
@@ -62,7 +62,7 @@ impl WaitAddress {
                 .div_ceil(1_000_000)
                 .min((INFINITE - 1) as u128) as u32;
             if self.wait_on_address(key, timeout) == false.into() {
-                debug_assert_eq!(unsafe { GetLastError() }, ERROR_TIMEOUT);
+                assert_eq!(unsafe { GetLastError() }, ERROR_TIMEOUT);
             }
         }
         true

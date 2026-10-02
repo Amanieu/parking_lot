@@ -42,7 +42,7 @@ impl super::ThreadParkerT for ThreadParker {
             let r = unsafe { wasm32::memory_atomic_wait32(self.ptr().as_ptr(), PARKED, -1) };
             // we should have either woken up (0) or got a not-equal due to a
             // race (1). We should never time out (2)
-            debug_assert!(r == 0 || r == 1);
+            assert!(r == 0 || r == 1);
         }
     }
 
@@ -54,7 +54,7 @@ impl super::ThreadParkerT for ThreadParker {
                 let r = unsafe {
                     wasm32::memory_atomic_wait32(self.ptr().as_ptr(), PARKED, nanos_left)
                 };
-                debug_assert!(r == 0 || r == 1 || r == 2);
+                assert!(r == 0 || r == 1 || r == 2);
             } else {
                 return false;
             }
@@ -87,7 +87,7 @@ impl super::UnparkHandleT for UnparkHandle {
     #[inline]
     unsafe fn unpark(self) {
         let num_notified = unsafe { wasm32::memory_atomic_notify(self.0.as_ptr(), 1) };
-        debug_assert!(num_notified == 0 || num_notified == 1);
+        assert!(num_notified == 0 || num_notified == 1);
     }
 }
 

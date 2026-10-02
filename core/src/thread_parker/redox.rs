@@ -99,9 +99,9 @@ impl ThreadParker {
             )
         };
         match r {
-            Ok(r) => debug_assert_eq!(r, 0),
+            Ok(r) => assert_eq!(r, 0),
             Err(Error { errno }) => {
-                debug_assert!(errno == EINTR || errno == EAGAIN || errno == ETIMEDOUT);
+                assert!(errno == EINTR || errno == EAGAIN || errno == ETIMEDOUT);
             }
         }
     }
@@ -123,8 +123,8 @@ impl super::UnparkHandleT for UnparkHandle {
         // matter since the syscall will just return EFAULT in that case.
         let r = unsafe { futex(self.futex, FUTEX_WAKE, PARKED, 0, ptr::null_mut()) };
         match r {
-            Ok(num_woken) => debug_assert!(num_woken == 0 || num_woken == 1),
-            Err(Error { errno }) => debug_assert_eq!(errno, EFAULT),
+            Ok(num_woken) => assert!(num_woken == 0 || num_woken == 1),
+            Err(Error { errno }) => assert_eq!(errno, EFAULT),
         }
     }
 }

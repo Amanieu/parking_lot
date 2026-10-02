@@ -97,7 +97,7 @@ impl KeyedEvent {
         // The rendezvous with NtReleaseKeyedEvent provides the synchronization
         // required by ThreadParkerT for the surrounding ThreadData.
         let status = unsafe { self.wait_for(key as *const _ as *mut ffi::c_void, ptr::null_mut()) };
-        debug_assert_eq!(status, STATUS_SUCCESS);
+        assert_eq!(status, STATUS_SUCCESS);
     }
 
     #[inline]
@@ -128,7 +128,7 @@ impl KeyedEvent {
             if status == STATUS_SUCCESS {
                 return true;
             }
-            debug_assert_eq!(status, STATUS_TIMEOUT);
+            assert_eq!(status, STATUS_TIMEOUT);
         }
     }
 
@@ -154,7 +154,7 @@ impl Drop for KeyedEvent {
     fn drop(&mut self) {
         unsafe {
             let ok = CloseHandle(self.handle);
-            debug_assert_eq!(ok, true.into());
+            assert_ne!(ok, false.into());
         }
     }
 }
@@ -176,7 +176,7 @@ impl UnparkHandle {
             // This rendezvous synchronizes with the target's
             // NtWaitForKeyedEvent call.
             let status = unsafe { self.keyed_event.release(key.as_ptr().cast::<ffi::c_void>()) };
-            debug_assert_eq!(status, STATUS_SUCCESS);
+            assert_eq!(status, STATUS_SUCCESS);
         }
     }
 }

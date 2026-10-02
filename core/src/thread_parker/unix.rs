@@ -55,34 +55,34 @@ impl super::ThreadParkerT for ThreadParker {
         // concurrently executing UnparkHandle::unpark, which is done without
         // holding the queue lock.
         let r = unsafe { libc::pthread_mutex_lock(self.mutex.get()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
         let should_park = self.should_park.get();
         let r = unsafe { libc::pthread_mutex_unlock(self.mutex.get()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
         should_park
     }
 
     #[inline]
     unsafe fn park(&self) {
         let r = unsafe { libc::pthread_mutex_lock(self.mutex.get()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
         while self.should_park.get() {
             let r = unsafe { libc::pthread_cond_wait(self.condvar.get(), self.mutex.get()) };
-            debug_assert_eq!(r, 0);
+            assert_eq!(r, 0);
         }
         let r = unsafe { libc::pthread_mutex_unlock(self.mutex.get()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
     }
 
     #[inline]
     unsafe fn park_until(&self, timeout: Instant) -> bool {
         let r = unsafe { libc::pthread_mutex_lock(self.mutex.get()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
         while self.should_park.get() {
             let now = Instant::now();
             if timeout <= now {
                 let r = unsafe { libc::pthread_mutex_unlock(self.mutex.get()) };
-                debug_assert_eq!(r, 0);
+                assert_eq!(r, 0);
                 return false;
             }
 
@@ -99,26 +99,26 @@ impl super::ThreadParkerT for ThreadParker {
                     // On some systems, negative timeouts will return EINVAL. In
                     // that case we won't sleep and will just busy loop instead,
                     // which is the best we can do.
-                    debug_assert!(r == 0 || r == libc::ETIMEDOUT || r == libc::EINVAL);
+                    assert!(r == 0 || r == libc::ETIMEDOUT || r == libc::EINVAL);
                 } else {
-                    debug_assert!(r == 0 || r == libc::ETIMEDOUT);
+                    assert!(r == 0 || r == libc::ETIMEDOUT);
                 }
             } else {
                 // The platform cannot represent this absolute deadline, so use
                 // an untimed wait.
                 let r = unsafe { libc::pthread_cond_wait(self.condvar.get(), self.mutex.get()) };
-                debug_assert_eq!(r, 0);
+                assert_eq!(r, 0);
             }
         }
         let r = unsafe { libc::pthread_mutex_unlock(self.mutex.get()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
         true
     }
 
     #[inline]
     unsafe fn unpark_lock(&self) -> UnparkHandle {
         let r = unsafe { libc::pthread_mutex_lock(self.mutex.get()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
 
         UnparkHandle {
             thread_parker: NonNull::from(self),
@@ -139,14 +139,14 @@ impl ThreadParker {
     unsafe fn init(&self) {
         let mut attr = MaybeUninit::<libc::pthread_condattr_t>::uninit();
         let r = unsafe { libc::pthread_condattr_init(attr.as_mut_ptr()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
         let r =
             unsafe { libc::pthread_condattr_setclock(attr.as_mut_ptr(), libc::CLOCK_MONOTONIC) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
         let r = unsafe { libc::pthread_cond_init(self.condvar.get(), attr.as_ptr()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
         let r = unsafe { libc::pthread_condattr_destroy(attr.as_mut_ptr()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
     }
 }
 
@@ -159,9 +159,9 @@ impl Drop for ThreadParker {
         // this behavior no longer occurs. The same applies to condvars.
         unsafe {
             let r = libc::pthread_mutex_destroy(self.mutex.get());
-            debug_assert!(r == 0 || r == libc::EINVAL);
+            assert!(r == 0 || r == libc::EINVAL);
             let r = libc::pthread_cond_destroy(self.condvar.get());
-            debug_assert!(r == 0 || r == libc::EINVAL);
+            assert!(r == 0 || r == libc::EINVAL);
         }
     }
 }
@@ -180,9 +180,9 @@ impl super::UnparkHandleT for UnparkHandle {
         // thread. In particular, the thread could exit after we unlock the
         // mutex, which would make the condvar access invalid memory.
         let r = unsafe { libc::pthread_cond_signal(thread_parker.condvar.get()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
         let r = unsafe { libc::pthread_mutex_unlock(thread_parker.mutex.get()) };
-        debug_assert_eq!(r, 0);
+        assert_eq!(r, 0);
     }
 }
 
@@ -199,7 +199,7 @@ fn timespec_now() -> libc::timespec {
         libc::CLOCK_MONOTONIC
     };
     let r = unsafe { libc::clock_gettime(clock, now.as_mut_ptr()) };
-    debug_assert_eq!(r, 0);
+    assert_eq!(r, 0);
     // SAFETY: We know `libc::clock_gettime` has initialized the value.
     unsafe { now.assume_init() }
 }

@@ -45,25 +45,29 @@ impl super::ThreadParkerT for ThreadParker {
     #[inline]
     unsafe fn park(&self) {
         while self.parked.load(Ordering::Acquire) {
-            let result = usercalls::wait(EV_UNPARK, WAIT_INDEFINITE);
-            debug_assert_eq!(result.expect("wait returned error") & EV_UNPARK, EV_UNPARK);
+            let events = usercalls::wait(EV_UNPARK, WAIT_INDEFINITE)
+                .expect("wait returned an unexpected error");
+            assert_eq!(events & EV_UNPARK, EV_UNPARK);
         }
     }
 
     #[inline]
     unsafe fn park_until(&self, timeout: Instant) -> bool {
         while self.parked.load(Ordering::Acquire) {
-            let remaining = match timeout.checked_duration_since(Instant::now()) {
-                Some(remaining) => remaining,
-                None => {
-                    return false;
-                }
-            };
+            let now = Instant::now();
+            if timeout <= now {
+                return false;
+            }
+            let remaining = timeout - now;
             let remaining_nanos =
                 u128::min(remaining.as_nanos(), WAIT_INDEFINITE as u128 - 1) as u64;
 
-            if let Err(e) = usercalls::wait(EV_UNPARK, remaining_nanos) {
-                debug_assert!(e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::WouldBlock);
+            match usercalls::wait(EV_UNPARK, remaining_nanos) {
+                Ok(_) => {}
+                Err(error)
+                    if error.kind() == ErrorKind::TimedOut
+                        || error.kind() == ErrorKind::WouldBlock => {}
+                Err(error) => panic!("wait returned an unexpected error: {error}"),
             }
         }
         true
@@ -87,8 +91,7 @@ impl super::UnparkHandleT for UnparkHandle {
     #[inline]
     unsafe fn unpark(self) {
         let result = usercalls::send(EV_UNPARK, Some(self.0));
-        if cfg!(debug_assertions)
-            && let Err(error) = result
+        if let Err(error) = result
             // `InvalidInput` may be returned if the thread we send to has
             // already been unparked and exited.
             && error.kind() != io::ErrorKind::InvalidInput
