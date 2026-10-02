@@ -1,6 +1,13 @@
 //! This library provides compact and efficient implementations of [`Mutex`],
 //! [`FairMutex`], [`ReentrantMutex`], [`RwLock`], [`RecursiveRwLock`],
 //! [`Condvar`] and [`Once`].
+//!
+//! # Use in global allocators
+//!
+//! The synchronization primitives in this crate must not be used internally by
+//! a global allocator. Their contended paths may allocate memory, including
+//! while internal parking-lot locks are held. If the allocator then blocks on
+//! one of these primitives, it may recursively invoke itself or deadlock.
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]

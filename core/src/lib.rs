@@ -21,6 +21,14 @@
 //!
 //! See the documentation of the individual functions for more details.
 //!
+//! # Use in global allocators
+//!
+//! Synchronization primitives built on this parking lot must not be used
+//! internally by a global allocator. Parking-lot operations may allocate
+//! memory, including while internal locks are held. If the allocator then
+//! blocks on one of these primitives, it may recursively invoke itself or
+//! deadlock.
+//!
 //! # Building custom synchronization primitives
 //!
 //! Building custom synchronization primitives is very simple since the parking
