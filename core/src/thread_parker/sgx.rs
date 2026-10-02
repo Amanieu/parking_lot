@@ -71,9 +71,13 @@ impl super::ThreadParkerT for ThreadParker {
 
     #[inline]
     unsafe fn unpark_lock(&self) -> UnparkHandle {
+        // The target may destroy the parker as soon as the store below is
+        // observed, so construct the handle first.
+        let handle = UnparkHandle(self.tcs);
+
         // We don't need to lock anything, just clear the state
         self.parked.store(false, Ordering::Release);
-        UnparkHandle(self.tcs)
+        handle
     }
 }
 

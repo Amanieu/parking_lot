@@ -161,12 +161,15 @@ impl super::ThreadParkerT for ThreadParker {
     // wake remains harmless even if the target's ThreadData has been freed.
     #[inline]
     unsafe fn unpark_lock(&self) -> UnparkHandle {
+        // The target may destroy the parker as soon as the store below is
+        // observed, so construct the handle first.
+        let handle = UnparkHandle {
+            futex: NonNull::from(&self.futex),
+        };
+
         // We don't need to lock anything, just clear the state
         self.futex.store(0, Ordering::Release);
-
-        UnparkHandle {
-            futex: NonNull::from(&self.futex),
-        }
+        handle
     }
 }
 

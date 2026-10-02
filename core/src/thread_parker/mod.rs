@@ -45,9 +45,14 @@ pub trait ThreadParkerT {
     /// but scheduling and platform-specific behavior may delay the return.
     unsafe fn park_until(&self, timeout: Instant) -> bool;
 
-    /// Prepares to unpark a thread after removing its `ThreadData` from the
-    /// queue and writing its result fields. This must be called while holding
-    /// the queue lock.
+    /// Prepares to unpark a thread after removing its `ThreadData` from its
+    /// queue and writing its result fields.
+    ///
+    /// The caller must exclusively own the target `ThreadData`, which must
+    /// remain valid and parked until this method is called.
+    ///
+    /// The returned handle must be consumed by a call to
+    /// [`UnparkHandleT::unpark`].
     ///
     /// After this returns, the caller must not access the target `ThreadData`:
     /// the target may immediately observe the unpark and destroy it, even while
@@ -57,9 +62,10 @@ pub trait ThreadParkerT {
     unsafe fn unpark_lock(&self) -> Self::UnparkHandle;
 }
 
-/// Handle for a thread that is about to be unparked. We mark the thread as
-/// unparked while holding the queue lock, but delay any potentially expensive
-/// wake operation until after the queue lock is released.
+/// Handle for a thread whose unpark has been committed. Every handle returned
+/// by [`ThreadParkerT::unpark_lock`] must be consumed by a call to
+/// [`UnparkHandleT::unpark`]. Any potentially expensive wake operation is
+/// delayed until then.
 pub trait UnparkHandleT {
     /// Wakes up the parked thread. This should be called after the queue lock is
     /// released to avoid blocking the queue for too long.

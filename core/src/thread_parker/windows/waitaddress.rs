@@ -70,13 +70,16 @@ impl WaitAddress {
 
     #[inline]
     pub fn unpark_lock(&'static self, key: &AtomicUsize) -> UnparkHandle {
-        // We don't need to lock anything, just clear the state
-        key.store(0, Ordering::Release);
-
-        UnparkHandle {
+        // The target may destroy the parker as soon as the store below is
+        // observed, so construct the handle first.
+        let handle = UnparkHandle {
             key: NonNull::from(key),
             waitaddress: self,
-        }
+        };
+
+        // We don't need to lock anything, just clear the state
+        key.store(0, Ordering::Release);
+        handle
     }
 
     #[inline]

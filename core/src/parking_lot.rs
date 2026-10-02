@@ -782,11 +782,9 @@ pub unsafe fn unpark_one(
             // Set the token for the target thread
             unsafe { current_ref.state() }.unpark_token = token;
 
-            // This is a bit tricky: we first lock the ThreadParker to prevent
-            // the thread from exiting and freeing its ThreadData if its wait
-            // times out. Then we unlock the queue since we don't want to keep
-            // the queue locked while we perform a system call. Finally we wake
-            // up the parked thread.
+            // Commit the unpark before unlocking the queue. The target may now
+            // destroy its ThreadData, but the handle remains valid for the
+            // deferred wake.
             let handle = unsafe { current_ref.parker.unpark_lock() };
             // SAFETY: We hold the lock here, as required
             unsafe { bucket.mutex.unlock() };
@@ -852,9 +850,7 @@ pub unsafe fn unpark_all(key: usize, unpark_token: UnparkToken) -> usize {
             // Set the token for the target thread
             unsafe { current_ref.state() }.unpark_token = unpark_token;
 
-            // Don't wake up threads while holding the queue lock. See comment
-            // in unpark_one. For now just record which threads we need to wake
-            // up.
+            // Commit the unpark now and defer the wake until the queue is unlocked.
             threads.push(unsafe { current_ref.parker.unpark_lock() });
             current = next;
         } else {
@@ -1005,7 +1001,7 @@ pub unsafe fn unpark_requeue(
     // Invoke the callback before waking up the thread
     let token = callback(op, result);
 
-    // See comment in unpark_one for why we mess with the locking
+    // Commit the unpark before unlocking the queues, then perform the wake.
     if let Some(wakeup_thread) = wakeup_thread {
         let wakeup_thread = unsafe { wakeup_thread.as_ref() };
         unsafe { wakeup_thread.state() }.unpark_token = token;

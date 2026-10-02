@@ -72,10 +72,13 @@ impl super::ThreadParkerT for ThreadParker {
 
     #[inline]
     unsafe fn unpark_lock(&self) -> UnparkHandle {
+        // The target may destroy the parker as soon as the store below is
+        // observed, so construct the handle first.
+        let handle = UnparkHandle { futex: self.ptr() };
+
         // We don't need to lock anything, just clear the state
         self.futex.store(UNPARKED, Ordering::Release);
-
-        UnparkHandle { futex: self.ptr() }
+        handle
     }
 }
 
