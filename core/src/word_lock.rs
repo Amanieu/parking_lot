@@ -1,46 +1,10 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::spinwait::SpinWait;
 use crate::thread_parker::{ThreadParker, ThreadParkerT, UnparkHandleT};
 use core::{
     cell::Cell,
     mem, ptr,
-    sync::atomic::{fence, AtomicPtr, Ordering},
+    sync::atomic::{AtomicPtr, Ordering, fence},
 };
-
-// Polyfill for compatibility with older Rust versions.
-#[cfg(not(miri))]
-fn atomic_ptr_fetch_byte_sub<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
-    use core::sync::atomic::AtomicUsize;
-    let p = ptr::from_ref(p).cast::<AtomicUsize>();
-    // Very strictly speaking, this is not provenance-correct: we are loading the pointer stored in
-    // `p` at integer type, which discards provenance, and then storing that back, thus erasing the
-    // provenance in memory. However, LLVM's provenance model is not defined yet, and Rust already
-    // relies on its integer type being able to hold provenance under some circumstances. So it
-    // seems fine for us to rely on this as well.
-    (unsafe { (*p).fetch_sub(val, order) }) as *mut T
-}
-#[cfg(not(miri))]
-fn atomic_ptr_fetch_and<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
-    use core::sync::atomic::AtomicUsize;
-    let p = ptr::from_ref(p).cast::<AtomicUsize>();
-    (unsafe { (*p).fetch_and(val, order) }) as *mut T
-}
-// Use provenance-aware versions on Miri
-// FIXME: use this everywhere once we can depend on Rust 1.91
-#[cfg(miri)]
-fn atomic_ptr_fetch_byte_sub<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
-    p.fetch_byte_sub(val, order)
-}
-#[cfg(miri)]
-fn atomic_ptr_fetch_and<T>(p: &AtomicPtr<T>, val: usize, order: Ordering) -> *mut T {
-    p.fetch_and(val, order)
-}
 
 struct ThreadData {
     parker: ThreadParker,
@@ -134,7 +98,7 @@ impl WordLock {
     /// Must not be called on an already unlocked `WordLock`!
     #[inline]
     pub unsafe fn unlock(&self) {
-        let state = atomic_ptr_fetch_byte_sub(&self.state, LOCKED_BIT, Ordering::Release);
+        let state = self.state.fetch_byte_sub(LOCKED_BIT, Ordering::Release);
         if state.is_queue_locked() || state.queue_head().is_null() {
             return;
         }
@@ -305,7 +269,7 @@ impl WordLock {
                 unsafe {
                     (*queue_head).queue_tail.set(new_tail);
                 }
-                atomic_ptr_fetch_and(&self.state, !QUEUE_LOCKED_BIT, Ordering::Release);
+                self.state.fetch_and(!QUEUE_LOCKED_BIT, Ordering::Release);
             }
 
             // Finally, wake up the thread we removed from the queue. Note that

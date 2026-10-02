@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use core::sync::atomic::{AtomicBool, Ordering};
 use std::io::ErrorKind;
 use std::time::Instant;
@@ -14,7 +7,7 @@ use std::{
         thread::current as current_tcs,
         usercalls::{
             self,
-            raw::{Tcs, EV_UNPARK, WAIT_INDEFINITE},
+            raw::{EV_UNPARK, Tcs, WAIT_INDEFINITE},
         },
     },
     thread,
@@ -69,10 +62,10 @@ impl super::ThreadParkerT for ThreadParker {
             let remaining_nanos =
                 u128::min(remaining.as_nanos(), WAIT_INDEFINITE as u128 - 1) as u64;
 
-            if let Err(e) = usercalls::wait(EV_UNPARK, remaining_nanos) {
-                if e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::WouldBlock {
-                    return false;
-                }
+            if let Err(e) = usercalls::wait(EV_UNPARK, remaining_nanos)
+                && (e.kind() == ErrorKind::TimedOut || e.kind() == ErrorKind::WouldBlock)
+            {
+                return false;
             }
         }
         true
@@ -92,14 +85,13 @@ impl super::UnparkHandleT for UnparkHandle {
     #[inline]
     unsafe fn unpark(self) {
         let result = usercalls::send(EV_UNPARK, Some(self.0));
-        if cfg!(debug_assertions) {
-            if let Err(error) = result {
-                // `InvalidInput` may be returned if the thread we send to has
-                // already been unparked and exited.
-                if error.kind() != io::ErrorKind::InvalidInput {
-                    panic!("send returned an unexpected error: {:?}", error);
-                }
-            }
+        if cfg!(debug_assertions)
+            && let Err(error) = result
+            // `InvalidInput` may be returned if the thread we send to has
+            // already been unparked and exited.
+            && error.kind() != io::ErrorKind::InvalidInput
+        {
+            panic!("send returned an unexpected error: {error:?}");
         }
     }
 }

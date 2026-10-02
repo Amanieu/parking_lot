@@ -1,4 +1,3 @@
-use cfg_if::cfg_if;
 use std::time::Instant;
 
 /// Trait for the platform thread parker implementation.
@@ -50,36 +49,43 @@ pub trait UnparkHandleT {
     unsafe fn unpark(self);
 }
 
-cfg_if! {
-    if #[cfg(any(target_os = "linux", target_os = "android"))] {
+cfg_select! {
+    any(target_os = "linux", target_os = "android") => {
         #[path = "linux.rs"]
         mod imp;
-    } else if #[cfg(unix)] {
+    }
+    unix => {
         #[path = "unix.rs"]
         mod imp;
-    } else if #[cfg(windows)] {
+    }
+    windows => {
         #[path = "windows/mod.rs"]
         mod imp;
-    } else if #[cfg(target_os = "redox")] {
+    }
+    target_os = "redox" => {
         #[path = "redox.rs"]
         mod imp;
-    } else if #[cfg(all(target_env = "sgx", target_vendor = "fortanix"))] {
+    }
+    all(target_env = "sgx", target_vendor = "fortanix") => {
         #[path = "sgx.rs"]
         mod imp;
-    } else if #[cfg(all(
+    }
+    all(
         feature = "nightly",
         target_family = "wasm",
         target_feature = "atomics"
-    ))] {
+    ) => {
         #[path = "wasm_atomic.rs"]
         mod imp;
-    } else if #[cfg(target_family = "wasm")] {
+    }
+    target_family = "wasm" => {
         #[path = "wasm.rs"]
         mod imp;
-    } else {
+    }
+    _ => {
         #[path = "generic.rs"]
         mod imp;
     }
 }
 
-pub use self::imp::{thread_yield, ThreadParker};
+pub use self::imp::{ThreadParker, thread_yield};

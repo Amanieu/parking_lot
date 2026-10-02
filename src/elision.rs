@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use std::sync::atomic::AtomicUsize;
 
 // Extension trait to add lock elision primitives to atomic types
@@ -84,11 +77,7 @@ impl AtomicElisionExt for AtomicUsize {
                 in(reg) new,
                 inout("rax") current => prev,
             );
-            if prev == current {
-                Ok(prev)
-            } else {
-                Err(prev)
-            }
+            if prev == current { Ok(prev) } else { Err(prev) }
         }
     }
 

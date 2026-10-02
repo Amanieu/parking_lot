@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 //! This library provides implementations of `Mutex`, `RwLock`, `Condvar` and
 //! `Once` that are smaller, faster and more flexible than those in the Rust
 //! standard library. It also provides a `ReentrantMutex` type.
@@ -40,20 +33,20 @@ type GuardMarker = lock_api::GuardSend;
 type GuardMarker = lock_api::GuardNoSend;
 
 pub use self::condvar::{Condvar, WaitTimeoutResult};
-pub use self::fair_mutex::{const_fair_mutex, FairMutex, FairMutexGuard, MappedFairMutexGuard};
-pub use self::mutex::{const_mutex, MappedMutexGuard, Mutex, MutexGuard};
+pub use self::fair_mutex::{FairMutex, FairMutexGuard, MappedFairMutexGuard, const_fair_mutex};
+pub use self::mutex::{MappedMutexGuard, Mutex, MutexGuard, const_mutex};
 pub use self::once::{Once, OnceState};
 pub use self::raw_condvar::RawCondvar;
 pub use self::raw_fair_mutex::RawFairMutex;
 pub use self::raw_mutex::RawMutex;
 pub use self::raw_rwlock::RawRwLock;
 pub use self::remutex::{
-    const_reentrant_mutex, MappedReentrantMutexGuard, RawThreadId, ReentrantMutex,
-    ReentrantMutexGuard,
+    MappedReentrantMutexGuard, RawThreadId, ReentrantMutex, ReentrantMutexGuard,
+    const_reentrant_mutex,
 };
 pub use self::rwlock::{
-    const_rwlock, MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
-    RwLockUpgradableReadGuard, RwLockWriteGuard,
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
+    RwLockUpgradableReadGuard, RwLockWriteGuard, const_rwlock,
 };
 pub use ::lock_api;
 

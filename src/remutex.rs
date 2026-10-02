@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::raw_mutex::RawMutex;
 use core::num::NonZeroUsize;
 use lock_api::{self, GetThreadId};
@@ -19,9 +12,9 @@ unsafe impl GetThreadId for RawThreadId {
         // The address of a thread-local variable is guaranteed to be unique to the
         // current thread, and is also guaranteed to be non-zero. The variable has to have a
         // non-zero size to guarantee it has a unique address for each thread.
-        thread_local!(static KEY: u8 = 0);
+        thread_local!(static KEY: u8 = const { 0 });
         KEY.with(|x| {
-            NonZeroUsize::new(x as *const _ as usize)
+            NonZeroUsize::new(core::ptr::from_ref(x).addr())
                 .expect("thread-local variable address is null")
         })
     }
@@ -73,8 +66,8 @@ mod tests {
     use crate::ReentrantMutex;
     use crate::ReentrantMutexGuard;
     use std::cell::RefCell;
-    use std::sync::mpsc::channel;
     use std::sync::Arc;
+    use std::sync::mpsc::channel;
     use std::thread;
 
     #[cfg(feature = "serde")]

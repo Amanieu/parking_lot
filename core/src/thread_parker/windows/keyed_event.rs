@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use core::{
     ffi,
     mem::{self, MaybeUninit},
@@ -97,7 +90,7 @@ impl KeyedEvent {
 
     #[inline]
     pub unsafe fn park(&'static self, key: &AtomicUsize) {
-        let status = self.wait_for(key as *const _ as *mut ffi::c_void, ptr::null_mut());
+        let status = unsafe { self.wait_for(key as *const _ as *mut ffi::c_void, ptr::null_mut()) };
         debug_assert_eq!(status, STATUS_SUCCESS);
     }
 
@@ -109,7 +102,7 @@ impl KeyedEvent {
             // NtWaitForKeyedEvent otherwise that thread will stay stuck at
             // NtReleaseKeyedEvent.
             if key.swap(STATE_TIMED_OUT, Ordering::Relaxed) == STATE_UNPARKED {
-                self.park(key);
+                unsafe { self.park(key) };
                 return true;
             }
             return false;
@@ -126,12 +119,12 @@ impl KeyedEvent {
             Some(x) => x,
             None => {
                 // Timeout overflowed, just sleep indefinitely
-                self.park(key);
+                unsafe { self.park(key) };
                 return true;
             }
         };
 
-        let status = self.wait_for(key as *const _ as *mut ffi::c_void, &mut nt_timeout);
+        let status = unsafe { self.wait_for(key as *const _ as *mut ffi::c_void, &mut nt_timeout) };
         if status == STATUS_SUCCESS {
             return true;
         }
@@ -140,7 +133,7 @@ impl KeyedEvent {
         // If another thread unparked us, we need to call NtWaitForKeyedEvent
         // otherwise that thread will stay stuck at NtReleaseKeyedEvent.
         if key.swap(STATE_TIMED_OUT, Ordering::Relaxed) == STATE_UNPARKED {
-            self.park(key);
+            unsafe { self.park(key) };
             return true;
         }
         false
@@ -187,7 +180,7 @@ impl UnparkHandle {
     #[inline]
     pub unsafe fn unpark(self) {
         if !self.key.is_null() {
-            let status = self.keyed_event.release(self.key as *mut ffi::c_void);
+            let status = unsafe { self.keyed_event.release(self.key as *mut ffi::c_void) };
             debug_assert_eq!(status, STATUS_SUCCESS);
         }
     }

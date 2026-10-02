@@ -1,17 +1,10 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::{deadlock, util};
 use core::{
     sync::atomic::{AtomicU8, Ordering},
     time::Duration,
 };
 use lock_api::RawMutex as RawMutex_;
-use parking_lot_core::{self, ParkResult, SpinWait, UnparkResult, UnparkToken, DEFAULT_PARK_TOKEN};
+use parking_lot_core::{self, DEFAULT_PARK_TOKEN, ParkResult, SpinWait, UnparkResult, UnparkToken};
 use std::time::Instant;
 
 // UnparkToken used to indicate that that the target thread should attempt to
@@ -71,7 +64,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
         {
             self.lock_slow(None);
         }
-        unsafe { deadlock::acquire_resource(self as *const _ as usize) };
+        unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
     }
 
     #[inline]
@@ -88,7 +81,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
                 Ordering::Relaxed,
             ) {
                 Ok(_) => {
-                    unsafe { deadlock::acquire_resource(self as *const _ as usize) };
+                    unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
                     return true;
                 }
                 Err(x) => state = x,
@@ -98,7 +91,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
 
     #[inline]
     unsafe fn unlock(&self) {
-        deadlock::release_resource(self as *const _ as usize);
+        unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
         if self
             .state
             .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
@@ -119,7 +112,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
 unsafe impl lock_api::RawMutexFair for RawMutex {
     #[inline]
     unsafe fn unlock_fair(&self) {
-        deadlock::release_resource(self as *const _ as usize);
+        unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
         if self
             .state
             .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
@@ -154,7 +147,7 @@ unsafe impl lock_api::RawMutexTimed for RawMutex {
             self.lock_slow(Some(timeout))
         };
         if result {
-            unsafe { deadlock::acquire_resource(self as *const _ as usize) };
+            unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
         }
         result
     }
@@ -171,7 +164,7 @@ unsafe impl lock_api::RawMutexTimed for RawMutex {
             self.lock_slow(util::to_deadline(timeout))
         };
         if result {
-            unsafe { deadlock::acquire_resource(self as *const _ as usize) };
+            unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
         }
         result
     }
@@ -232,20 +225,20 @@ impl RawMutex {
             }
 
             // Set the parked bit
-            if state & PARKED_BIT == 0 {
-                if let Err(x) = self.state.compare_exchange_weak(
+            if state & PARKED_BIT == 0
+                && let Err(x) = self.state.compare_exchange_weak(
                     state,
                     state | PARKED_BIT,
                     Ordering::Relaxed,
                     Ordering::Relaxed,
-                ) {
-                    state = x;
-                    continue;
-                }
+                )
+            {
+                state = x;
+                continue;
             }
 
             // Park our thread until we are woken up by an unlock
-            let addr = self as *const _ as usize;
+            let addr = core::ptr::from_ref(self).addr();
             let validate = || self.state.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
             let before_sleep = || {};
             let timed_out = |_, was_last_thread| {
@@ -292,7 +285,7 @@ impl RawMutex {
     fn unlock_slow(&self, force_fair: bool) {
         // Unpark one thread and leave the parked bit set if there might
         // still be parked threads on this address.
-        let addr = self as *const _ as usize;
+        let addr = core::ptr::from_ref(self).addr();
         let callback = |result: UnparkResult| {
             // If we are using a fair unlock then we should keep the
             // mutex locked and hand it off to the unparked thread.
@@ -324,7 +317,7 @@ impl RawMutex {
 
     #[cold]
     fn bump_slow(&self) {
-        unsafe { deadlock::release_resource(self as *const _ as usize) };
+        unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
         self.unlock_slow(true);
         self.lock();
     }

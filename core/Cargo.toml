@@ -14,7 +14,6 @@ rust-version = "1.95"
 rustdoc-args = ["--generate-link-to-definition"]
 
 [dependencies]
-cfg-if = "1.0.4"
 smallvec = "1.15.2"
 petgraph = { version = "0.8.3", optional = true }
 backtrace = { version = "0.3.76", optional = true }

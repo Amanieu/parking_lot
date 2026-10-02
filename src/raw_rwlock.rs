@@ -1,11 +1,4 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
-use crate::elision::{have_elision, AtomicElisionExt};
+use crate::elision::{AtomicElisionExt, have_elision};
 use crate::raw_mutex::{TOKEN_HANDOFF, TOKEN_NORMAL};
 use crate::util;
 use core::{
@@ -14,7 +7,7 @@ use core::{
 };
 use lock_api::{RawRwLock as RawRwLock_, RawRwLockUpgrade};
 use parking_lot_core::{
-    self, deadlock, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken,
+    self, FilterOp, ParkResult, ParkToken, SpinWait, UnparkResult, UnparkToken, deadlock,
 };
 use std::time::{Duration, Instant};
 
@@ -155,7 +148,7 @@ unsafe impl lock_api::RawRwLockFair for RawRwLock {
     #[inline]
     unsafe fn unlock_shared_fair(&self) {
         // Shared unlocking is always fair in this implementation.
-        self.unlock_shared();
+        unsafe { self.unlock_shared() };
     }
 
     #[inline]
@@ -174,7 +167,7 @@ unsafe impl lock_api::RawRwLockFair for RawRwLock {
     #[inline]
     unsafe fn bump_shared(&self) {
         if self.state.load(Ordering::Relaxed) & WRITER_BIT != 0 {
-            self.bump_shared_slow();
+            unsafe { self.bump_shared_slow() };
         }
     }
 
@@ -726,7 +719,7 @@ impl RawRwLock {
         // At this point WRITER_PARKED_BIT is set and READER_MASK is empty. We
         // just need to wake up a potentially sleeping pending writer.
         // Using the 2nd key at addr + 1
-        let addr = self as *const _ as usize + 1;
+        let addr = core::ptr::from_ref(self).addr() + 1;
         let callback = |_result: UnparkResult| {
             // Clear the WRITER_PARKED_BIT here since there can only be one
             // parked writer thread.
@@ -910,7 +903,7 @@ impl RawRwLock {
 
     #[cold]
     unsafe fn bump_shared_slow(&self) {
-        self.unlock_shared();
+        unsafe { self.unlock_shared() };
         self.lock_shared();
     }
 
@@ -946,7 +939,7 @@ impl RawRwLock {
         // otherwise they may end up parked indefinitely since unlock_shared
         // does not call wake_parked_threads.
         let new_state = Cell::new(new_state);
-        let addr = self as *const _ as usize;
+        let addr = core::ptr::from_ref(self).addr();
         let filter = |ParkToken(token)| {
             let s = new_state.get();
 
@@ -970,7 +963,7 @@ impl RawRwLock {
         // * `addr` is an address we control.
         // * `filter` does not panic or call into any function of `parking_lot`.
         // * `callback` safety responsibility is on caller
-        parking_lot_core::unpark_filter(addr, filter, callback);
+        unsafe { parking_lot_core::unpark_filter(addr, filter, callback) };
     }
 
     // Common code for waiting for readers to exit the lock after acquiring
@@ -989,21 +982,21 @@ impl RawRwLock {
             }
 
             // Set the parked bit
-            if state & WRITER_PARKED_BIT == 0 {
-                if let Err(x) = self.state.compare_exchange_weak(
+            if state & WRITER_PARKED_BIT == 0
+                && let Err(x) = self.state.compare_exchange_weak(
                     state,
                     state | WRITER_PARKED_BIT,
                     Ordering::Acquire,
                     Ordering::Acquire,
-                ) {
-                    state = x;
-                    continue;
-                }
+                )
+            {
+                state = x;
+                continue;
             }
 
             // Park our thread until we are woken up by an unlock
             // Using the 2nd key at addr + 1
-            let addr = self as *const _ as usize + 1;
+            let addr = core::ptr::from_ref(self).addr() + 1;
             let validate = || {
                 let state = self.state.load(Ordering::Relaxed);
                 state & READERS_MASK != 0 && state & WRITER_PARKED_BIT != 0
@@ -1090,20 +1083,20 @@ impl RawRwLock {
             }
 
             // Set the parked bit
-            if state & PARKED_BIT == 0 {
-                if let Err(x) = self.state.compare_exchange_weak(
+            if state & PARKED_BIT == 0
+                && let Err(x) = self.state.compare_exchange_weak(
                     state,
                     state | PARKED_BIT,
                     Ordering::Relaxed,
                     Ordering::Relaxed,
-                ) {
-                    state = x;
-                    continue;
-                }
+                )
+            {
+                state = x;
+                continue;
             }
 
             // Park our thread until we are woken up by an unlock
-            let addr = self as *const _ as usize;
+            let addr = core::ptr::from_ref(self).addr();
             let validate = || {
                 let state = self.state.load(Ordering::Relaxed);
                 state & PARKED_BIT != 0 && (state & validate_flags != 0)
@@ -1146,13 +1139,13 @@ impl RawRwLock {
 
     #[inline]
     fn deadlock_acquire(&self) {
-        unsafe { deadlock::acquire_resource(self as *const _ as usize) };
-        unsafe { deadlock::acquire_resource(self as *const _ as usize + 1) };
+        unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
+        unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr() + 1) };
     }
 
     #[inline]
     fn deadlock_release(&self) {
-        unsafe { deadlock::release_resource(self as *const _ as usize) };
-        unsafe { deadlock::release_resource(self as *const _ as usize + 1) };
+        unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
+        unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr() + 1) };
     }
 }

@@ -1,15 +1,9 @@
-// Copyright 2018 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
+use scopeguard::defer;
 
 use crate::guard::ExclusiveGuardData;
 
@@ -106,7 +100,7 @@ pub unsafe trait RawMutexFair: RawMutex {
     /// This method may only be called if the mutex is held in the current context, see
     /// the documentation of [`unlock`](RawMutex::unlock).
     unsafe fn bump(&self) {
-        self.unlock_fair();
+        unsafe { self.unlock_fair() };
         self.lock();
     }
 }
@@ -270,7 +264,7 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock(&self) {
-        self.raw.unlock();
+        unsafe { self.raw.unlock() };
     }
 
     /// Returns the underlying raw mutex object.
@@ -366,7 +360,7 @@ impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_fair(&self) {
-        self.raw.unlock_fair();
+        unsafe { self.raw.unlock_fair() };
     }
 }
 
@@ -439,7 +433,7 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     }
 }
 
-impl<R: RawMutex, T: ?Sized + Default> Default for Mutex<R, T> {
+impl<R: RawMutex, T: Default> Default for Mutex<R, T> {
     #[inline]
     fn default() -> Mutex<R, T> {
         Mutex::new(Default::default())
@@ -492,7 +486,7 @@ where
 impl<'de, R, T> Deserialize<'de> for Mutex<R, T>
 where
     R: RawMutex,
-    T: Deserialize<'de> + ?Sized,
+    T: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -558,9 +552,8 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = &s.mutex.raw;
-        let data = match f(unsafe { &mut *s.mutex.data.get() }) {
-            Some(data) => data,
-            None => return Err(s),
+        let Some(data) = f(unsafe { &mut *s.mutex.data.get() }) else {
+            return Err(s);
         };
         mem::forget(s);
         Ok(MappedMutexGuard {
@@ -915,9 +908,8 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data.as_ptr() }) {
-            Some(data) => data,
-            None => return Err(s),
+        let Some(data) = f(unsafe { &mut *s.data.as_ptr() }) else {
+            return Err(s);
         };
         mem::forget(s);
         Ok(MappedMutexGuard {

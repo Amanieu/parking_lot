@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 //! This library exposes a low-level API for creating your own efficient
 //! synchronization primitives.
 //!
@@ -22,9 +15,9 @@
 //! There are two main operations that can be performed on the parking lot:
 //!
 //!  - *Parking* refers to suspending the thread while simultaneously enqueuing it
-//! on a queue keyed by some address.
-//! - *Unparking* refers to dequeuing a thread from a queue keyed by some address
-//! and resuming it.
+//!    on a queue keyed by some address.
+//!  - *Unparking* refers to dequeuing a thread from a queue keyed by some address
+//!    and resuming it.
 //!
 //! See the documentation of the individual functions for more details.
 //!
@@ -55,13 +48,12 @@
 mod parking_lot;
 mod spinwait;
 mod thread_parker;
-mod util;
 mod word_lock;
 
 pub use self::parking_lot::deadlock;
-pub use self::parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
+pub use self::parking_lot::{DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
 pub use self::parking_lot::{
     FilterOp, ParkResult, ParkToken, RequeueOp, UnparkResult, UnparkToken,
 };
-pub use self::parking_lot::{DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+pub use self::parking_lot::{park, unpark_all, unpark_filter, unpark_one, unpark_requeue};
 pub use self::spinwait::SpinWait;

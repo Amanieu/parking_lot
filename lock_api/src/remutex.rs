@@ -1,14 +1,7 @@
-// Copyright 2018 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::{
+    GuardNoSend,
     guard::SharedGuardData,
     mutex::{RawMutex, RawMutexFair, RawMutexTimed},
-    GuardNoSend,
 };
 use core::{
     cell::{Cell, UnsafeCell},
@@ -19,6 +12,7 @@ use core::{
     ops::Deref,
     sync::atomic::{AtomicUsize, Ordering},
 };
+use scopeguard::defer;
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
@@ -130,7 +124,7 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
         self.lock_count.set(lock_count);
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
-            self.mutex.unlock();
+            unsafe { self.mutex.unlock() };
         }
     }
 
@@ -162,7 +156,7 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
         self.lock_count.set(lock_count);
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
-            self.mutex.unlock_fair();
+            unsafe { self.mutex.unlock_fair() };
         }
     }
 
@@ -181,7 +175,7 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
             let id = self.owner.load(Ordering::Relaxed);
             self.owner.store(0, Ordering::Relaxed);
             self.lock_count.set(0);
-            self.mutex.bump();
+            unsafe { self.mutex.bump() };
             self.owner.store(id, Ordering::Relaxed);
             self.lock_count.set(1);
         }
@@ -297,7 +291,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     #[inline]
     pub unsafe fn make_guard_unchecked(&self) -> ReentrantMutexGuard<'_, R, G, T> {
         ReentrantMutexGuard {
-            remutex: &self,
+            remutex: self,
             marker: PhantomData,
         }
     }
@@ -375,7 +369,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock(&self) {
-        self.raw.unlock();
+        unsafe { self.raw.unlock() };
     }
 
     /// Returns the underlying raw mutex object.
@@ -472,7 +466,7 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_fair(&self) {
-        self.raw.unlock_fair();
+        unsafe { self.raw.unlock_fair() };
     }
 }
 
@@ -548,7 +542,7 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     }
 }
 
-impl<R: RawMutex, G: GetThreadId, T: ?Sized + Default> Default for ReentrantMutex<R, G, T> {
+impl<R: RawMutex, G: GetThreadId, T: Default> Default for ReentrantMutex<R, G, T> {
     #[inline]
     fn default() -> ReentrantMutex<R, G, T> {
         ReentrantMutex::new(Default::default())
@@ -606,7 +600,7 @@ impl<'de, R, G, T> Deserialize<'de> for ReentrantMutex<R, G, T>
 where
     R: RawMutex,
     G: GetThreadId,
-    T: Deserialize<'de> + ?Sized,
+    T: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -675,9 +669,8 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = &s.remutex.raw;
-        let data = match f(unsafe { &*s.remutex.data.get() }) {
-            Some(data) => data,
-            None => return Err(s),
+        let Some(data) = f(unsafe { &*s.remutex.data.get() }) else {
+            return Err(s);
         };
         mem::forget(s);
         Ok(MappedReentrantMutexGuard {
@@ -1023,9 +1016,8 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &*s.data.as_ptr() }) {
-            Some(data) => data,
-            None => return Err(s),
+        let Some(data) = f(unsafe { &*s.data.as_ptr() }) else {
+            return Err(s);
         };
         mem::forget(s);
         Ok(MappedReentrantMutexGuard {

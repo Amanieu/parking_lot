@@ -1,15 +1,7 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use core::{
     ptr,
     sync::atomic::{AtomicI32, Ordering},
 };
-use libc;
 use std::thread;
 use std::time::Instant;
 
@@ -77,11 +69,11 @@ impl super::ThreadParkerT for ThreadParker {
             let diff = timeout - now;
             if diff.as_secs() as libc::time_t as u64 != diff.as_secs() {
                 // Timeout overflowed, just sleep indefinitely
-                self.park();
+                unsafe { self.park() };
                 return true;
             }
             // SAFETY: libc::timespec is zero initializable.
-            let mut ts: libc::timespec = std::mem::zeroed();
+            let mut ts: libc::timespec = unsafe { std::mem::zeroed() };
             ts.tv_sec = diff.as_secs() as libc::time_t;
             ts.tv_nsec = diff.subsec_nanos() as tv_nsec_t;
             self.futex_wait(Some(ts));
@@ -137,12 +129,14 @@ impl super::UnparkHandleT for UnparkHandle {
     unsafe fn unpark(self) {
         // The thread data may have been freed at this point, but it doesn't
         // matter since the syscall will just return EFAULT in that case.
-        let r = libc::syscall(
-            libc::SYS_futex,
-            self.futex.cast::<u32>(),
-            libc::FUTEX_WAKE | libc::FUTEX_PRIVATE_FLAG,
-            1,
-        );
+        let r = unsafe {
+            libc::syscall(
+                libc::SYS_futex,
+                self.futex.cast::<u32>(),
+                libc::FUTEX_WAKE | libc::FUTEX_PRIVATE_FLAG,
+                1,
+            )
+        };
         debug_assert!(r == 0 || r == 1 || r == -1);
         if r == -1 {
             debug_assert_eq!(errno(), libc::EFAULT);

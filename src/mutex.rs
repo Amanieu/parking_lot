@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::raw_mutex::RawMutex;
 
 /// A mutual exclusion primitive useful for protecting shared data
@@ -113,9 +106,9 @@ mod tests {
     use crate::{Condvar, MappedMutexGuard, Mutex, MutexGuard};
     use std::collections::HashMap;
     use std::ops::Deref;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::channel;
-    use std::sync::Arc;
     use std::thread;
 
     #[cfg(feature = "serde")]

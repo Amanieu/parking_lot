@@ -1,15 +1,9 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use core::cell::UnsafeCell;
 use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
+use scopeguard::defer;
 
 use crate::guard::{ExclusiveGuardData, SharedGuardData};
 
@@ -131,7 +125,7 @@ pub unsafe trait RawRwLockFair: RawRwLock {
     ///
     /// This method may only be called if a shared lock is held in the current context.
     unsafe fn bump_shared(&self) {
-        self.unlock_shared_fair();
+        unsafe { self.unlock_shared_fair() };
         self.lock_shared();
     }
 
@@ -145,7 +139,7 @@ pub unsafe trait RawRwLockFair: RawRwLock {
     ///
     /// This method may only be called if an exclusive lock is held in the current context.
     unsafe fn bump_exclusive(&self) {
-        self.unlock_exclusive_fair();
+        unsafe { self.unlock_exclusive_fair() };
         self.lock_exclusive();
     }
 }
@@ -268,7 +262,7 @@ pub unsafe trait RawRwLockUpgradeFair: RawRwLockUpgrade + RawRwLockFair {
     ///
     /// This method may only be called if an upgradable lock is held in the current context.
     unsafe fn bump_upgradable(&self) {
-        self.unlock_upgradable_fair();
+        unsafe { self.unlock_upgradable_fair() };
         self.lock_upgradable();
     }
 }
@@ -353,7 +347,7 @@ where
 impl<'de, R, T> Deserialize<'de> for RwLock<R, T>
 where
     R: RawRwLock,
-    T: Deserialize<'de> + ?Sized,
+    T: Deserialize<'de>,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -556,7 +550,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_read(&self) {
-        self.raw.unlock_shared();
+        unsafe { self.raw.unlock_shared() };
     }
 
     /// Forcibly unlocks a write lock.
@@ -573,7 +567,7 @@ impl<R: RawRwLock, T: ?Sized> RwLock<R, T> {
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_write(&self) {
-        self.raw.unlock_exclusive();
+        unsafe { self.raw.unlock_exclusive() };
     }
 
     /// Returns the underlying raw reader-writer lock object.
@@ -716,7 +710,7 @@ impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_read_fair(&self) {
-        self.raw.unlock_shared_fair();
+        unsafe { self.raw.unlock_shared_fair() };
     }
 
     /// Forcibly unlocks a write lock using a fair unlock protocol.
@@ -733,7 +727,7 @@ impl<R: RawRwLockFair, T: ?Sized> RwLock<R, T> {
     #[inline]
     #[track_caller]
     pub unsafe fn force_unlock_write_fair(&self) {
-        self.raw.unlock_exclusive_fair();
+        unsafe { self.raw.unlock_exclusive_fair() };
     }
 }
 
@@ -1225,7 +1219,7 @@ impl<R: RawRwLockUpgradeTimed, T: ?Sized> RwLock<R, T> {
     }
 }
 
-impl<R: RawRwLock, T: ?Sized + Default> Default for RwLock<R, T> {
+impl<R: RawRwLock, T: Default> Default for RwLock<R, T> {
     #[inline]
     fn default() -> RwLock<R, T> {
         RwLock::new(Default::default())
@@ -1306,9 +1300,8 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockReadGuard<'a, R, T> {
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = &s.rwlock.raw;
-        let data = match f(unsafe { &*s.rwlock.data.get() }) {
-            Some(data) => data,
-            None => return Err(s),
+        let Some(data) = f(unsafe { &*s.rwlock.data.get() }) else {
+            return Err(s);
         };
         mem::forget(s);
         Ok(MappedRwLockReadGuard {
@@ -1648,9 +1641,8 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> RwLockWriteGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = &s.rwlock.raw;
-        let data = match f(unsafe { &mut *s.rwlock.data.get() }) {
-            Some(data) => data,
-            None => return Err(s),
+        let Some(data) = f(unsafe { &mut *s.rwlock.data.get() }) else {
+            return Err(s);
         };
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {
@@ -2835,9 +2827,8 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockReadGuard<'a, R, T> {
         F: FnOnce(&T) -> Option<&U>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &*s.data.as_ptr() }) {
-            Some(data) => data,
-            None => return Err(s),
+        let Some(data) = f(unsafe { &*s.data.as_ptr() }) else {
+            return Err(s);
         };
         mem::forget(s);
         Ok(MappedRwLockReadGuard {
@@ -2997,9 +2988,8 @@ impl<'a, R: RawRwLock + 'a, T: ?Sized + 'a> MappedRwLockWriteGuard<'a, R, T> {
         F: FnOnce(&mut T) -> Option<&mut U>,
     {
         let raw = s.raw;
-        let data = match f(unsafe { &mut *s.data.as_ptr() }) {
-            Some(data) => data,
-            None => return Err(s),
+        let Some(data) = f(unsafe { &mut *s.data.as_ptr() }) else {
+            return Err(s);
         };
         mem::forget(s);
         Ok(MappedRwLockWriteGuard {

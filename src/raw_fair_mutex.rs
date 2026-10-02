@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::raw_mutex::RawMutex;
 use lock_api::RawMutexFair;
 
@@ -28,7 +21,7 @@ unsafe impl lock_api::RawMutex for RawFairMutex {
 
     #[inline]
     unsafe fn unlock(&self) {
-        self.unlock_fair()
+        unsafe { self.unlock_fair() }
     }
 
     #[inline]
@@ -40,12 +33,12 @@ unsafe impl lock_api::RawMutex for RawFairMutex {
 unsafe impl lock_api::RawMutexFair for RawFairMutex {
     #[inline]
     unsafe fn unlock_fair(&self) {
-        self.0.unlock_fair()
+        unsafe { self.0.unlock_fair() }
     }
 
     #[inline]
     unsafe fn bump(&self) {
-        self.0.bump()
+        unsafe { self.0.bump() }
     }
 }
 

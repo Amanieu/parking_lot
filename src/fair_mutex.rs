@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 use crate::raw_fair_mutex::RawFairMutex;
 
 /// A mutual exclusive primitive that is always fair, useful for protecting shared data
@@ -102,9 +95,9 @@ pub type MappedFairMutexGuard<'a, T> = lock_api::MappedMutexGuard<'a, RawFairMut
 #[cfg(test)]
 mod tests {
     use crate::FairMutex;
+    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::mpsc::channel;
-    use std::sync::Arc;
     use std::thread;
 
     #[cfg(feature = "serde")]

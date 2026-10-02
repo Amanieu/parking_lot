@@ -1,16 +1,8 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
-use crate::util::UncheckedOptionExt;
 use core::{
     fmt, mem,
-    sync::atomic::{fence, AtomicU8, Ordering},
+    sync::atomic::{AtomicU8, Ordering, fence},
 };
-use parking_lot_core::{self, SpinWait, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN};
+use parking_lot_core::{self, DEFAULT_PARK_TOKEN, DEFAULT_UNPARK_TOKEN, SpinWait};
 
 const DONE_BIT: u8 = 1;
 const POISON_BIT: u8 = 2;
@@ -179,7 +171,10 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(false, &mut |_| unsafe { f.take().unchecked_unwrap()() });
+        self.call_once_slow(false, &mut |_| {
+            let f = f.take();
+            unsafe { f.unwrap_unchecked()() }
+        });
     }
 
     /// Performs the same function as `call_once` except ignores poisoning.
@@ -201,8 +196,9 @@ impl Once {
         }
 
         let mut f = Some(f);
-        self.call_once_slow(true, &mut |state| unsafe {
-            f.take().unchecked_unwrap()(state)
+        self.call_once_slow(true, &mut |state| {
+            let f = f.take();
+            unsafe { f.unwrap_unchecked()(state) }
         });
     }
 
@@ -260,21 +256,21 @@ impl Once {
             }
 
             // Set the parked bit
-            if state & PARKED_BIT == 0 {
-                if let Err(x) = self.0.compare_exchange_weak(
+            if state & PARKED_BIT == 0
+                && let Err(x) = self.0.compare_exchange_weak(
                     state,
                     state | PARKED_BIT,
                     Ordering::Relaxed,
                     Ordering::Relaxed,
-                ) {
-                    state = x;
-                    continue;
-                }
+                )
+            {
+                state = x;
+                continue;
             }
 
             // Park our thread until we are woken up by the thread that owns the
             // lock.
-            let addr = self as *const _ as usize;
+            let addr = core::ptr::from_ref(self).addr();
             let validate = || self.0.load(Ordering::Relaxed) == LOCKED_BIT | PARKED_BIT;
             let before_sleep = || {};
             let timed_out = |_, _| unreachable!();
@@ -301,7 +297,7 @@ impl Once {
                 let once = self.0;
                 let state = once.0.swap(POISON_BIT, Ordering::Release);
                 if state & PARKED_BIT != 0 {
-                    let addr = once as *const _ as usize;
+                    let addr = core::ptr::from_ref(once).addr();
                     unsafe {
                         parking_lot_core::unpark_all(addr, DEFAULT_UNPARK_TOKEN);
                     }
@@ -323,7 +319,7 @@ impl Once {
         // Now unlock the state, set the done bit and unpark all threads
         let state = self.0.swap(DONE_BIT, Ordering::Release);
         if state & PARKED_BIT != 0 {
-            let addr = self as *const _ as usize;
+            let addr = core::ptr::from_ref(self).addr();
             unsafe {
                 parking_lot_core::unpark_all(addr, DEFAULT_UNPARK_TOKEN);
             }

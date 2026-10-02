@@ -1,10 +1,3 @@
-// Copyright 2016 Amanieu d'Antras
-//
-// Licensed under the Apache License, Version 2.0, <LICENSE-APACHE or
-// http://apache.org/licenses/LICENSE-2.0> or the MIT license <LICENSE-MIT or
-// http://opensource.org/licenses/MIT>, at your option. This file may not be
-// copied, modified, or distributed except according to those terms.
-
 #[cfg(target_vendor = "apple")]
 use core::ptr;
 use core::{
@@ -51,7 +44,7 @@ impl super::ThreadParkerT for ThreadParker {
     unsafe fn prepare_park(&self) {
         self.should_park.set(true);
         if !self.initialized.get() {
-            self.init();
+            unsafe { self.init() };
             self.initialized.set(true);
         }
     }
@@ -61,40 +54,42 @@ impl super::ThreadParkerT for ThreadParker {
         // We need to grab the mutex here because another thread may be
         // concurrently executing UnparkHandle::unpark, which is done without
         // holding the queue lock.
-        let r = libc::pthread_mutex_lock(self.mutex.get());
+        let r = unsafe { libc::pthread_mutex_lock(self.mutex.get()) };
         debug_assert_eq!(r, 0);
         let should_park = self.should_park.get();
-        let r = libc::pthread_mutex_unlock(self.mutex.get());
+        let r = unsafe { libc::pthread_mutex_unlock(self.mutex.get()) };
         debug_assert_eq!(r, 0);
         should_park
     }
 
     #[inline]
     unsafe fn park(&self) {
-        let r = libc::pthread_mutex_lock(self.mutex.get());
+        let r = unsafe { libc::pthread_mutex_lock(self.mutex.get()) };
         debug_assert_eq!(r, 0);
         while self.should_park.get() {
-            let r = libc::pthread_cond_wait(self.condvar.get(), self.mutex.get());
+            let r = unsafe { libc::pthread_cond_wait(self.condvar.get(), self.mutex.get()) };
             debug_assert_eq!(r, 0);
         }
-        let r = libc::pthread_mutex_unlock(self.mutex.get());
+        let r = unsafe { libc::pthread_mutex_unlock(self.mutex.get()) };
         debug_assert_eq!(r, 0);
     }
 
     #[inline]
     unsafe fn park_until(&self, timeout: Instant) -> bool {
-        let r = libc::pthread_mutex_lock(self.mutex.get());
+        let r = unsafe { libc::pthread_mutex_lock(self.mutex.get()) };
         debug_assert_eq!(r, 0);
         while self.should_park.get() {
             let now = Instant::now();
             if timeout <= now {
-                let r = libc::pthread_mutex_unlock(self.mutex.get());
+                let r = unsafe { libc::pthread_mutex_unlock(self.mutex.get()) };
                 debug_assert_eq!(r, 0);
                 return false;
             }
 
             if let Some(ts) = timeout_to_timespec(timeout - now) {
-                let r = libc::pthread_cond_timedwait(self.condvar.get(), self.mutex.get(), &ts);
+                let r = unsafe {
+                    libc::pthread_cond_timedwait(self.condvar.get(), self.mutex.get(), &ts)
+                };
                 if ts.tv_sec < 0 {
                     // On some systems, negative timeouts will return EINVAL. In
                     // that case we won't sleep and will just busy loop instead,
@@ -105,18 +100,18 @@ impl super::ThreadParkerT for ThreadParker {
                 }
             } else {
                 // Timeout calculation overflowed, just sleep indefinitely
-                let r = libc::pthread_cond_wait(self.condvar.get(), self.mutex.get());
+                let r = unsafe { libc::pthread_cond_wait(self.condvar.get(), self.mutex.get()) };
                 debug_assert_eq!(r, 0);
             }
         }
-        let r = libc::pthread_mutex_unlock(self.mutex.get());
+        let r = unsafe { libc::pthread_mutex_unlock(self.mutex.get()) };
         debug_assert_eq!(r, 0);
         true
     }
 
     #[inline]
     unsafe fn unpark_lock(&self) -> UnparkHandle {
-        let r = libc::pthread_mutex_lock(self.mutex.get());
+        let r = unsafe { libc::pthread_mutex_lock(self.mutex.get()) };
         debug_assert_eq!(r, 0);
 
         UnparkHandle {
@@ -136,13 +131,14 @@ impl ThreadParker {
     #[inline]
     unsafe fn init(&self) {
         let mut attr = MaybeUninit::<libc::pthread_condattr_t>::uninit();
-        let r = libc::pthread_condattr_init(attr.as_mut_ptr());
+        let r = unsafe { libc::pthread_condattr_init(attr.as_mut_ptr()) };
         debug_assert_eq!(r, 0);
-        let r = libc::pthread_condattr_setclock(attr.as_mut_ptr(), libc::CLOCK_MONOTONIC);
+        let r =
+            unsafe { libc::pthread_condattr_setclock(attr.as_mut_ptr(), libc::CLOCK_MONOTONIC) };
         debug_assert_eq!(r, 0);
-        let r = libc::pthread_cond_init(self.condvar.get(), attr.as_ptr());
+        let r = unsafe { libc::pthread_cond_init(self.condvar.get(), attr.as_ptr()) };
         debug_assert_eq!(r, 0);
-        let r = libc::pthread_condattr_destroy(attr.as_mut_ptr());
+        let r = unsafe { libc::pthread_condattr_destroy(attr.as_mut_ptr()) };
         debug_assert_eq!(r, 0);
     }
 }
@@ -170,14 +166,15 @@ pub struct UnparkHandle {
 impl super::UnparkHandleT for UnparkHandle {
     #[inline]
     unsafe fn unpark(self) {
-        (*self.thread_parker).should_park.set(false);
+        let thread_parker = unsafe { &*self.thread_parker };
+        thread_parker.should_park.set(false);
 
         // We notify while holding the lock here to avoid races with the target
         // thread. In particular, the thread could exit after we unlock the
         // mutex, which would make the condvar access invalid memory.
-        let r = libc::pthread_cond_signal((*self.thread_parker).condvar.get());
+        let r = unsafe { libc::pthread_cond_signal(thread_parker.condvar.get()) };
         debug_assert_eq!(r, 0);
-        let r = libc::pthread_mutex_unlock((*self.thread_parker).mutex.get());
+        let r = unsafe { libc::pthread_mutex_unlock(thread_parker.mutex.get()) };
         debug_assert_eq!(r, 0);
     }
 }
@@ -218,7 +215,7 @@ fn timespec_now() -> libc::timespec {
 #[inline]
 fn timeout_to_timespec(timeout: Duration) -> Option<libc::timespec> {
     // Handle overflows early on
-    if timeout.as_secs() > libc::time_t::max_value() as u64 {
+    if timeout.as_secs() > libc::time_t::MAX as u64 {
         return None;
     }
 
