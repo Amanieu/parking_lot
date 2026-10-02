@@ -1,6 +1,6 @@
 use crate::raw_fair_mutex::RawFairMutex;
 
-/// A mutual exclusion primitive that uses fair unlocking, useful for protecting shared data
+/// A mutual exclusion primitive that uses fair unlocking, useful for protecting shared data.
 ///
 /// This mutex will block threads waiting for the lock to become available. The
 /// mutex can be statically initialized or created by the `new`
@@ -24,10 +24,8 @@ use crate::raw_fair_mutex::RawFairMutex;
 ///
 /// - No poisoning, the lock is released normally on panic.
 /// - Only requires 1 byte of lock state.
-/// - Can be statically constructed.
-/// - Does not require any drop glue when dropped.
-/// - Inline fast path for the uncontended case.
-/// - Efficient handling of micro-contention using adaptive spinning.
+/// - Always uses fair unlocking.
+/// - Supports locking with a timeout.
 /// - Allows raw locking & unlocking without a guard.
 ///
 /// # Examples

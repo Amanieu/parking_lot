@@ -18,13 +18,13 @@ use crate::RawRwLockRecursive;
 /// ```
 pub type RecursiveRwLock<T> = lock_api::RwLock<RawRwLockRecursive, T>;
 
-/// An RAII guard which releases shared access when dropped.
+/// An RAII guard which releases shared read access when dropped.
 pub type RecursiveRwLockReadGuard<'a, T> = lock_api::RwLockReadGuard<'a, RawRwLockRecursive, T>;
 
-/// An RAII guard which releases exclusive access when dropped.
+/// An RAII guard which releases exclusive write access when dropped.
 pub type RecursiveRwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawRwLockRecursive, T>;
 
-/// An RAII guard which releases upgradable access when dropped.
+/// An RAII guard which releases upgradable read access when dropped.
 pub type RecursiveRwLockUpgradableReadGuard<'a, T> =
     lock_api::RwLockUpgradableReadGuard<'a, RawRwLockRecursive, T>;
 

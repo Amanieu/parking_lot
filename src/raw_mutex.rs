@@ -7,7 +7,7 @@ use lock_api::RawMutex as RawMutex_;
 use parking_lot_core::{self, DEFAULT_PARK_TOKEN, ParkResult, SpinWait, UnparkResult, UnparkToken};
 use std::time::Instant;
 
-// UnparkToken used to indicate that that the target thread should attempt to
+// UnparkToken used to indicate that the target thread should attempt to
 // lock the mutex again as soon as it is unparked.
 pub(crate) const TOKEN_NORMAL: UnparkToken = UnparkToken(0);
 

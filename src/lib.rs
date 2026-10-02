@@ -1,6 +1,6 @@
-//! This library provides compact and efficient implementations of `Mutex`,
-//! `RwLock`, `RecursiveRwLock`, `Condvar` and `Once`. It also provides a
-//! `ReentrantMutex` type.
+//! This library provides compact and efficient implementations of [`Mutex`],
+//! [`FairMutex`], [`ReentrantMutex`], [`RwLock`], [`RecursiveRwLock`],
+//! [`Condvar`] and [`Once`].
 
 #![warn(missing_docs)]
 #![warn(rust_2018_idioms)]

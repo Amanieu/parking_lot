@@ -69,7 +69,7 @@ unsafe impl lock_api::RawCondvarTimed for RawCondvar {
 impl RawCondvar {
     #[cold]
     fn notify_one_slow(&self, mutex: *mut RawMutex) -> bool {
-        // Unpark one thread and requeue the rest onto the mutex
+        // Unpark one thread or requeue it onto the mutex
         let from = ptr::from_ref(self).addr();
         let to = mutex.addr();
         let validate = || {
@@ -82,8 +82,8 @@ impl RawCondvar {
                 return RequeueOp::Abort;
             }
 
-            // Unpark one thread if the mutex is unlocked, otherwise just
-            // requeue everything to the mutex. This is safe to do here
+            // Unpark one thread if the mutex is unlocked, otherwise
+            // requeue it onto the mutex. This is safe to do here
             // since unlocking the mutex when the parked bit is set requires
             // locking the queue. There is the possibility of a race if the
             // mutex gets locked after we check, but that doesn't matter in

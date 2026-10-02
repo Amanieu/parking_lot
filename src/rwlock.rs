@@ -1,6 +1,6 @@
 use crate::raw_rwlock::RawRwLock;
 
-/// A reader-writer lock
+/// A reader-writer lock.
 ///
 /// This type of lock allows a number of readers or at most one writer at any
 /// point in time. The write portion of this lock typically allows modification
@@ -32,26 +32,21 @@ use crate::raw_rwlock::RawRwLock;
 ///
 /// This rwlock uses [eventual fairness](https://trac.webkit.org/changeset/203350)
 /// to ensure that the lock will be fair on average without sacrificing
-/// throughput. This is done by forcing a fair unlock on average every 0.5ms,
-/// which will force the lock to go to the next thread waiting for the rwlock.
-///
-/// Additionally, any critical section longer than 1ms will always use a fair
-/// unlock, which has a negligible impact on throughput considering the length
-/// of the critical section.
+/// throughput. Fair unlocks are forced periodically, with intervals averaging
+/// 0.5ms per parking-lot hash bucket. A fair unlock gives waiting threads
+/// priority over newly arriving threads.
 ///
 /// You can also force a fair unlock by calling `RwLockReadGuard::unlock_fair`
-/// or `RwLockWriteGuard::unlock_fair` when unlocking a mutex instead of simply
+/// or `RwLockWriteGuard::unlock_fair` when unlocking a reader-writer lock instead of simply
 /// dropping the guard.
 ///
 /// # Differences from the standard library `RwLock`
 ///
-/// - Supports atomically downgrading a write lock into a read lock.
 /// - Task-fair locking policy instead of an unspecified platform default.
 /// - No poisoning, the lock is released normally on panic.
-/// - Can be statically constructed.
-/// - Does not require any drop glue when dropped.
-/// - Inline fast path for the uncontended case.
-/// - Efficient handling of micro-contention using adaptive spinning.
+/// - Only requires one word of lock state.
+/// - Supports upgradable read locks and atomic upgrades to write locks.
+/// - Supports locking with a timeout.
 /// - Allows raw locking & unlocking without a guard.
 /// - Supports eventual fairness so that the rwlock is fair on average.
 /// - Optionally allows making the rwlock fair by calling
@@ -64,20 +59,22 @@ use crate::raw_rwlock::RawRwLock;
 ///
 /// let lock = RwLock::new(5);
 ///
-/// // many reader locks can be held at once
-/// {
-///     let r1 = lock.read();
-///     let r2 = lock.read();
-///     assert_eq!(*r1, 5);
-///     assert_eq!(*r2, 5);
-/// } // read locks are dropped at this point
+/// // Multiple readers can access the data concurrently.
+/// std::thread::scope(|scope| {
+///     for _ in 0..3 {
+///         scope.spawn(|| {
+///             let reader = lock.read();
+///             assert_eq!(*reader, 5);
+///         });
+///     }
+/// });
 ///
-/// // only one write lock may be held, however
+/// // All reader threads have finished. Only one write lock may be held.
 /// {
-///     let mut w = lock.write();
-///     *w += 1;
-///     assert_eq!(*w, 6);
-/// } // write lock is dropped here
+///     let mut writer = lock.write();
+///     *writer += 1;
+///     assert_eq!(*writer, 6);
+/// } // Write lock is released.
 /// ```
 pub type RwLock<T> = lock_api::RwLock<RawRwLock, T>;
 
@@ -96,7 +93,7 @@ pub type RwLockWriteGuard<'a, T> = lock_api::RwLockWriteGuard<'a, RawRwLock, T>;
 /// thread.
 pub type MappedRwLockReadGuard<'a, T> = lock_api::MappedRwLockReadGuard<'a, RawRwLock, T>;
 
-/// An RAII write lock guard returned by `RwLockWriteGuard::map`, which can point to a
+/// An RAII write lock guard returned by [`RwLockWriteGuard::map`], which can point to a
 /// subfield of the protected data.
 ///
 /// The main difference between `MappedRwLockWriteGuard` and `RwLockWriteGuard` is that the
@@ -105,8 +102,7 @@ pub type MappedRwLockReadGuard<'a, T> = lock_api::MappedRwLockReadGuard<'a, RawR
 /// thread.
 pub type MappedRwLockWriteGuard<'a, T> = lock_api::MappedRwLockWriteGuard<'a, RawRwLock, T>;
 
-/// RAII structure used to release the upgradable read access of a lock when
-/// dropped.
+/// An RAII guard which releases upgradable read access when dropped.
 pub type RwLockUpgradableReadGuard<'a, T> = lock_api::RwLockUpgradableReadGuard<'a, RawRwLock, T>;
 
 #[cfg(test)]

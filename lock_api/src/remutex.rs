@@ -36,7 +36,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 ///
 /// Implementations of this trait must ensure that no two active threads share
 /// the same thread ID. However the ID of a thread that has exited can be
-/// re-used since that thread is no longer active.
+/// reused since that thread is no longer active.
 pub unsafe trait GetThreadId {
     /// Initial value.
     // A “non-constant” const item is a legacy way to supply an initialized value to downstream
@@ -96,7 +96,11 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
         true
     }
 
-    /// Acquires this mutex, blocking if it's held by another thread.
+    /// Acquires this mutex, blocking if it is held by another thread.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[inline]
     pub fn lock(&self) {
         self.lock_internal(|| {
@@ -107,6 +111,10 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
 
     /// Attempts to acquire this mutex without blocking. Returns `true`
     /// if the lock was successfully acquired and `false` otherwise.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[inline]
     pub fn try_lock(&self) -> bool {
         self.lock_internal(|| self.mutex.try_lock())
@@ -186,6 +194,10 @@ impl<R: RawMutexTimed, G: GetThreadId> RawReentrantMutex<R, G> {
     /// Attempts to acquire this lock until a timeout is reached.
     ///
     /// See [`RawMutexTimed::try_lock_until`] for timeout behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[inline]
     pub fn try_lock_until(&self, timeout: R::Instant) -> bool {
         self.lock_internal(|| self.mutex.try_lock_until(timeout))
@@ -194,23 +206,27 @@ impl<R: RawMutexTimed, G: GetThreadId> RawReentrantMutex<R, G> {
     /// Attempts to acquire this lock until a timeout is reached.
     ///
     /// See [`RawMutexTimed::try_lock_for`] for timeout behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[inline]
     pub fn try_lock_for(&self, timeout: R::Duration) -> bool {
         self.lock_internal(|| self.mutex.try_lock_for(timeout))
     }
 }
 
-/// A mutex which can be recursively locked by a single thread.
+/// A reentrant mutual exclusion lock.
 ///
-/// This type is identical to `Mutex` except for the following points:
+/// This lock blocks other threads waiting for it to become available. A thread
+/// which already holds the lock can acquire it additional times without
+/// blocking.
 ///
-/// - Locking multiple times from the same thread will work correctly instead of
-///   deadlocking.
-/// - `ReentrantMutexGuard` does not give mutable references to the locked data.
-///   Use a `RefCell` if you need this.
-///
-/// See [`Mutex`](crate::Mutex) for more details about the underlying mutex
-/// primitive.
+/// Unlike [`Mutex`](crate::Mutex), [`ReentrantMutexGuard`] does not provide
+/// mutable references to the locked data, because multiple guards can coexist
+/// on the same thread. Use interior mutability, such as
+/// [`Cell`](core::cell::Cell) or [`RefCell`](core::cell::RefCell), to mutate the
+/// guarded data.
 pub struct ReentrantMutex<R, G, T: ?Sized> {
     raw: RawReentrantMutex<R, G>,
     data: UnsafeCell<T>,
@@ -278,7 +294,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ///
     /// This method must only be called if the thread logically holds the lock.
     ///
-    /// Calling this function when a guard has already been produced is undefined behaviour unless
+    /// Calling this function when a guard has already been produced is undefined behavior unless
     /// the guard was forgotten with `mem::forget`.
     #[inline]
     pub unsafe fn make_guard_unchecked(&self) -> ReentrantMutexGuard<'_, R, G, T> {
@@ -298,6 +314,10 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// the thread is the only thread with the mutex held. An RAII guard is
     /// returned to allow scoped unlock of the lock. When the guard goes out of
     /// scope, the mutex will be unlocked.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[inline]
     #[track_caller]
     pub fn lock(&self) -> ReentrantMutexGuard<'_, R, G, T> {
@@ -313,6 +333,10 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// guard is dropped.
     ///
     /// This function does not block.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[inline]
     #[track_caller]
     pub fn try_lock(&self) -> Option<ReentrantMutexGuard<'_, R, G, T>> {
@@ -362,7 +386,8 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// # Safety
     ///
     /// This method must only be called if the current thread logically owns a
-    /// `ReentrantMutexGuard` but that guard has be discarded using `mem::forget`.
+    /// `ReentrantMutexGuard` but that guard has been discarded using
+    /// `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
     #[track_caller]
@@ -403,7 +428,7 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     ///
     /// This method must only be called if the thread logically holds the lock.
     ///
-    /// Calling this function when a guard has already been produced is undefined behaviour unless
+    /// Calling this function when a guard has already been produced is undefined behavior unless
     /// the guard was forgotten with `mem::forget`.
     #[cfg(feature = "arc_lock")]
     #[inline]
@@ -418,7 +443,11 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// Acquires a reentrant mutex through an `Arc`.
     ///
     /// This method is similar to the `lock` method; however, it requires the `ReentrantMutex` to be inside of an
-    /// `Arc` and the resulting mutex guard has no lifetime requirements.
+    /// `Arc` and the resulting mutex guard owns a clone of the `Arc` instead of borrowing the lock.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[cfg(feature = "arc_lock")]
     #[inline]
     #[track_caller]
@@ -431,7 +460,11 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// Attempts to acquire a reentrant mutex through an `Arc`.
     ///
     /// This method is similar to the `try_lock` method; however, it requires the `ReentrantMutex` to be inside
-    /// of an `Arc` and the resulting mutex guard has no lifetime requirements.
+    /// of an `Arc` and the resulting mutex guard owns a clone of the `Arc` instead of borrowing the lock.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[cfg(feature = "arc_lock")]
     #[inline]
     #[track_caller]
@@ -455,7 +488,8 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// # Safety
     ///
     /// This method must only be called if the current thread logically owns a
-    /// `ReentrantMutexGuard` but that guard has be discarded using `mem::forget`.
+    /// `ReentrantMutexGuard` but that guard has been discarded using
+    /// `mem::forget`.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     #[inline]
     #[track_caller]
@@ -516,7 +550,13 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// Attempts to acquire this lock until a timeout is reached, through an `Arc`.
     ///
     /// This method is similar to the `try_lock_for` method; however, it requires the `ReentrantMutex` to be
-    /// inside of an `Arc` and the resulting mutex guard has no lifetime requirements.
+    /// inside of an `Arc` and the resulting mutex guard owns a clone of the `Arc` instead of borrowing the lock.
+    ///
+    /// See [`try_lock_for`](Self::try_lock_for) for timeout behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[cfg(feature = "arc_lock")]
     #[inline]
     #[track_caller]
@@ -535,7 +575,13 @@ impl<R: RawMutexTimed, G: GetThreadId, T: ?Sized> ReentrantMutex<R, G, T> {
     /// Attempts to acquire this lock until a timeout is reached, through an `Arc`.
     ///
     /// This method is similar to the `try_lock_until` method; however, it requires the `ReentrantMutex` to be
-    /// inside of an `Arc` and the resulting mutex guard has no lifetime requirements.
+    /// inside of an `Arc` and the resulting mutex guard owns a clone of the `Arc` instead of borrowing the lock.
+    ///
+    /// See [`try_lock_until`](Self::try_lock_until) for timeout behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the recursive lock count overflows.
     #[cfg(feature = "arc_lock")]
     #[inline]
     #[track_caller]
@@ -620,11 +666,21 @@ where
     }
 }
 
-/// An RAII implementation of a "scoped lock" of a reentrant mutex. When this structure
-/// is dropped (falls out of scope), the lock will be unlocked.
+/// An RAII guard which releases one level of recursive locking when dropped.
 ///
 /// The data protected by the mutex can be accessed through this guard via its
-/// `Deref` implementation.
+/// [`Deref`] implementation.
+///
+/// This structure is created by the [`lock`](ReentrantMutex::lock) and
+/// [`try_lock`](ReentrantMutex::try_lock) methods on [`ReentrantMutex`].
+///
+/// # Mutability
+///
+/// Unlike [`MutexGuard`](crate::MutexGuard), `ReentrantMutexGuard` does not
+/// implement [`DerefMut`](core::ops::DerefMut), because doing so would violate Rust's reference
+/// aliasing rules when multiple guards exist on one thread. Use interior
+/// mutability, such as [`Cell`](core::cell::Cell) or
+/// [`RefCell`](core::cell::RefCell), to mutate the guarded data.
 #[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct ReentrantMutexGuard<'a, R: RawMutex, G: GetThreadId, T: ?Sized> {
@@ -662,15 +718,17 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         }
     }
 
-    /// Attempts to make  a new `MappedReentrantMutexGuard` for a component of the
-    /// locked data. The original guard is return if the closure returns `None`.
-    ///
-    /// This operation cannot fail as the `ReentrantMutexGuard` passed
-    /// in already locked the mutex.
+    /// Attempts to make a new `MappedReentrantMutexGuard` for a component of the
+    /// locked data. The original guard is returned if the closure returns
+    /// `None`.
     ///
     /// This is an associated function that needs to be
     /// used as `ReentrantMutexGuard::try_map(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map<U: ?Sized, F>(
         s: Self,
@@ -691,16 +749,17 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
         })
     }
 
-    /// Attempts to make  a new `MappedReentrantMutexGuard` for a component of the
+    /// Attempts to make a new `MappedReentrantMutexGuard` for a component of the
     /// locked data. The original guard is returned alongside arbitrary user data
     /// if the closure returns `Err`.
-    ///
-    /// This operation cannot fail as the `ReentrantMutexGuard` passed
-    /// in already locked the mutex.
     ///
     /// This is an associated function that needs to be
     /// used as `ReentrantMutexGuard::try_map_or_err(...)`. A method would interfere with methods of
     /// the same name on the contents of the locked data.
+    ///
+    /// # Panics
+    ///
+    /// If `f` panics, the original guard is dropped.
     #[inline]
     pub fn try_map_or_err<U: ?Sized, F, E>(
         s: Self,
@@ -744,18 +803,8 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
 impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     ReentrantMutexGuard<'a, R, G, T>
 {
-    /// Unlocks the mutex using a fair unlock protocol.
-    ///
-    /// By default, mutexes are unfair and allow the current thread to re-lock
-    /// the mutex before another has the chance to acquire the lock, even if
-    /// that thread has been blocked on the mutex for a long time. This is the
-    /// default because it allows much higher throughput as it avoids forcing a
-    /// context switch on every mutex unlock. This can result in one thread
-    /// acquiring a mutex many more times than other threads.
-    ///
-    /// However in some cases it can be beneficial to ensure fairness by forcing
-    /// the lock to pass on to a waiting thread if there is one. This is done by
-    /// using this method instead of dropping the `ReentrantMutexGuard` normally.
+    /// Releases one level of recursive locking. A fair unlock is performed
+    /// only if this releases the final level.
     #[inline]
     #[track_caller]
     pub fn unlock_fair(s: Self) {
@@ -843,11 +892,12 @@ unsafe impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> StableAdd
 {
 }
 
-/// An RAII mutex guard returned by the `Arc` locking operations on `ReentrantMutex`.
+/// An RAII mutex guard returned by the `Arc` locking operations on
+/// [`ReentrantMutex`].
 ///
-/// This is similar to the `ReentrantMutexGuard` struct, except instead of using a reference to unlock the
-/// `Mutex` it uses an `Arc<ReentrantMutex>`. This has several advantages, most notably that it has an `'static`
-/// lifetime.
+/// Unlike [`ReentrantMutexGuard`], this guard owns the [`Arc`] used to unlock
+/// the mutex instead of borrowing the mutex, so its lifetime is not tied to a
+/// lock reference.
 #[cfg(feature = "arc_lock")]
 #[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
@@ -864,7 +914,9 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
         &s.remutex
     }
 
-    /// Unlocks the mutex and returns the `Arc` that was held by the [`ArcReentrantMutexGuard`].
+    /// Releases one level of recursive locking and returns the `Arc` held by
+    /// the [`ArcReentrantMutexGuard`]. The underlying mutex remains locked if
+    /// the current thread has acquired it more than once.
     #[inline]
     pub fn into_arc(s: Self) -> Arc<ReentrantMutex<R, G, T>> {
         // SAFETY: Skip our Drop impl and manually unlock the mutex.
@@ -896,16 +948,17 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
 
 #[cfg(feature = "arc_lock")]
 impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
-    /// Unlocks the mutex using a fair unlock protocol.
-    ///
-    /// This is functionally identical to the `unlock_fair` method on [`ReentrantMutexGuard`].
+    /// Releases one level of recursive locking. A fair unlock is performed
+    /// only if this releases the final level.
     #[inline]
     #[track_caller]
     pub fn unlock_fair(s: Self) {
         drop(Self::into_arc_fair(s));
     }
 
-    /// Unlocks the mutex using a fair unlock protocol and returns the `Arc` that was held by the [`ArcReentrantMutexGuard`].
+    /// Releases one level of recursive locking and returns the `Arc` held by
+    /// the [`ArcReentrantMutexGuard`]. A fair unlock is performed only if this
+    /// releases the final level.
     #[inline]
     pub fn into_arc_fair(s: Self) -> Arc<ReentrantMutex<R, G, T>> {
         // SAFETY: Skip our Drop impl and manually unlock the mutex.
@@ -967,13 +1020,18 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> Drop for ArcReentrantMutexGuard<R, 
     }
 }
 
-/// An RAII mutex guard returned by `ReentrantMutexGuard::map`, which can point to a
+/// An RAII mutex guard returned by [`ReentrantMutexGuard::map`], which can point to a
 /// subfield of the protected data.
 ///
 /// The main difference between `MappedReentrantMutexGuard` and `ReentrantMutexGuard` is that the
 /// former doesn't support temporarily unlocking and re-locking, since that
 /// could introduce soundness issues if the locked object is modified by another
 /// thread.
+///
+/// This structure is created by the [`map`](ReentrantMutexGuard::map) and
+/// [`try_map`](ReentrantMutexGuard::try_map), and
+/// [`try_map_or_err`](ReentrantMutexGuard::try_map_or_err) functions on
+/// [`ReentrantMutexGuard`].
 #[clippy::has_significant_drop]
 #[must_use = "if unused the ReentrantMutex will immediately unlock"]
 pub struct MappedReentrantMutexGuard<'a, R: RawMutex, G: GetThreadId, T: ?Sized + 'a> {
@@ -1077,18 +1135,8 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
 impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     MappedReentrantMutexGuard<'a, R, G, T>
 {
-    /// Unlocks the mutex using a fair unlock protocol.
-    ///
-    /// By default, mutexes are unfair and allow the current thread to re-lock
-    /// the mutex before another has the chance to acquire the lock, even if
-    /// that thread has been blocked on the mutex for a long time. This is the
-    /// default because it allows much higher throughput as it avoids forcing a
-    /// context switch on every mutex unlock. This can result in one thread
-    /// acquiring a mutex many more times than other threads.
-    ///
-    /// However in some cases it can be beneficial to ensure fairness by forcing
-    /// the lock to pass on to a waiting thread if there is one. This is done by
-    /// using this method instead of dropping the `ReentrantMutexGuard` normally.
+    /// Releases one level of recursive locking. A fair unlock is performed
+    /// only if this releases the final level.
     #[inline]
     #[track_caller]
     pub fn unlock_fair(s: Self) {

@@ -2,7 +2,7 @@ use crate::raw_condvar::RawCondvar;
 
 pub use lock_api::WaitTimeoutResult;
 
-/// A Condition Variable
+/// A condition variable.
 ///
 /// Condition variables represent the ability to block a thread such that it
 /// consumes no CPU time while waiting for an event to occur. Condition
@@ -21,12 +21,9 @@ pub use lock_api::WaitTimeoutResult;
 ///
 /// - No spurious wakeups: A wait will only return a non-timeout result if it
 ///   was woken up by `notify_one` or `notify_all`.
-/// - `Condvar::notify_all` will only wake up a single thread, the rest are
-///   requeued to wait for the `Mutex` to be unlocked by the thread that was
-///   woken up.
-/// - Can be statically constructed.
-/// - Does not require any drop glue when dropped.
-/// - Inline fast path for the uncontended case.
+/// - `Condvar::notify_all` requeues waiters directly onto the associated
+///   `Mutex` and wakes them as the lock becomes available, avoiding a
+///   thundering herd.
 ///
 /// # Examples
 ///
@@ -346,7 +343,6 @@ mod tests {
         let handle = spawn_wait_while_notifier(mutex.clone(), cv.clone(), num_iters, None);
 
         cv.wait_while(&mut mutex_guard, condition);
-
         assert!(*mutex_guard == num_iters + 1);
 
         cv.wait_while(&mut mutex_guard, condition);
@@ -463,8 +459,8 @@ mod tests {
     }
 }
 
-/// This module contains an integration test that is heavily inspired from WebKit's own integration
-/// tests for it's own Condvar.
+/// This module contains an integration test heavily inspired by WebKit's own
+/// condition-variable tests.
 #[cfg(test)]
 #[cfg(not(miri))] // Miri is too slow
 mod webkit_queue_test {
