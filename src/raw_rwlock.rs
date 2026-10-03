@@ -95,14 +95,10 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLock for RawRwLock<RECURSIVE> 
     #[inline]
     unsafe fn unlock_exclusive(&self) {
         self.deadlock_release_all();
-        if self
-            .state
-            .compare_exchange(WRITER_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
-        {
-            return;
+        let state = self.state.fetch_sub(WRITER_BIT, Ordering::Release);
+        if state & PARKED_BIT != 0 {
+            self.unlock_exclusive_or_upgradable_slow();
         }
-        self.unlock_exclusive_slow(false);
     }
 
     #[inline]
@@ -166,7 +162,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockFair for RawRwLock<RECURSI
         {
             return;
         }
-        self.unlock_exclusive_slow(true);
+        self.unlock_exclusive_fair_slow();
     }
 
     #[inline]
@@ -285,23 +281,12 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgrade for RawRwLock<RECU
     #[inline]
     unsafe fn unlock_upgradable(&self) {
         self.deadlock_release_all();
-        let state = self.state.load(Ordering::Relaxed);
-        #[allow(clippy::collapsible_if)]
-        if state & PARKED_BIT == 0 {
-            if self
-                .state
-                .compare_exchange_weak(
-                    state,
-                    state - (ONE_READER | UPGRADABLE_BIT),
-                    Ordering::Release,
-                    Ordering::Relaxed,
-                )
-                .is_ok()
-            {
-                return;
-            }
+        let state = self
+            .state
+            .fetch_sub(ONE_READER | UPGRADABLE_BIT, Ordering::Release);
+        if state & PARKED_BIT != 0 {
+            self.unlock_exclusive_or_upgradable_slow();
         }
-        self.unlock_upgradable_slow(false);
     }
 
     #[inline]
@@ -359,7 +344,7 @@ unsafe impl<const RECURSIVE: bool> lock_api::RawRwLockUpgradeFair for RawRwLock<
                 return;
             }
         }
-        self.unlock_upgradable_slow(true);
+        self.unlock_upgradable_fair_slow();
     }
 
     #[inline]
@@ -572,12 +557,28 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     }
 
     #[cold]
-    fn unlock_exclusive_slow(&self, fair: bool) {
+    fn unlock_exclusive_or_upgradable_slow(&self) {
+        let callback = |_, result: UnparkResult| {
+            // Ownership has already been released. Preserve any reader count
+            // and ownership bits acquired while we were accessing the queue.
+            if !result.have_more_threads {
+                self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
+            }
+            TOKEN_NORMAL
+        };
+        // SAFETY: `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            self.wake_parked_threads(0, callback);
+        }
+    }
+
+    #[cold]
+    fn unlock_exclusive_fair_slow(&self) {
         // There are threads to unpark. Try to unpark as many as we can.
         let callback = |mut new_state, result: UnparkResult| {
             // If we are using a fair unlock then we should keep the
             // rwlock locked and hand it off to the unparked threads.
-            if result.unparked_threads != 0 && fair {
+            if result.unparked_threads != 0 {
                 if result.have_more_threads {
                     new_state |= PARKED_BIT;
                 }
@@ -692,7 +693,7 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     }
 
     #[cold]
-    fn unlock_upgradable_slow(&self, fair: bool) {
+    fn unlock_upgradable_fair_slow(&self) {
         // Just release the lock if there are no parked threads.
         let mut state = self.state.load(Ordering::Relaxed);
         while state & PARKED_BIT == 0 {
@@ -712,26 +713,24 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
             // If we are using a fair unlock then we should keep the
             // rwlock locked and hand it off to the unparked threads.
             let mut state = self.state.load(Ordering::Relaxed);
-            if fair {
-                // Fall back to normal unpark on overflow. Panicking is
-                // not allowed in parking_lot callbacks.
-                while let Some(mut new_state) =
-                    (state - (ONE_READER | UPGRADABLE_BIT)).checked_add(new_state)
-                {
-                    if result.have_more_threads {
-                        new_state |= PARKED_BIT;
-                    } else {
-                        new_state &= !PARKED_BIT;
-                    }
-                    match self.state.compare_exchange_weak(
-                        state,
-                        new_state,
-                        Ordering::Release,
-                        Ordering::Relaxed,
-                    ) {
-                        Ok(_) => return TOKEN_HANDOFF,
-                        Err(x) => state = x,
-                    }
+            // Fall back to normal unpark on overflow. Panicking is
+            // not allowed in parking_lot callbacks.
+            while let Some(mut new_state) =
+                (state - (ONE_READER | UPGRADABLE_BIT)).checked_add(new_state)
+            {
+                if result.have_more_threads {
+                    new_state |= PARKED_BIT;
+                } else {
+                    new_state &= !PARKED_BIT;
+                }
+                match self.state.compare_exchange_weak(
+                    state,
+                    new_state,
+                    Ordering::Release,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => return TOKEN_HANDOFF,
+                    Err(x) => state = x,
                 }
             }
 
@@ -820,14 +819,14 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     #[cold]
     fn bump_exclusive_slow(&self) {
         self.deadlock_release_all();
-        self.unlock_exclusive_slow(true);
+        self.unlock_exclusive_fair_slow();
         self.lock_exclusive();
     }
 
     #[cold]
     fn bump_upgradable_slow(&self) {
         self.deadlock_release_all();
-        self.unlock_upgradable_slow(true);
+        self.unlock_upgradable_fair_slow();
         util::abort_on_panic(|| self.lock_upgradable());
     }
 

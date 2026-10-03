@@ -86,7 +86,7 @@ unsafe impl lock_api::RawMutex for RawMutex {
     #[inline]
     unsafe fn unlock(&self) {
         unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
-        unsafe { self.unlock_inner(false) };
+        unsafe { self.unlock_inner() };
     }
 
     #[inline]
@@ -100,7 +100,13 @@ unsafe impl lock_api::RawMutexFair for RawMutex {
     #[inline]
     unsafe fn unlock_fair(&self) {
         unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
-        unsafe { self.unlock_inner(true) };
+        if self
+            .state
+            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
+            .is_err()
+        {
+            self.unlock_fair_slow();
+        }
     }
 
     #[inline]
@@ -157,15 +163,11 @@ impl RawMutex {
     ///
     /// The caller must own the mutex.
     #[inline]
-    pub(crate) unsafe fn unlock_inner(&self, force_fair: bool) {
-        if self
-            .state
-            .compare_exchange(LOCKED_BIT, 0, Ordering::Release, Ordering::Relaxed)
-            .is_ok()
-        {
-            return;
+    pub(crate) unsafe fn unlock_inner(&self) {
+        let state = self.state.fetch_sub(LOCKED_BIT, Ordering::Release);
+        if state & PARKED_BIT != 0 {
+            self.unlock_slow();
         }
-        self.unlock_slow(force_fair);
     }
 
     // Used by Condvar when requeuing threads to us, must be called while
@@ -269,14 +271,33 @@ impl RawMutex {
     }
 
     #[cold]
-    fn unlock_slow(&self, fair: bool) {
+    fn unlock_slow(&self) {
+        let addr = core::ptr::from_ref(self).addr();
+        let callback = |result: UnparkResult| {
+            // Ownership has already been released. Preserve LOCKED_BIT since
+            // another thread may have acquired the mutex in the meantime.
+            if !result.have_more_threads {
+                self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
+            }
+            TOKEN_NORMAL
+        };
+        // SAFETY:
+        //   * `addr` is an address we control.
+        //   * `callback` does not panic or call into any function of `parking_lot`.
+        unsafe {
+            parking_lot_core::unpark_one(addr, callback);
+        }
+    }
+
+    #[cold]
+    fn unlock_fair_slow(&self) {
         // Unpark one thread and leave the parked bit set if there might
         // still be parked threads on this address.
         let addr = core::ptr::from_ref(self).addr();
         let callback = |result: UnparkResult| {
             // If we are using a fair unlock then we should keep the
             // mutex locked and hand it off to the unparked thread.
-            if result.unparked_threads != 0 && fair {
+            if result.unparked_threads != 0 {
                 // Clear the parked bit if there are no more parked
                 // threads.
                 if !result.have_more_threads {
@@ -305,7 +326,7 @@ impl RawMutex {
     #[cold]
     fn bump_slow(&self) {
         unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
-        self.unlock_slow(true);
+        self.unlock_fair_slow();
         self.lock();
     }
 }

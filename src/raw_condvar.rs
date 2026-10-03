@@ -185,7 +185,7 @@ impl RawCondvar {
             };
             let before_sleep = || {
                 // Unlock the mutex before sleeping...
-                unsafe { mutex.unlock_inner(false) };
+                unsafe { mutex.unlock_inner() };
             };
             let timed_out = |k, was_last_thread| {
                 // If we were requeued to a mutex, then we did not time out.
