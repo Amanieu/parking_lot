@@ -7,7 +7,7 @@ use lock_api::{
     MutexGuard, RawMutex, RawRwLock, RawRwLockUpgrade, RwLockReadGuard, RwLockUpgradableReadGuard,
     RwLockWriteGuard,
 };
-use static_assertions::{assert_impl_all, assert_not_impl_any};
+use static_assertions::{assert_eq_size, assert_impl_all, assert_not_impl_any};
 use std::cell::Cell;
 use std::marker::PhantomData;
 #[cfg(feature = "atomic_usize")]
@@ -35,30 +35,32 @@ assert_not_impl_any!(Neither: Send, Sync);
 assert_impl_all!(GuardSend: Send, Sync);
 assert_impl_all!(GuardNoSend: Sync);
 assert_not_impl_any!(GuardNoSend: Send);
+assert_eq_size!(GuardSend, ());
+assert_eq_size!(GuardNoSend, ());
 
 // Used only for compile-time trait assertions.
-struct TestRaw<T, M> {
+struct TestRaw<T, M, E = M, U = M> {
     traits: PhantomData<T>,
-    marker: PhantomData<fn() -> M>,
+    marker: PhantomData<fn() -> (M, E, U)>,
 }
 
-unsafe impl<T, M> RawMutex for TestRaw<T, M> {
+unsafe impl<T, M, E, U> RawMutex for TestRaw<T, M, E, U> {
     const INIT: Self = Self {
         traits: PhantomData,
         marker: PhantomData,
     };
 
-    type GuardMarker = M;
+    type Guard = M;
 
-    fn lock(&self) {
+    fn lock(&self) -> Self::Guard {
         unreachable!()
     }
 
-    fn try_lock(&self) -> bool {
+    fn try_lock(&self) -> Option<Self::Guard> {
         unreachable!()
     }
 
-    unsafe fn unlock(&self) {
+    unsafe fn unlock(&self, _guard: Self::Guard) {
         unreachable!()
     }
 
@@ -67,35 +69,36 @@ unsafe impl<T, M> RawMutex for TestRaw<T, M> {
     }
 }
 
-unsafe impl<T, M> RawRwLock for TestRaw<T, M> {
+unsafe impl<T, M, E, U> RawRwLock for TestRaw<T, M, E, U> {
     const INIT: Self = Self {
         traits: PhantomData,
         marker: PhantomData,
     };
 
-    type GuardMarker = M;
+    type SharedGuard = M;
+    type ExclusiveGuard = E;
 
-    fn lock_shared(&self) {
+    fn lock_shared(&self) -> Self::SharedGuard {
         unreachable!()
     }
 
-    fn try_lock_shared(&self) -> bool {
+    fn try_lock_shared(&self) -> Option<Self::SharedGuard> {
         unreachable!()
     }
 
-    unsafe fn unlock_shared(&self) {
+    unsafe fn unlock_shared(&self, _guard: Self::SharedGuard) {
         unreachable!()
     }
 
-    fn lock_exclusive(&self) {
+    fn lock_exclusive(&self) -> Self::ExclusiveGuard {
         unreachable!()
     }
 
-    fn try_lock_exclusive(&self) -> bool {
+    fn try_lock_exclusive(&self) -> Option<Self::ExclusiveGuard> {
         unreachable!()
     }
 
-    unsafe fn unlock_exclusive(&self) {
+    unsafe fn unlock_exclusive(&self, _guard: Self::ExclusiveGuard) {
         unreachable!()
     }
 
@@ -108,24 +111,29 @@ unsafe impl<T, M> RawRwLock for TestRaw<T, M> {
     }
 }
 
-unsafe impl<T, M> RawRwLockUpgrade for TestRaw<T, M> {
-    fn lock_upgradable(&self) {
+unsafe impl<T, M, E, U> RawRwLockUpgrade for TestRaw<T, M, E, U> {
+    type UpgradableGuard = U;
+
+    fn lock_upgradable(&self) -> Self::UpgradableGuard {
         unreachable!()
     }
 
-    fn try_lock_upgradable(&self) -> bool {
+    fn try_lock_upgradable(&self) -> Option<Self::UpgradableGuard> {
         unreachable!()
     }
 
-    unsafe fn unlock_upgradable(&self) {
+    unsafe fn unlock_upgradable(&self, _guard: Self::UpgradableGuard) {
         unreachable!()
     }
 
-    unsafe fn upgrade(&self) {
+    unsafe fn upgrade(&self, _guard: Self::UpgradableGuard) -> Self::ExclusiveGuard {
         unreachable!()
     }
 
-    unsafe fn try_upgrade(&self) -> bool {
+    unsafe fn try_upgrade(
+        &self,
+        _guard: Self::UpgradableGuard,
+    ) -> Result<Self::ExclusiveGuard, Self::UpgradableGuard> {
         unreachable!()
     }
 }
@@ -366,3 +374,10 @@ mod arc {
 
 #[test]
 fn trait_matrix_compiles() {}
+
+// Each lock mode independently determines the auto traits of its guard.
+type MixedRaw = TestRaw<SendSync, GuardSend, GuardNoSend, Neither>;
+assert_impl_all!(RwLockReadGuard<'static, MixedRaw, SendSync>: Send, Sync);
+assert_impl_all!(RwLockWriteGuard<'static, MixedRaw, SendSync>: Sync);
+assert_not_impl_any!(RwLockWriteGuard<'static, MixedRaw, SendSync>: Send);
+assert_not_impl_any!(RwLockUpgradableReadGuard<'static, MixedRaw, SendSync>: Send, Sync);

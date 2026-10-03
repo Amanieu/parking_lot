@@ -34,21 +34,25 @@
 //!     const INIT: RawSpinlock = RawSpinlock(AtomicBool::new(false));
 //!
 //!     // A spinlock guard can be sent to another thread and unlocked there
-//!     type GuardMarker = GuardSend;
+//!     type Guard = GuardSend;
 //!
-//!     fn lock(&self) {
+//!     fn lock(&self) -> Self::Guard {
 //!         // Note: This isn't the best way of implementing a spinlock, but it
 //!         // suffices for the sake of this example.
-//!         while !self.try_lock() {}
+//!         loop {
+//!             if let Some(guard) = self.try_lock() {
+//!                 return guard;
+//!             }
+//!         }
 //!     }
 //!
-//!     fn try_lock(&self) -> bool {
+//!     fn try_lock(&self) -> Option<Self::Guard> {
 //!         self.0
 //!             .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-//!             .is_ok()
+//!             .ok().map(|_| GuardSend::new())
 //!     }
 //!
-//!     unsafe fn unlock(&self) {
+//!     unsafe fn unlock(&self, _guard: Self::Guard) {
 //!         self.0.store(false, Ordering::Release);
 //!     }
 //!
@@ -96,14 +100,41 @@
 #[cfg(feature = "arc_lock")]
 extern crate alloc;
 
-/// Marker type which indicates that guards for a lock are [`Send`].
+/// A stateless guard which is [`Send`].
+#[derive(Default)]
 pub struct GuardSend(());
 
-/// Marker type which indicates that guards for a lock are not [`Send`].
-#[allow(dead_code)]
-pub struct GuardNoSend(*mut ());
+impl GuardSend {
+    /// Creates a stateless guard which can be sent to another thread.
+    #[inline]
+    pub const fn new() -> Self {
+        Self(())
+    }
+}
+
+/// A stateless guard which is not [`Send`].
+#[derive(Default)]
+pub struct GuardNoSend(core::marker::PhantomData<*mut ()>);
+
+impl GuardNoSend {
+    /// Creates a stateless guard which cannot be sent to another thread.
+    #[inline]
+    pub const fn new() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
 
 unsafe impl Sync for GuardNoSend {}
+
+// scopeguard's defer! defines its closure in Rust 2015, so it captures entire
+// variables instead of individual fields. Define it locally to use our
+// edition's precise captures, allowing cleanup to borrow one field while
+// another is used.
+macro_rules! defer {
+    ($($t:tt)*) => {
+        let _guard = scopeguard::guard((), |()| { $($t)* });
+    };
+}
 
 mod guard;
 mod mutex;
