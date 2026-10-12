@@ -7,6 +7,136 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## `parking_lot` - [0.13.0](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.5...parking_lot-v0.13.0) - 2026-10-12
+
+### Added
+- *(once)* add Once::new_completed constructor
+
+### Fixed
+- pass integer pointers to futex syscalls
+
+### Other
+- Merge pull request #540 from akashchamp/fix-spinwait-double-spin-loop
+- Merge pull request #545 from Amanieu/early-unlock
+- Merge pull request #544 from Amanieu/stateful-guards
+- fix SpinWait spin counts starting at 2 instead of 1
+- Fix release semver checks with mutually exclusive features
+- Release mutex and rwlock ownership before waking waiters
+- Add per-acquisition guard state to raw locks
+- Document public API changes and significant fixes for the next release
+- Test send_guard feature and include it in CI
+- Strengthen condition-variable and reader-writer lock tests
+- Allow raw condvars with spurious wakeups
+- Mark dynamically loaded ntdll calls unsafe
+- Expose Redox futex timeout provenance
+- Clarify unsafe lock and provider contracts
+- Validate thread parker results in release builds
+- Construct unpark handles before releasing parkers
+- Use relative timed waits on Apple platforms
+- Clarify aborted requeue results
+- Prevent unwinding through parking-lot operations
+- Define raw lock unwind contracts and abort on failed re-locking
+- Document global allocator restriction
+- Fix deadlock detection ownership and reporting
+- Fix futex timeout ABIs and fall back on older kernels
+- Remove eventual fairness
+- Refresh synchronization API documentation
+- Add Once completion queries and waiting APIs
+- Modernize public APIs for Rust 1.95
+- Modernize synchronization internals for Rust 1.95
+- Add dedicated recursive reader-writer lock
+- Fix ineffective lock tests
+- Correct documentation and feature metadata
+- Remove hardware lock elision support
+- Fix WordLock queue unlock retries
+- Use realtime deadlines on ESP-IDF
+- Fix mapped rwlock read guard method name
+- Require accurate lock state queries
+- Recheck condvar predicates after timeouts
+- Fix fair upgradable rwlock unlocking
+- Yield in generic thread parker
+- Handle oversized timeouts consistently
+- Document raw lock synchronization requirements
+- Adapt the codebase to Rust 2024
+- Raise MSRV to Rust 1.95 and edition 2024
+- Fix rwlock upgrade memory orderings
+- Derive lock guard auto traits from fields
+- Use pointer types for Windows handles
+- Merge pull request #523 from bushrat011899/lock_api_condvar
+- Move `Condvar` into `lock_api`
+- Add `lock_api::{Lock}::into_inner_with_raw`
+- Update minimum libc for AIX.
+- [AIX] Revert changes to define timespec_tv_nsec_t as 32-bit.
+- Adjust confusing documentation of SpinWait::spin
+- Merge pull request #506 from amy-kwan/amy-kwan/update-timespec-aix
+- Use postcard instead of bincode in tests
+- [AIX] Define timespec_tv_nsec_t as 32-bit.
+- add Miri CI job
+- Merge pull request #504 from Amanieu/fix_test_129
+- Fix test_issue_129 under Miri
+- Merge pull request #499 from RalfJung/word-lock-atomic-ptr
+- use AtomicPtr (with polyfill for operations missing on old Rust)
+- bump MSRV to Rust 1.84
+- condvar test: remove outdated comment
+
+## `parking_lot_core` - [0.10.0](https://github.com/Amanieu/parking_lot/compare/parking_lot_core-v0.9.12...parking_lot_core-v0.10.0) - 2026-10-12
+
+### Fixed
+- pass integer pointers to futex syscalls
+
+### Other
+- fix SpinWait spin counts starting at 2 instead of 1
+- Mark dynamically loaded ntdll calls unsafe
+- Expose Redox futex timeout provenance
+- Validate thread parker results in release builds
+- Construct unpark handles before releasing parkers
+- Use relative timed waits on Apple platforms
+- Clarify aborted requeue results
+- Prevent unwinding through parking-lot operations
+- Document global allocator restriction
+- Fix deadlock detection ownership and reporting
+- Fix futex timeout ABIs and fall back on older kernels
+- Remove eventual fairness
+- Modernize synchronization internals for Rust 1.95
+- Correct documentation and feature metadata
+- Fix WordLock queue unlock retries
+- Use realtime deadlines on ESP-IDF
+- Yield in generic thread parker
+- Handle oversized timeouts consistently
+- Adapt the codebase to Rust 2024
+- Raise MSRV to Rust 1.95 and edition 2024
+- Use pointer types for Windows handles
+- Update minimum libc for AIX.
+- [AIX] Revert changes to define timespec_tv_nsec_t as 32-bit.
+- Adjust confusing documentation of SpinWait::spin
+- Merge pull request #506 from amy-kwan/amy-kwan/update-timespec-aix
+- Use postcard instead of bincode in tests
+- [AIX] Define timespec_tv_nsec_t as 32-bit.
+- use AtomicPtr (with polyfill for operations missing on old Rust)
+
+## `lock_api` - [0.5.0](https://github.com/Amanieu/parking_lot/compare/lock_api-v0.4.14...lock_api-v0.5.0) - 2026-10-12
+
+### Other
+- Add per-acquisition guard state to raw locks
+- Allow raw condvars with spurious wakeups
+- Clarify unsafe lock and provider contracts
+- Define raw lock unwind contracts and abort on failed re-locking
+- Refresh synchronization API documentation
+- Modernize public APIs for Rust 1.95
+- Add dedicated recursive reader-writer lock
+- Correct documentation and feature metadata
+- Fix mapped rwlock read guard method name
+- Require accurate lock state queries
+- Recheck condvar predicates after timeouts
+- Handle oversized timeouts consistently
+- Document raw lock synchronization requirements
+- Adapt the codebase to Rust 2024
+- Raise MSRV to Rust 1.95 and edition 2024
+- Derive lock guard auto traits from fields
+- Merge pull request #523 from bushrat011899/lock_api_condvar
+- Move `Condvar` into `lock_api`
+- Add `lock_api::{Lock}::into_inner_with_raw`
+
 - Added per-acquisition state to `lock_api` raw locks. `RawMutex::Guard`
   replaces `GuardMarker`; rwlocks have separate `SharedGuard`, `ExclusiveGuard`,
   and `UpgradableGuard` types. Unlock operations consume this state, while
