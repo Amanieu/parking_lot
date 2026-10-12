@@ -3,15 +3,12 @@ use core::fmt;
 use core::marker::PhantomData;
 use core::mem;
 use core::ops::{Deref, DerefMut};
-use scopeguard::defer;
 
 use crate::guard::{ExclusiveGuardData, abort_on_panic};
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
-#[cfg(feature = "arc_lock")]
 use core::mem::ManuallyDrop;
-#[cfg(feature = "arc_lock")]
 use core::ptr;
 
 #[cfg(feature = "owning_ref")]
@@ -27,20 +24,23 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 ///
 /// # Safety
 ///
-/// Implementations must enforce mutual exclusion: after a locking operation
-/// successfully acquires the mutex, no other locking operation may succeed
-/// until the mutex is unlocked.
+/// Implementations must provide mutual exclusion, with acquire semantics on
+/// successful locking and release semantics on unlocking. These requirements
+/// also apply to subtraits.
 ///
-/// Successful lock acquisitions must have acquire semantics, and unlocking
-/// operations must have release semantics. These requirements also apply to
-/// equivalent operations provided by subtraits.
+/// Each successful lock operation returns guard state representing ownership of
+/// the mutex. Operations on a locked mutex must receive the state for that
+/// acquisition. Unlocking consumes the state.
 ///
-/// A raw mutex may be moved or dropped while locked. Implementations must
-/// remain sound when this happens.
+/// Guard state may unlock the mutex when dropped, but forgetting it must be
+/// safe. A caller with exclusive ownership of the mutex object may move or drop
+/// it even while it is locked; this must also be safe.
 ///
-/// Methods which acquire the mutex may unwind, but if they do then the current
-/// context must not acquire the mutex. Methods which release or temporarily
-/// yield the mutex must not unwind.
+/// If a lock operation unwinds, it must not leave the caller holding a new
+/// acquisition. If an operation consuming guard state unwinds, it must release
+/// the acquisition represented by that state, even if it changed or re-acquired
+/// the lock before panicking. Neither case may release an acquisition held
+/// independently of the call.
 pub unsafe trait RawMutex {
     /// Initial value for an unlocked mutex.
     // A “non-constant” const item is a legacy way to supply an initialized value to downstream
@@ -48,29 +48,32 @@ pub unsafe trait RawMutex {
     #[allow(clippy::declare_interior_mutable_const)]
     const INIT: Self;
 
-    /// Marker type which determines whether a lock guard should be [`Send`].
-    /// Use [`GuardSend`](crate::GuardSend) or [`GuardNoSend`](crate::GuardNoSend).
-    type GuardMarker;
+    /// Per-acquisition state stored in the lock guard.
+    ///
+    /// This type also determines whether guards are `Send` and `Sync`.
+    /// Stateless implementations can use [`GuardSend`](crate::GuardSend) or
+    /// [`GuardNoSend`](crate::GuardNoSend).
+    type Guard;
 
     /// Acquires this mutex, blocking the current thread until it is able to do so.
-    fn lock(&self);
+    fn lock(&self) -> Self::Guard;
 
-    /// Attempts to acquire this mutex without blocking. Returns `true`
-    /// if the lock was successfully acquired and `false` otherwise.
-    fn try_lock(&self) -> bool;
+    /// Attempts to acquire this mutex without blocking. Returns the guard state
+    /// if the lock was successfully acquired and `None` otherwise.
+    fn try_lock(&self) -> Option<Self::Guard>;
 
     /// Unlocks this mutex.
     ///
     /// # Safety
     ///
     /// This method may only be called if the mutex is held in the current context, i.e. it must
-    /// be paired with a successful call to [`lock`], [`try_lock`], [`try_lock_for`] or [`try_lock_until`].
+    /// be given the state returned by a successful call to [`lock`], [`try_lock`], [`try_lock_for`] or [`try_lock_until`].
     ///
     /// [`lock`]: RawMutex::lock
     /// [`try_lock`]: RawMutex::try_lock
     /// [`try_lock_for`]: RawMutexTimed::try_lock_for
     /// [`try_lock_until`]: RawMutexTimed::try_lock_until
-    unsafe fn unlock(&self);
+    unsafe fn unlock(&self, guard: Self::Guard);
 
     /// Checks whether the mutex is currently locked.
     ///
@@ -97,7 +100,7 @@ pub unsafe trait RawMutexFair: RawMutex {
     ///
     /// This method may only be called if the mutex is held in the current context, see
     /// the documentation of [`unlock`](RawMutex::unlock).
-    unsafe fn unlock_fair(&self);
+    unsafe fn unlock_fair(&self, guard: Self::Guard);
 
     /// Temporarily yields the mutex to a waiting thread if there is one.
     ///
@@ -110,12 +113,17 @@ pub unsafe trait RawMutexFair: RawMutex {
     /// This method may only be called if the mutex is held in the current context, see
     /// the documentation of [`unlock`](RawMutex::unlock).
     ///
+    /// Implementations may unwind only with the mutex held and valid guard
+    /// state restored. If restoration fails, they must abort.
+    ///
     /// # Aborts
     ///
     /// The default implementation aborts if re-locking the mutex panics.
-    unsafe fn bump(&self) {
-        unsafe { self.unlock_fair() };
-        abort_on_panic(|| self.lock());
+    unsafe fn bump(&self, guard: &mut Self::Guard) {
+        // Move the state out, then restore it on both normal return and unwind.
+        let state = unsafe { ptr::read(guard) };
+        defer!(abort_on_panic(|| unsafe { ptr::write(guard, self.lock()) }));
+        unsafe { self.unlock_fair(state) };
     }
 }
 
@@ -140,14 +148,14 @@ pub unsafe trait RawMutexTimed: RawMutex {
     /// A successful operation may return early. An unsuccessful operation must
     /// not return before the timeout, but may return later due to scheduling or
     /// platform-specific behavior.
-    fn try_lock_for(&self, timeout: Self::Duration) -> bool;
+    fn try_lock_for(&self, timeout: Self::Duration) -> Option<Self::Guard>;
 
     /// Attempts to acquire this lock until a timeout is reached.
     ///
     /// A successful operation may return early. An unsuccessful operation must
     /// not return before the timeout, but may return later due to scheduling or
     /// platform-specific behavior.
-    fn try_lock_until(&self, timeout: Self::Instant) -> bool;
+    fn try_lock_until(&self, timeout: Self::Instant) -> Option<Self::Guard>;
 }
 
 /// A mutual exclusion primitive useful for protecting shared data.
@@ -213,11 +221,14 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// remain valid when the returned guard is used or dropped. In particular,
     /// the returned guard must not permit accesses that conflict with existing
     /// references.
+    ///
+    /// `guard` must be the state for this acquisition of this lock.
     #[inline]
-    pub unsafe fn make_guard_unchecked(&self) -> MutexGuard<'_, R, T> {
+    pub unsafe fn make_guard_unchecked(&self, guard: R::Guard) -> MutexGuard<'_, R, T> {
         MutexGuard {
             mutex: self,
             marker: PhantomData,
+            guard: ManuallyDrop::new(guard),
         }
     }
 
@@ -239,9 +250,9 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     #[inline]
     #[track_caller]
     pub fn lock(&self) -> MutexGuard<'_, R, T> {
-        self.raw.lock();
+        let guard = self.raw.lock();
         // SAFETY: The lock is held, as required.
-        unsafe { self.make_guard_unchecked() }
+        unsafe { self.make_guard_unchecked(guard) }
     }
 
     /// Attempts to acquire this lock.
@@ -254,9 +265,9 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     #[inline]
     #[track_caller]
     pub fn try_lock(&self) -> Option<MutexGuard<'_, R, T>> {
-        if self.raw.try_lock() {
+        if let Some(guard) = self.raw.try_lock() {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.make_guard_unchecked() })
+            Some(unsafe { self.make_guard_unchecked(guard) })
         } else {
             None
         }
@@ -285,23 +296,24 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 
     /// Forcibly unlocks the mutex.
     ///
-    /// This is useful when combined with `mem::forget` to hold a lock without
-    /// the need to maintain a `MutexGuard` object alive, for example when
-    /// dealing with FFI.
+    /// This is useful when the raw acquisition state is managed separately,
+    /// for example when dealing with FFI.
     ///
     /// # Safety
     ///
-    /// This method must only be called if the current thread logically owns a
-    /// `MutexGuard` but that guard has been discarded using `mem::forget`.
+    /// The current context must hold the lock using the supplied acquisition
+    /// state, with no live guard responsible for unlocking it.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     ///
     /// The caller must ensure that releasing the lock does not invalidate any
     /// outstanding references to the protected data. Any subsequent access
     /// through previously obtained pointers must be properly synchronized.
+    ///
+    /// `guard` must be the state for this acquisition of this lock.
     #[inline]
     #[track_caller]
-    pub unsafe fn force_unlock(&self) {
-        unsafe { self.raw.unlock() };
+    pub unsafe fn force_unlock(&self, guard: R::Guard) {
+        unsafe { self.raw.unlock(guard) };
     }
 
     /// Returns the underlying raw mutex object.
@@ -344,13 +356,15 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     /// remain valid when the returned guard is used or dropped. In particular,
     /// the returned guard must not permit accesses that conflict with existing
     /// references.
+    ///
+    /// `guard` must be the state for this acquisition of this lock.
     #[cfg(feature = "arc_lock")]
     #[inline]
-    unsafe fn make_arc_guard_unchecked(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
+    unsafe fn make_arc_guard_unchecked(self: &Arc<Self>, guard: R::Guard) -> ArcMutexGuard<R, T> {
         ArcMutexGuard {
             mutex: self.clone(),
             data_marker: PhantomData,
-            marker: PhantomData,
+            guard: ManuallyDrop::new(guard),
         }
     }
 
@@ -362,9 +376,9 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     #[inline]
     #[track_caller]
     pub fn lock_arc(self: &Arc<Self>) -> ArcMutexGuard<R, T> {
-        self.raw.lock();
+        let guard = self.raw.lock();
         // SAFETY: the locking guarantee is upheld
-        unsafe { self.make_arc_guard_unchecked() }
+        unsafe { self.make_arc_guard_unchecked(guard) }
     }
 
     /// Attempts to acquire a lock through an `Arc`.
@@ -375,9 +389,9 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
     #[inline]
     #[track_caller]
     pub fn try_lock_arc(self: &Arc<Self>) -> Option<ArcMutexGuard<R, T>> {
-        if self.raw.try_lock() {
+        if let Some(guard) = self.raw.try_lock() {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.make_arc_guard_unchecked() })
+            Some(unsafe { self.make_arc_guard_unchecked(guard) })
         } else {
             None
         }
@@ -387,23 +401,24 @@ impl<R: RawMutex, T: ?Sized> Mutex<R, T> {
 impl<R: RawMutexFair, T: ?Sized> Mutex<R, T> {
     /// Forcibly unlocks the mutex using a fair unlock protocol.
     ///
-    /// This is useful when combined with `mem::forget` to hold a lock without
-    /// the need to maintain a `MutexGuard` object alive, for example when
-    /// dealing with FFI.
+    /// This is useful when the raw acquisition state is managed separately,
+    /// for example when dealing with FFI.
     ///
     /// # Safety
     ///
-    /// This method must only be called if the current thread logically owns a
-    /// `MutexGuard` but that guard has been discarded using `mem::forget`.
+    /// The current context must hold the lock using the supplied acquisition
+    /// state, with no live guard responsible for unlocking it.
     /// Behavior is undefined if a mutex is unlocked when not locked.
     ///
     /// The caller must ensure that releasing the lock does not invalidate any
     /// outstanding references to the protected data. Any subsequent access
     /// through previously obtained pointers must be properly synchronized.
+    ///
+    /// `guard` must be the state for this acquisition of this lock.
     #[inline]
     #[track_caller]
-    pub unsafe fn force_unlock_fair(&self) {
-        unsafe { self.raw.unlock_fair() };
+    pub unsafe fn force_unlock_fair(&self, guard: R::Guard) {
+        unsafe { self.raw.unlock_fair(guard) };
     }
 }
 
@@ -420,9 +435,9 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     #[inline]
     #[track_caller]
     pub fn try_lock_for(&self, timeout: R::Duration) -> Option<MutexGuard<'_, R, T>> {
-        if self.raw.try_lock_for(timeout) {
+        if let Some(guard) = self.raw.try_lock_for(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.make_guard_unchecked() })
+            Some(unsafe { self.make_guard_unchecked(guard) })
         } else {
             None
         }
@@ -440,9 +455,9 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     #[inline]
     #[track_caller]
     pub fn try_lock_until(&self, timeout: R::Instant) -> Option<MutexGuard<'_, R, T>> {
-        if self.raw.try_lock_until(timeout) {
+        if let Some(guard) = self.raw.try_lock_until(timeout) {
             // SAFETY: The lock is held, as required.
-            Some(unsafe { self.make_guard_unchecked() })
+            Some(unsafe { self.make_guard_unchecked(guard) })
         } else {
             None
         }
@@ -458,9 +473,9 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
     #[inline]
     #[track_caller]
     pub fn try_lock_arc_for(self: &Arc<Self>, timeout: R::Duration) -> Option<ArcMutexGuard<R, T>> {
-        if self.raw.try_lock_for(timeout) {
+        if let Some(guard) = self.raw.try_lock_for(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.make_arc_guard_unchecked() })
+            Some(unsafe { self.make_arc_guard_unchecked(guard) })
         } else {
             None
         }
@@ -479,9 +494,9 @@ impl<R: RawMutexTimed, T: ?Sized> Mutex<R, T> {
         self: &Arc<Self>,
         timeout: R::Instant,
     ) -> Option<ArcMutexGuard<R, T>> {
-        if self.raw.try_lock_until(timeout) {
+        if let Some(guard) = self.raw.try_lock_until(timeout) {
             // SAFETY: locking guarantee is upheld
-            Some(unsafe { self.make_arc_guard_unchecked() })
+            Some(unsafe { self.make_arc_guard_unchecked(guard) })
         } else {
             None
         }
@@ -562,7 +577,9 @@ where
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct MutexGuard<'a, R: RawMutex, T: ?Sized> {
     mutex: &'a Mutex<R, T>,
-    marker: PhantomData<(&'a mut T, R::GuardMarker)>,
+    marker: PhantomData<&'a mut T>,
+    // The raw unlock operation consumes this state in Drop.
+    pub(crate) guard: ManuallyDrop<R::Guard>,
 }
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
@@ -587,11 +604,12 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     {
         let raw = &s.mutex.raw;
         let data = f(unsafe { s.mutex.data.get().as_mut_unchecked() });
+        let guard = unsafe { ptr::read(&s.guard) };
         mem::forget(s);
         MappedMutexGuard {
             raw,
             data: ExclusiveGuardData::new(data),
-            marker: PhantomData,
+            guard,
         }
     }
 
@@ -614,11 +632,12 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
         let Some(data) = f(unsafe { s.mutex.data.get().as_mut_unchecked() }) else {
             return Err(s);
         };
+        let guard = unsafe { ptr::read(&s.guard) };
         mem::forget(s);
         Ok(MappedMutexGuard {
             raw,
             data: ExclusiveGuardData::new(data),
-            marker: PhantomData,
+            guard,
         })
     }
 
@@ -646,11 +665,12 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
             Ok(data) => data,
             Err(e) => return Err((s, e)),
         };
+        let guard = unsafe { ptr::read(&s.guard) };
         mem::forget(s);
         Ok(MappedMutexGuard {
             raw,
             data: ExclusiveGuardData::new(data),
-            marker: PhantomData,
+            guard,
         })
     }
 
@@ -668,11 +688,14 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        // Safety: A MutexGuard always holds the lock.
-        unsafe {
-            s.mutex.raw.unlock();
-        }
-        defer!(abort_on_panic(|| s.mutex.raw.lock()));
+        // SAFETY: Valid mutex state; cleanup restores it before reuse or drop.
+        let state = unsafe { ManuallyDrop::take(&mut s.guard) };
+        // A panicking raw unlock releases the acquisition too.
+        defer!(abort_on_panic(
+            || s.guard = ManuallyDrop::new(s.mutex.raw.lock())
+        ));
+        // SAFETY: The state belongs to the acquisition held by this guard.
+        unsafe { s.mutex.raw.unlock(state) };
         f()
     }
 
@@ -697,11 +720,11 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     #[inline]
     #[track_caller]
     pub fn unlock_fair(s: Self) {
+        let mut s = ManuallyDrop::new(s);
         // Safety: A MutexGuard always holds the lock.
         unsafe {
-            s.mutex.raw.unlock_fair();
+            s.mutex.raw.unlock_fair(ManuallyDrop::take(&mut s.guard));
         }
-        mem::forget(s);
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
@@ -720,11 +743,14 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     where
         F: FnOnce() -> U,
     {
-        // Safety: A MutexGuard always holds the lock.
-        unsafe {
-            s.mutex.raw.unlock_fair();
-        }
-        defer!(abort_on_panic(|| s.mutex.raw.lock()));
+        // SAFETY: Valid mutex state; cleanup restores it before reuse or drop.
+        let state = unsafe { ManuallyDrop::take(&mut s.guard) };
+        // A panicking raw unlock releases the acquisition too.
+        defer!(abort_on_panic(
+            || s.guard = ManuallyDrop::new(s.mutex.raw.lock())
+        ));
+        // SAFETY: The state belongs to the acquisition held by this guard.
+        unsafe { s.mutex.raw.unlock_fair(state) };
         f()
     }
 
@@ -736,8 +762,8 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MutexGuard<'a, R, T> {
     #[inline]
     #[track_caller]
     pub fn bump(s: &mut Self) {
-        // Safety: A MutexGuard always holds the lock.
-        unsafe { s.mutex.raw.bump() };
+        // SAFETY: Valid mutex state; bump preserves ownership even on unwind.
+        unsafe { s.mutex.raw.bump(&mut s.guard) };
     }
 }
 
@@ -761,7 +787,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MutexGuard<'a, R, T> {
     fn drop(&mut self) {
         // Safety: A MutexGuard always holds the lock.
         unsafe {
-            self.mutex.raw.unlock();
+            self.mutex.raw.unlock(ManuallyDrop::take(&mut self.guard));
         }
     }
 }
@@ -790,9 +816,10 @@ unsafe impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> StableAddress for MutexGuard<'
 #[clippy::has_significant_drop]
 #[must_use = "if unused the Mutex will immediately unlock"]
 pub struct ArcMutexGuard<R: RawMutex, T: ?Sized> {
+    // The raw unlock operation consumes this state in Drop.
+    guard: ManuallyDrop<R::Guard>,
     mutex: Arc<Mutex<R, T>>,
     data_marker: PhantomData<T>,
-    marker: PhantomData<R::GuardMarker>,
 }
 
 #[cfg(feature = "arc_lock")]
@@ -807,12 +834,14 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     #[inline]
     #[track_caller]
     pub fn into_arc(s: Self) -> Arc<Mutex<R, T>> {
-        // SAFETY: Skip our Drop impl and manually unlock the mutex.
-        let s = ManuallyDrop::new(s);
-        unsafe {
-            s.mutex.raw.unlock();
-            ptr::read(&s.mutex)
-        }
+        let mut s = ManuallyDrop::new(s);
+        // SAFETY: ManuallyDrop lets us move the Arc into a local that drops on unwind.
+        let mutex = unsafe { ptr::read(&s.mutex) };
+        // SAFETY: Valid mutex state; ManuallyDrop prevents a second release.
+        let guard = unsafe { ManuallyDrop::take(&mut s.guard) };
+        // SAFETY: The state belongs to the acquisition held by this guard.
+        unsafe { mutex.raw.unlock(guard) };
+        mutex
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
@@ -829,11 +858,14 @@ impl<R: RawMutex, T: ?Sized> ArcMutexGuard<R, T> {
     where
         F: FnOnce() -> U,
     {
-        // Safety: An ArcMutexGuard always holds the lock.
-        unsafe {
-            s.mutex.raw.unlock();
-        }
-        defer!(abort_on_panic(|| s.mutex.raw.lock()));
+        // SAFETY: Valid mutex state; cleanup restores it before reuse or drop.
+        let state = unsafe { ManuallyDrop::take(&mut s.guard) };
+        // A panicking raw unlock releases the acquisition too.
+        defer!(abort_on_panic(
+            || s.guard = ManuallyDrop::new(s.mutex.raw.lock())
+        ));
+        // SAFETY: The state belongs to the acquisition held by this guard.
+        unsafe { s.mutex.raw.unlock(state) };
         f()
     }
 }
@@ -852,12 +884,14 @@ impl<R: RawMutexFair, T: ?Sized> ArcMutexGuard<R, T> {
     /// Unlocks the mutex using a fair unlock protocol and returns the `Arc` that was held by the [`ArcMutexGuard`].
     #[inline]
     pub fn into_arc_fair(s: Self) -> Arc<Mutex<R, T>> {
-        // SAFETY: Skip our Drop impl and manually unlock the mutex.
-        let s = ManuallyDrop::new(s);
-        unsafe {
-            s.mutex.raw.unlock_fair();
-            ptr::read(&s.mutex)
-        }
+        let mut s = ManuallyDrop::new(s);
+        // SAFETY: ManuallyDrop lets us move the Arc into a local that drops on unwind.
+        let mutex = unsafe { ptr::read(&s.mutex) };
+        // SAFETY: Valid mutex state; ManuallyDrop prevents a second release.
+        let guard = unsafe { ManuallyDrop::take(&mut s.guard) };
+        // SAFETY: The state belongs to the acquisition held by this guard.
+        unsafe { mutex.raw.unlock_fair(guard) };
+        mutex
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
@@ -873,11 +907,14 @@ impl<R: RawMutexFair, T: ?Sized> ArcMutexGuard<R, T> {
     where
         F: FnOnce() -> U,
     {
-        // Safety: An ArcMutexGuard always holds the lock.
-        unsafe {
-            s.mutex.raw.unlock_fair();
-        }
-        defer!(abort_on_panic(|| s.mutex.raw.lock()));
+        // SAFETY: Valid mutex state; cleanup restores it before reuse or drop.
+        let state = unsafe { ManuallyDrop::take(&mut s.guard) };
+        // A panicking raw unlock releases the acquisition too.
+        defer!(abort_on_panic(
+            || s.guard = ManuallyDrop::new(s.mutex.raw.lock())
+        ));
+        // SAFETY: The state belongs to the acquisition held by this guard.
+        unsafe { s.mutex.raw.unlock_fair(state) };
         f()
     }
 
@@ -887,8 +924,8 @@ impl<R: RawMutexFair, T: ?Sized> ArcMutexGuard<R, T> {
     #[inline]
     #[track_caller]
     pub fn bump(s: &mut Self) {
-        // Safety: An ArcMutexGuard always holds the lock.
-        unsafe { s.mutex.raw.bump() };
+        // SAFETY: Valid mutex state; bump preserves ownership even on unwind.
+        unsafe { s.mutex.raw.bump(&mut s.guard) };
     }
 }
 
@@ -915,7 +952,7 @@ impl<R: RawMutex, T: ?Sized> Drop for ArcMutexGuard<R, T> {
     fn drop(&mut self) {
         // Safety: An ArcMutexGuard always holds the lock.
         unsafe {
-            self.mutex.raw.unlock();
+            self.mutex.raw.unlock(ManuallyDrop::take(&mut self.guard));
         }
     }
 }
@@ -936,7 +973,8 @@ impl<R: RawMutex, T: ?Sized> Drop for ArcMutexGuard<R, T> {
 pub struct MappedMutexGuard<'a, R: RawMutex, T: ?Sized + 'a> {
     raw: &'a R,
     data: ExclusiveGuardData<T>,
-    marker: PhantomData<R::GuardMarker>,
+    // The raw unlock operation consumes this state in Drop.
+    guard: ManuallyDrop<R::Guard>,
 }
 
 impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
@@ -956,12 +994,9 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     {
         let raw = s.raw;
         let data = ExclusiveGuardData::new(f(unsafe { s.data.as_mut() }));
+        let guard = unsafe { ptr::read(&s.guard) };
         mem::forget(s);
-        MappedMutexGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        }
+        MappedMutexGuard { raw, data, guard }
     }
 
     /// Attempts to make a new `MappedMutexGuard` for a component of the
@@ -984,12 +1019,9 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
             return Err(s);
         };
         let data = ExclusiveGuardData::new(data);
+        let guard = unsafe { ptr::read(&s.guard) };
         mem::forget(s);
-        Ok(MappedMutexGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        })
+        Ok(MappedMutexGuard { raw, data, guard })
     }
 
     /// Attempts to make a new `MappedMutexGuard` for a component of the
@@ -1017,12 +1049,9 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
             Err(e) => return Err((s, e)),
         };
         let data = ExclusiveGuardData::new(data);
+        let guard = unsafe { ptr::read(&s.guard) };
         mem::forget(s);
-        Ok(MappedMutexGuard {
-            raw,
-            data,
-            marker: PhantomData,
-        })
+        Ok(MappedMutexGuard { raw, data, guard })
     }
 }
 
@@ -1035,11 +1064,11 @@ impl<'a, R: RawMutexFair + 'a, T: ?Sized + 'a> MappedMutexGuard<'a, R, T> {
     #[inline]
     #[track_caller]
     pub fn unlock_fair(s: Self) {
+        let mut s = ManuallyDrop::new(s);
         // Safety: A MappedMutexGuard always holds the lock.
         unsafe {
-            s.raw.unlock_fair();
+            s.raw.unlock_fair(ManuallyDrop::take(&mut s.guard));
         }
-        mem::forget(s);
     }
 }
 
@@ -1063,7 +1092,7 @@ impl<'a, R: RawMutex + 'a, T: ?Sized + 'a> Drop for MappedMutexGuard<'a, R, T> {
     fn drop(&mut self) {
         // Safety: A MappedMutexGuard always holds the lock.
         unsafe {
-            self.raw.unlock();
+            self.raw.unlock(ManuallyDrop::take(&mut self.guard));
         }
     }
 }

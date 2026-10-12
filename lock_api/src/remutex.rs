@@ -7,16 +7,14 @@ use core::{
     cell::{Cell, UnsafeCell},
     fmt,
     marker::PhantomData,
-    mem,
+    mem::{self, MaybeUninit},
     num::NonZeroUsize,
     ops::Deref,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use scopeguard::defer;
 
 #[cfg(feature = "arc_lock")]
 use alloc::sync::Arc;
-#[cfg(feature = "arc_lock")]
 use core::mem::ManuallyDrop;
 #[cfg(feature = "arc_lock")]
 use core::ptr;
@@ -57,12 +55,17 @@ pub unsafe trait GetThreadId {
 /// mutex can successfully acquire a lock multiple times in the same thread.
 /// Only use this when you know you want a raw mutex that can be locked
 /// reentrantly; you probably want [`ReentrantMutex`] instead.
-pub struct RawReentrantMutex<R, G> {
+pub struct RawReentrantMutex<R: RawMutex, G> {
     owner: AtomicUsize,
     lock_count: Cell<usize>,
     mutex: R,
+    guard: UnsafeCell<MaybeUninit<R::Guard>>,
     get_thread_id: G,
 }
+
+// The acquisition state is only accessed by the owning thread and is leaked
+// if the raw mutex is dropped while locked, just like a forgotten guard.
+unsafe impl<R: RawMutex + Send, G: Send> Send for RawReentrantMutex<R, G> {}
 
 unsafe impl<R: RawMutex + Sync, G: GetThreadId + Sync> Sync for RawReentrantMutex<R, G> {}
 
@@ -72,12 +75,13 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
     pub const INIT: Self = RawReentrantMutex {
         owner: AtomicUsize::new(0),
         lock_count: Cell::new(0),
+        guard: UnsafeCell::new(MaybeUninit::uninit()),
         mutex: R::INIT,
         get_thread_id: G::INIT,
     };
 
     #[inline]
-    fn lock_internal<F: FnOnce() -> bool>(&self, try_lock: F) -> bool {
+    fn lock_internal<F: FnOnce() -> Option<R::Guard>>(&self, try_lock: F) -> bool {
         let id = self.get_thread_id.nonzero_thread_id().get();
         if self.owner.load(Ordering::Relaxed) == id {
             self.lock_count.set(
@@ -87,8 +91,12 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
                     .expect("ReentrantMutex lock count overflow"),
             );
         } else {
-            if !try_lock() {
+            let Some(guard) = try_lock() else {
                 return false;
+            };
+            // SAFETY: We have just acquired the underlying mutex.
+            unsafe {
+                (*self.guard.get()).write(guard);
             }
             self.owner.store(id, Ordering::Relaxed);
             debug_assert_eq!(self.lock_count.get(), 0);
@@ -104,10 +112,7 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
     /// Panics if the recursive lock count overflows.
     #[inline]
     pub fn lock(&self) {
-        self.lock_internal(|| {
-            self.mutex.lock();
-            true
-        });
+        self.lock_internal(|| Some(self.mutex.lock()));
     }
 
     /// Attempts to acquire this mutex without blocking. Returns `true`
@@ -133,7 +138,9 @@ impl<R: RawMutex, G: GetThreadId> RawReentrantMutex<R, G> {
         self.lock_count.set(lock_count);
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
-            unsafe { self.mutex.unlock() };
+            // SAFETY: The final owner takes the state before releasing the mutex.
+            let guard = unsafe { (*self.guard.get()).assume_init_read() };
+            unsafe { self.mutex.unlock(guard) };
         }
     }
 
@@ -165,7 +172,9 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
         self.lock_count.set(lock_count);
         if lock_count == 0 {
             self.owner.store(0, Ordering::Relaxed);
-            unsafe { self.mutex.unlock_fair() };
+            // SAFETY: The final owner takes the state before releasing the mutex.
+            let guard = unsafe { (*self.guard.get()).assume_init_read() };
+            unsafe { self.mutex.unlock_fair(guard) };
         }
     }
 
@@ -184,9 +193,18 @@ impl<R: RawMutexFair, G: GetThreadId> RawReentrantMutex<R, G> {
             let id = self.owner.load(Ordering::Relaxed);
             self.owner.store(0, Ordering::Relaxed);
             self.lock_count.set(0);
-            unsafe { self.mutex.bump() };
-            self.owner.store(id, Ordering::Relaxed);
-            self.lock_count.set(1);
+            // Other threads may use the token storage while bump releases the
+            // mutex. Restore our token and metadata once ownership is restored,
+            // including when the underlying bump unwinds.
+            let state = unsafe { (*self.guard.get()).assume_init_read() };
+            let mut guard = scopeguard::guard(state, |state| {
+                unsafe {
+                    (*self.guard.get()).write(state);
+                }
+                self.owner.store(id, Ordering::Relaxed);
+                self.lock_count.set(1);
+            });
+            unsafe { self.mutex.bump(&mut guard) };
         }
     }
 }
@@ -228,7 +246,7 @@ impl<R: RawMutexTimed, G: GetThreadId> RawReentrantMutex<R, G> {
 /// on the same thread. Use interior mutability, such as
 /// [`Cell`](core::cell::Cell) or [`RefCell`](core::cell::RefCell), to mutate the
 /// guarded data.
-pub struct ReentrantMutex<R, G, T: ?Sized> {
+pub struct ReentrantMutex<R: RawMutex, G, T: ?Sized> {
     raw: RawReentrantMutex<R, G>,
     data: UnsafeCell<T>,
 }
@@ -247,6 +265,7 @@ impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
             raw: RawReentrantMutex {
                 owner: AtomicUsize::new(0),
                 lock_count: Cell::new(0),
+                guard: UnsafeCell::new(MaybeUninit::uninit()),
                 mutex: R::INIT,
                 get_thread_id: G::INIT,
             },
@@ -260,7 +279,7 @@ impl<R: RawMutex, G: GetThreadId, T> ReentrantMutex<R, G, T> {
     }
 }
 
-impl<R, G, T> ReentrantMutex<R, G, T> {
+impl<R: RawMutex, G, T> ReentrantMutex<R, G, T> {
     /// Creates a new reentrant mutex based on a pre-existing raw mutex and a
     /// helper to get the thread ID.
     #[inline]
@@ -270,6 +289,7 @@ impl<R, G, T> ReentrantMutex<R, G, T> {
             raw: RawReentrantMutex {
                 owner: AtomicUsize::new(0),
                 lock_count: Cell::new(0),
+                guard: UnsafeCell::new(MaybeUninit::uninit()),
                 mutex: raw_mutex,
                 get_thread_id,
             },
@@ -818,11 +838,10 @@ impl<'a, R: RawMutex + 'a, G: GetThreadId + 'a, T: ?Sized + 'a> ReentrantMutexGu
     where
         F: FnOnce() -> U,
     {
-        // Safety: A ReentrantMutexGuard always holds the lock.
-        unsafe {
-            s.remutex.raw.unlock();
-        }
+        // Restore the recursive acquisition even if the final raw unlock panics.
         defer!(abort_on_panic(|| s.remutex.raw.lock()));
+        // SAFETY: This guard owns one recursive acquisition on the current thread.
+        unsafe { s.remutex.raw.unlock() };
         f()
     }
 }
@@ -835,11 +854,11 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     #[inline]
     #[track_caller]
     pub fn unlock_fair(s: Self) {
+        let s = ManuallyDrop::new(s);
         // Safety: A ReentrantMutexGuard always holds the lock
         unsafe {
             s.remutex.raw.unlock_fair();
         }
-        mem::forget(s);
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
@@ -856,11 +875,10 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     where
         F: FnOnce() -> U,
     {
-        // Safety: A ReentrantMutexGuard always holds the lock
-        unsafe {
-            s.remutex.raw.unlock_fair();
-        }
+        // Restore the recursive acquisition even if the final raw unlock panics.
         defer!(abort_on_panic(|| s.remutex.raw.lock()));
+        // SAFETY: This guard owns one recursive acquisition on the current thread.
+        unsafe { s.remutex.raw.unlock_fair() };
         f()
     }
 
@@ -948,12 +966,12 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
     /// the current thread has acquired it more than once.
     #[inline]
     pub fn into_arc(s: Self) -> Arc<ReentrantMutex<R, G, T>> {
-        // SAFETY: Skip our Drop impl and manually unlock the mutex.
         let s = ManuallyDrop::new(s);
-        unsafe {
-            s.remutex.raw.unlock();
-            ptr::read(&s.remutex)
-        }
+        // SAFETY: ManuallyDrop lets us move the Arc into a local that drops on unwind.
+        let remutex = unsafe { ptr::read(&s.remutex) };
+        // SAFETY: We own this recursive acquisition; ManuallyDrop prevents a second unlock.
+        unsafe { remutex.raw.unlock() };
+        remutex
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
@@ -970,11 +988,10 @@ impl<R: RawMutex, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T> {
     where
         F: FnOnce() -> U,
     {
-        // Safety: A ReentrantMutexGuard always holds the lock.
-        unsafe {
-            s.remutex.raw.unlock();
-        }
+        // Restore the recursive acquisition even if the final raw unlock panics.
         defer!(abort_on_panic(|| s.remutex.raw.lock()));
+        // SAFETY: This guard owns one recursive acquisition on the current thread.
+        unsafe { s.remutex.raw.unlock() };
         f()
     }
 }
@@ -994,12 +1011,12 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
     /// releases the final level.
     #[inline]
     pub fn into_arc_fair(s: Self) -> Arc<ReentrantMutex<R, G, T>> {
-        // SAFETY: Skip our Drop impl and manually unlock the mutex.
         let s = ManuallyDrop::new(s);
-        unsafe {
-            s.remutex.raw.unlock_fair();
-            ptr::read(&s.remutex)
-        }
+        // SAFETY: ManuallyDrop lets us move the Arc into a local that drops on unwind.
+        let remutex = unsafe { ptr::read(&s.remutex) };
+        // SAFETY: We own this recursive acquisition; ManuallyDrop prevents a second unlock.
+        unsafe { remutex.raw.unlock_fair() };
+        remutex
     }
 
     /// Temporarily unlocks the mutex to execute the given function.
@@ -1016,11 +1033,10 @@ impl<R: RawMutexFair, G: GetThreadId, T: ?Sized> ArcReentrantMutexGuard<R, G, T>
     where
         F: FnOnce() -> U,
     {
-        // Safety: A ReentrantMutexGuard always holds the lock
-        unsafe {
-            s.remutex.raw.unlock_fair();
-        }
+        // Restore the recursive acquisition even if the final raw unlock panics.
         defer!(abort_on_panic(|| s.remutex.raw.lock()));
+        // SAFETY: This guard owns one recursive acquisition on the current thread.
+        unsafe { s.remutex.raw.unlock_fair() };
         f()
     }
 
@@ -1175,11 +1191,11 @@ impl<'a, R: RawMutexFair + 'a, G: GetThreadId + 'a, T: ?Sized + 'a>
     #[inline]
     #[track_caller]
     pub fn unlock_fair(s: Self) {
+        let s = ManuallyDrop::new(s);
         // Safety: A MappedReentrantMutexGuard always holds the lock
         unsafe {
             s.raw.unlock_fair();
         }
-        mem::forget(s);
     }
 }
 

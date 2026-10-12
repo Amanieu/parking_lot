@@ -53,38 +53,36 @@ unsafe impl lock_api::RawMutex for RawMutex {
         state: AtomicU8::new(0),
     };
 
-    type GuardMarker = crate::GuardMarker;
+    type Guard = crate::GuardMarker;
 
     #[inline]
-    fn lock(&self) {
-        if self
+    fn lock(&self) -> Self::Guard {
+        let guard = if self
             .state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_err()
         {
-            self.lock_slow(None);
-        }
+            self.lock_slow(None).unwrap()
+        } else {
+            Self::Guard::new()
+        };
         unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
+        guard
     }
 
     #[inline]
-    fn try_lock(&self) -> bool {
-        if self
-            .state
+    fn try_lock(&self) -> Option<Self::Guard> {
+        self.state
             .try_update(Ordering::Acquire, Ordering::Relaxed, |state| {
                 (state & LOCKED_BIT == 0).then_some(state | LOCKED_BIT)
             })
-            .is_ok()
-        {
-            unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
-            true
-        } else {
-            false
-        }
+            .ok()?;
+        unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
+        Some(Self::Guard::new())
     }
 
     #[inline]
-    unsafe fn unlock(&self) {
+    unsafe fn unlock(&self, _guard: Self::Guard) {
         unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
         unsafe { self.unlock_inner(false) };
     }
@@ -98,13 +96,13 @@ unsafe impl lock_api::RawMutex for RawMutex {
 
 unsafe impl lock_api::RawMutexFair for RawMutex {
     #[inline]
-    unsafe fn unlock_fair(&self) {
+    unsafe fn unlock_fair(&self, _guard: Self::Guard) {
         unsafe { deadlock::release_resource(core::ptr::from_ref(self).addr()) };
         unsafe { self.unlock_inner(true) };
     }
 
     #[inline]
-    unsafe fn bump(&self) {
+    unsafe fn bump(&self, _guard: &mut Self::Guard) {
         if self.state.load(Ordering::Relaxed) & PARKED_BIT != 0 {
             self.bump_slow();
         }
@@ -116,37 +114,33 @@ unsafe impl lock_api::RawMutexTimed for RawMutex {
     type Instant = Instant;
 
     #[inline]
-    fn try_lock_until(&self, timeout: Instant) -> bool {
-        let result = if self
+    fn try_lock_until(&self, timeout: Instant) -> Option<Self::Guard> {
+        let guard = if self
             .state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
-            true
+            Self::Guard::new()
         } else {
-            self.lock_slow(Some(timeout))
+            self.lock_slow(Some(timeout))?
         };
-        if result {
-            unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
-        }
-        result
+        unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
+        Some(guard)
     }
 
     #[inline]
-    fn try_lock_for(&self, timeout: Duration) -> bool {
-        let result = if self
+    fn try_lock_for(&self, timeout: Duration) -> Option<Self::Guard> {
+        let guard = if self
             .state
             .compare_exchange_weak(0, LOCKED_BIT, Ordering::Acquire, Ordering::Relaxed)
             .is_ok()
         {
-            true
+            Self::Guard::new()
         } else {
-            self.lock_slow(util::to_deadline(timeout))
+            self.lock_slow(util::to_deadline(timeout))?
         };
-        if result {
-            unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
-        }
-        result
+        unsafe { deadlock::acquire_resource(core::ptr::from_ref(self).addr()) };
+        Some(guard)
     }
 }
 
@@ -187,7 +181,7 @@ impl RawMutex {
     }
 
     #[cold]
-    fn lock_slow(&self, timeout: Option<Instant>) -> bool {
+    fn lock_slow(&self, timeout: Option<Instant>) -> Option<crate::GuardMarker> {
         let mut spinwait = SpinWait::new();
         let mut state = self.state.load(Ordering::Relaxed);
         loop {
@@ -199,7 +193,7 @@ impl RawMutex {
                     Ordering::Acquire,
                     Ordering::Relaxed,
                 ) {
-                    Ok(_) => return true,
+                    Ok(_) => return Some(crate::GuardMarker::new()),
                     Err(x) => state = x,
                 }
                 continue;
@@ -250,7 +244,7 @@ impl RawMutex {
             } {
                 // The thread that unparked us passed the lock on to us
                 // directly without unlocking it.
-                ParkResult::Unparked(TOKEN_HANDOFF) => return true,
+                ParkResult::Unparked(TOKEN_HANDOFF) => return Some(crate::GuardMarker::new()),
 
                 // We were unparked normally, try acquiring the lock again
                 ParkResult::Unparked(_) => (),
@@ -259,7 +253,7 @@ impl RawMutex {
                 ParkResult::Invalid => (),
 
                 // Timeout expired
-                ParkResult::TimedOut => return false,
+                ParkResult::TimedOut => return None,
             }
 
             // Loop back and try locking again

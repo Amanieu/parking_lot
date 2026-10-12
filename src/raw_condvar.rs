@@ -28,7 +28,7 @@ unsafe impl lock_api::RawCondvar for RawCondvar {
 
     type RawMutex = RawMutex;
 
-    unsafe fn wait(&self, mutex: &RawMutex) {
+    unsafe fn wait(&self, mutex: &RawMutex, _guard: &mut crate::GuardMarker) {
         self.wait_until_internal(mutex, None);
     }
 
@@ -62,12 +62,22 @@ unsafe impl lock_api::RawCondvarTimed for RawCondvar {
         util::to_deadline(*timeout)
     }
 
-    unsafe fn wait_for(&self, mutex: &RawMutex, timeout: &Duration) -> bool {
+    unsafe fn wait_for(
+        &self,
+        mutex: &RawMutex,
+        _guard: &mut crate::GuardMarker,
+        timeout: &Duration,
+    ) -> bool {
         let deadline = util::to_deadline(*timeout);
         self.wait_until_internal(mutex, deadline)
     }
 
-    unsafe fn wait_until(&self, mutex: &RawMutex, timeout: &Instant) -> bool {
+    unsafe fn wait_until(
+        &self,
+        mutex: &RawMutex,
+        _guard: &mut crate::GuardMarker,
+        timeout: &Instant,
+    ) -> bool {
         self.wait_until_internal(mutex, Some(*timeout))
     }
 }

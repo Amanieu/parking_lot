@@ -21,9 +21,11 @@ use core::{fmt, ops::DerefMut};
 /// returns.
 ///
 /// If a wait panics after unlocking the mutex, it must re-lock the mutex before
-/// unwinding. Implementations which cannot wait on distinct mutexes
-/// simultaneously may panic when asked to do so, but must not cause undefined
-/// behavior.
+/// unwinding, and replace `guard` with the state of the new acquisition.
+/// `guard` must remain valid on both normal return and unwind. If restoring
+/// ownership or valid guard state fails, the implementation must abort.
+/// Implementations which cannot wait on distinct mutexes simultaneously may
+/// panic when asked to do so, but must not cause undefined behavior.
 pub unsafe trait RawCondvar {
     /// Initial value for a new condvar.
     // A “non-constant” const item is a legacy way to supply an initialized value to downstream
@@ -42,10 +44,10 @@ pub unsafe trait RawCondvar {
     ///
     /// # Safety
     ///
-    /// The caller must logically hold `mutex`. The protected data must not be
-    /// accessed from the time this method unlocks the mutex until it re-locks
-    /// it.
-    unsafe fn wait(&self, mutex: &Self::RawMutex);
+    /// The caller must logically hold `mutex`, with `guard` containing the
+    /// state of that acquisition. The protected data must not be accessed from
+    /// the time this method unlocks the mutex until it re-locks it.
+    unsafe fn wait(&self, mutex: &Self::RawMutex, guard: &mut <Self::RawMutex as RawMutex>::Guard);
 
     /// Notifies one waiting thread.
     ///
@@ -97,6 +99,7 @@ where
     unsafe fn wait_until(
         &self,
         mutex: &Self::RawMutex,
+        guard: &mut <Self::RawMutex as RawMutex>::Guard,
         timeout: &<Self::RawMutex as RawMutexTimed>::Instant,
     ) -> bool;
 
@@ -118,17 +121,18 @@ where
     unsafe fn wait_for(
         &self,
         mutex: &Self::RawMutex,
+        guard: &mut <Self::RawMutex as RawMutex>::Guard,
         timeout: &<Self::RawMutex as RawMutexTimed>::Duration,
     ) -> bool {
         // SAFETY: `RawCondvar::wait` and `RawCondvarTimed::wait_until` have the
         // same safety condition as this function, which is assured by the caller.
         unsafe {
             match Self::checked_duration_to_instant(timeout) {
-                Some(timeout) => self.wait_until(mutex, &timeout),
+                Some(timeout) => self.wait_until(mutex, guard, &timeout),
                 None => {
                     // No absolute deadline can be constructed, so fall back to
                     // an untimed wait.
-                    <Self as RawCondvar>::wait(self, mutex);
+                    <Self as RawCondvar>::wait(self, mutex, guard);
                     false
                 }
             }
@@ -235,7 +239,8 @@ impl<C: RawCondvar> Condvar<C> {
     pub fn wait<T: ?Sized>(&self, mutex_guard: &mut MutexGuard<'_, C::RawMutex, T>) {
         // SAFETY: The exclusively borrowed guard holds the mutex; wait restores it.
         unsafe {
-            self.inner.wait(MutexGuard::mutex(mutex_guard).raw());
+            self.inner
+                .wait(MutexGuard::mutex(mutex_guard).raw(), &mut mutex_guard.guard);
         }
     }
 
@@ -267,7 +272,8 @@ impl<C: RawCondvar> Condvar<C> {
         while condition(mutex_guard.deref_mut()) {
             // SAFETY: The exclusively borrowed guard holds the mutex; wait restores it.
             unsafe {
-                self.inner.wait(MutexGuard::mutex(mutex_guard).raw());
+                self.inner
+                    .wait(MutexGuard::mutex(mutex_guard).raw(), &mut mutex_guard.guard);
             }
         }
     }
@@ -306,8 +312,11 @@ impl<R: RawMutexTimed, C: RawCondvarTimed<RawMutex = R>> Condvar<C> {
     ) -> WaitTimeoutResult {
         // SAFETY: The exclusively borrowed guard holds the mutex; wait restores it.
         WaitTimeoutResult(unsafe {
-            self.inner
-                .wait_until(MutexGuard::mutex(mutex_guard).raw(), &timeout)
+            self.inner.wait_until(
+                MutexGuard::mutex(mutex_guard).raw(),
+                &mut mutex_guard.guard,
+                &timeout,
+            )
         })
     }
 
@@ -344,8 +353,11 @@ impl<R: RawMutexTimed, C: RawCondvarTimed<RawMutex = R>> Condvar<C> {
     ) -> WaitTimeoutResult {
         // SAFETY: The exclusively borrowed guard holds the mutex; wait restores it.
         WaitTimeoutResult(unsafe {
-            self.inner
-                .wait_for(MutexGuard::mutex(mutex_guard).raw(), &timeout)
+            self.inner.wait_for(
+                MutexGuard::mutex(mutex_guard).raw(),
+                &mut mutex_guard.guard,
+                &timeout,
+            )
         })
     }
 
@@ -394,8 +406,11 @@ impl<R: RawMutexTimed, C: RawCondvarTimed<RawMutex = R>> Condvar<C> {
             }
             // SAFETY: The exclusively borrowed guard holds the mutex; wait restores it.
             result = WaitTimeoutResult(unsafe {
-                self.inner
-                    .wait_until(MutexGuard::mutex(mutex_guard).raw(), &timeout)
+                self.inner.wait_until(
+                    MutexGuard::mutex(mutex_guard).raw(),
+                    &mut mutex_guard.guard,
+                    &timeout,
+                )
             });
         }
     }

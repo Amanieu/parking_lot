@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added per-acquisition state to `lock_api` raw locks. `RawMutex::Guard`
+  replaces `GuardMarker`; rwlocks have separate `SharedGuard`, `ExclusiveGuard`,
+  and `UpgradableGuard` types. Unlock operations consume this state, while
+  upgrade and downgrade operations return replacement state. Bump and raw
+  condition-variable waits borrow and update the state. Consuming operations
+  must release their acquisition on unwind; borrowing operations must restore
+  ownership and valid state, or abort if restoration fails.
 - Raised the MSRV to Rust 1.95 and upgraded all crates to edition 2024.
 - Removed the `hardware-lock-elision` feature.
 - Removed automatic eventual fairness. Fair unlocking remains available through
@@ -35,12 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarified the safety requirements of raw lock implementations, including
   acquire/release synchronization, moving or dropping a locked raw lock,
   preserving the original lock mode on a failed upgrade, and stable thread IDs.
-  Acquisitions may unwind without acquiring the lock; unlock and bump operations
-  must not unwind.
+  Acquisitions may unwind without leaving a new acquisition held; consuming
+  guard operations release their acquisition on unwind, while bump and wait
+  operations must restore ownership or abort.
 - Clarified the aliasing requirements of unsafe raw-access, force-unlock, and
   guard-construction APIs in `lock_api`.
 - Guard `unlocked` and `unlocked_fair` operations now abort if re-locking panics.
   Default raw-lock bump implementations also abort if re-locking panics.
+- Guard `with_upgraded` operations abort if raw upgrading or downgrading panics,
+  preserving continuous lock ownership.
 - Parking-lot operations in `parking_lot_core` are now guaranteed to never
   unwind.
 - Documented that parking-lot-based synchronization primitives must not be used
