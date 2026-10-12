@@ -44,7 +44,7 @@ impl SpinWait {
         }
         self.counter += 1;
         if self.counter <= 3 {
-            cpu_relax(1 << self.counter);
+            cpu_relax(1 << (self.counter - 1));
         } else {
             thread_parker::thread_yield();
         }
@@ -62,6 +62,6 @@ impl SpinWait {
         if self.counter > 10 {
             self.counter = 10;
         }
-        cpu_relax(1 << self.counter);
+        cpu_relax(1 << (self.counter - 1));
     }
 }
