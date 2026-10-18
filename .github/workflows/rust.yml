@@ -84,7 +84,7 @@ jobs:
       CARGO_TARGET_WASM32_WASIP1_THREADS_RUNNER: ${{ matrix.runner }}
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@master
+    - uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: ${{ matrix.channel }}
         targets: ${{ matrix.target }}
