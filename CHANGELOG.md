@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `unlock_upgradable_fair` not forcing a fair handoff.
 - Fixed conditional `Condvar` waits reporting a timeout without rechecking the predicate.
 - Fixed the generic thread parker continuously busy-spinning while parked.
+- Fixed parking on WASI by using the pthread backend when the nightly atomic
+  intrinsics are unavailable, including on stable threaded WASI targets.
 - Fixed timed waits on ESP-IDF using the wrong clock.
 - Made timed waits on Apple platforms independent of wall-clock changes.
 - Fixed the futex timeout ABI on 32-bit Linux targets, including time64-only

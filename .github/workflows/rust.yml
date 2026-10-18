@@ -47,6 +47,53 @@ jobs:
     - run: rustup default nightly
     - run: rustup target add ${{ matrix.target }}
     - run: cargo build --workspace --target ${{ matrix.target }} --features nightly
+  build_wasi:
+    name: WASI (${{ matrix.channel }}, ${{ matrix.target }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      max-parallel: 1
+      matrix:
+        include:
+          - channel: stable
+            target: wasm32-wasip1
+            filter: single_thread
+            features: ""
+            runner: timeout 30s wasmtime run -C parallel-compilation=n
+          - channel: stable
+            target: wasm32-wasip2
+            # The bundled Preview 2 libc returns ENOTSUP for timed waits.
+            filter: single_thread_unpark_before_sleep
+            features: ""
+            runner: timeout 30s wasmtime run -C parallel-compilation=n
+          - channel: stable
+            target: wasm32-wasip1-threads
+            filter: ""
+            features: ""
+            runner: timeout 30s wasmtime run -C parallel-compilation=n -S threads
+          - channel: nightly
+            target: wasm32-wasip1-threads
+            filter: ""
+            features: nightly
+            runner: timeout 30s wasmtime run -C parallel-compilation=n -S threads
+    env:
+      CARGO_BUILD_JOBS: 1
+      RAYON_NUM_THREADS: 1
+      CARGO_TARGET_WASM32_WASIP1_RUNNER: ${{ matrix.runner }}
+      CARGO_TARGET_WASM32_WASIP2_RUNNER: ${{ matrix.runner }}
+      CARGO_TARGET_WASM32_WASIP1_THREADS_RUNNER: ${{ matrix.runner }}
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.channel }}
+        targets: ${{ matrix.target }}
+    - uses: bytecodealliance/actions/wasmtime/setup@v1
+      with:
+        # Newer Wasmtime releases have removed support for WASI threads.
+        version: v35.0.0
+    - run: cargo build --workspace --target ${{ matrix.target }} --features '${{ matrix.features }}'
+    - run: cargo test -p parking_lot_core --test parking --target ${{ matrix.target }} --features '${{ matrix.features }}' -- '${{ matrix.filter }}' --test-threads=1
   build_docs:
     runs-on: ubuntu-latest
     steps:

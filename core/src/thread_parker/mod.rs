@@ -104,20 +104,11 @@ cfg_select! {
         #[path = "wasm_atomic.rs"]
         mod imp;
     }
-    all(
-        target_family = "wasm",
-        target_os = "wasi",
-        any(target_feature = "atomics", parking_lot_core_wasi_threads)
-    ) => {
-        // Stable fallback for threaded WASI targets: std's futex-backed
-        // Mutex/Condvar. The wasm_atomic parker above is preferred but its
-        // intrinsics are nightly-only (rust-lang/rust#77839).
-        //
-        // `target_feature = "atomics"` is itself only observable on nightly
-        // (the wasm `atomics` target feature is unstable, so stable rustc does
-        // not put it in the cfg set), so build.rs also sets
-        // `parking_lot_core_wasi_threads` from the target triple.
-        #[path = "wasi_threads.rs"]
+    target_os = "wasi" => {
+        // WASI provides pthreads with or without the atomics extension. This
+        // also works on stable, where target_feature = "atomics" is not set.
+        // Keep the intrinsic backend above preferred when it is available.
+        #[path = "unix.rs"]
         mod imp;
     }
     target_family = "wasm" => {
