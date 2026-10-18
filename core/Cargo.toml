@@ -21,10 +21,7 @@ backtrace = { version = "0.3.76", optional = true }
 [target.'cfg(target_os = "aix")'.dependencies]
 libc = "0.2.189"
 
-[target.'cfg(all(unix, not(target_os = "aix")))'.dependencies]
-libc = "0.2.189"
-
-[target.'cfg(target_os = "wasi")'.dependencies]
+[target.'cfg(any(all(unix, not(target_os = "aix")), target_os = "wasi"))'.dependencies]
 libc = "0.2.191"
 
 [target.'cfg(target_os = "redox")'.dependencies]
