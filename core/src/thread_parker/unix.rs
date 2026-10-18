@@ -129,12 +129,12 @@ impl super::ThreadParkerT for ThreadParker {
 impl ThreadParker {
     /// No initialization is needed on platforms which don't support selecting
     /// the condvar clock.
-    #[cfg(any(target_vendor = "apple", target_os = "espidf"))]
+    #[cfg(any(target_vendor = "apple", target_os = "espidf", target_os = "l4re"))]
     #[inline]
     unsafe fn init(&self) {}
 
     /// Initializes the condvar to use CLOCK_MONOTONIC instead of CLOCK_REALTIME.
-    #[cfg(not(any(target_vendor = "apple", target_os = "espidf")))]
+    #[cfg(not(any(target_vendor = "apple", target_os = "espidf", target_os = "l4re")))]
     #[inline]
     unsafe fn init(&self) {
         let mut attr = MaybeUninit::<libc::pthread_condattr_t>::uninit();
@@ -191,8 +191,8 @@ impl super::UnparkHandleT for UnparkHandle {
 #[inline]
 fn timespec_now() -> libc::timespec {
     let mut now = MaybeUninit::<libc::timespec>::uninit();
-    let clock = if cfg!(target_os = "espidf") {
-        // This platform doesn't support pthread_condattr_setclock, so we need
+    let clock = if cfg!(any(target_os = "espidf", target_os = "l4re")) {
+        // These platforms don't support pthread_condattr_setclock, so we need
         // to specify the timeout in CLOCK_REALTIME.
         libc::CLOCK_REALTIME
     } else {
