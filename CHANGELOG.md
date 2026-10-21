@@ -5,217 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## 0.13.0 (`parking_lot`), 0.10.0 (`parking_lot_core`), 0.5.0 (`lock_api`) - 2026-10-21
 
-## `parking_lot` - [0.13.0](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.5...parking_lot-v0.13.0) - 2026-10-21
-
-### Added
-- *(once)* add Once::new_completed constructor
-
-### Fixed
-- pass integer pointers to futex syscalls
-
-### Other
-- Merge pull request #538 from napi-rs/wasi-threads-parker
-- Remove the WASI backend note from stable restrictions
-- Reuse existing CI jobs for WASI coverage
-- Don't use pthread_condattr_setclock on L4RE
-- Share the libc dependency between Unix and WASI
-- Align the Rust setup action with existing workflows
-- Reuse the pthread backend for WASI on stable
-- Merge pull request #540 from akashchamp/fix-spinwait-double-spin-loop
-- Merge pull request #545 from Amanieu/early-unlock
-- Merge pull request #544 from Amanieu/stateful-guards
-- fix SpinWait spin counts starting at 2 instead of 1
-- Follow the updated thread parker contract on threaded wasi
-- Merge upstream master into wasi-threads-parker
-- Fix release semver checks with mutually exclusive features
-- Release mutex and rwlock ownership before waking waiters
-- Add per-acquisition guard state to raw locks
-- Document public API changes and significant fixes for the next release
-- Test send_guard feature and include it in CI
-- Strengthen condition-variable and reader-writer lock tests
-- Allow raw condvars with spurious wakeups
-- Mark dynamically loaded ntdll calls unsafe
-- Expose Redox futex timeout provenance
-- Clarify unsafe lock and provider contracts
-- Validate thread parker results in release builds
-- Construct unpark handles before releasing parkers
-- Use relative timed waits on Apple platforms
-- Clarify aborted requeue results
-- Prevent unwinding through parking-lot operations
-- Define raw lock unwind contracts and abort on failed re-locking
-- Document global allocator restriction
-- Fix deadlock detection ownership and reporting
-- Fix futex timeout ABIs and fall back on older kernels
-- Remove eventual fairness
-- Refresh synchronization API documentation
-- Add Once completion queries and waiting APIs
-- Modernize public APIs for Rust 1.95
-- Modernize synchronization internals for Rust 1.95
-- Add dedicated recursive reader-writer lock
-- Fix ineffective lock tests
-- Correct documentation and feature metadata
-- Remove hardware lock elision support
-- Fix WordLock queue unlock retries
-- Use realtime deadlines on ESP-IDF
-- Fix mapped rwlock read guard method name
-- Require accurate lock state queries
-- Recheck condvar predicates after timeouts
-- Fix fair upgradable rwlock unlocking
-- Yield in generic thread parker
-- Handle oversized timeouts consistently
-- Document raw lock synchronization requirements
-- Adapt the codebase to Rust 2024
-- Raise MSRV to Rust 1.95 and edition 2024
-- Fix rwlock upgrade memory orderings
-- Derive lock guard auto traits from fields
-- Select a working thread parker on threaded wasi targets, on stable
-- Use pointer types for Windows handles
-- Merge pull request #523 from bushrat011899/lock_api_condvar
-- Move `Condvar` into `lock_api`
-- Add `lock_api::{Lock}::into_inner_with_raw`
-- Update minimum libc for AIX.
-- [AIX] Revert changes to define timespec_tv_nsec_t as 32-bit.
-- Adjust confusing documentation of SpinWait::spin
-- Merge pull request #506 from amy-kwan/amy-kwan/update-timespec-aix
-- Use postcard instead of bincode in tests
-- [AIX] Define timespec_tv_nsec_t as 32-bit.
-- add Miri CI job
-- Merge pull request #504 from Amanieu/fix_test_129
-- Fix test_issue_129 under Miri
-- Merge pull request #499 from RalfJung/word-lock-atomic-ptr
-- use AtomicPtr (with polyfill for operations missing on old Rust)
-- bump MSRV to Rust 1.84
-- condvar test: remove outdated comment
-
-## `parking_lot_core` - [0.10.0](https://github.com/Amanieu/parking_lot/compare/parking_lot_core-v0.9.12...parking_lot_core-v0.10.0) - 2026-10-21
-
-### Fixed
-- pass integer pointers to futex syscalls
-
-### Other
-- Merge pull request #538 from napi-rs/wasi-threads-parker
-- Don't use pthread_condattr_setclock on L4RE
-- Share the libc dependency between Unix and WASI
-- Reuse the pthread backend for WASI on stable
-- fix SpinWait spin counts starting at 2 instead of 1
-- Follow the updated thread parker contract on threaded wasi
-- Merge upstream master into wasi-threads-parker
-- Mark dynamically loaded ntdll calls unsafe
-- Expose Redox futex timeout provenance
-- Validate thread parker results in release builds
-- Construct unpark handles before releasing parkers
-- Use relative timed waits on Apple platforms
-- Clarify aborted requeue results
-- Prevent unwinding through parking-lot operations
-- Document global allocator restriction
-- Fix deadlock detection ownership and reporting
-- Fix futex timeout ABIs and fall back on older kernels
-- Remove eventual fairness
-- Modernize synchronization internals for Rust 1.95
-- Correct documentation and feature metadata
-- Fix WordLock queue unlock retries
-- Use realtime deadlines on ESP-IDF
-- Yield in generic thread parker
-- Handle oversized timeouts consistently
-- Adapt the codebase to Rust 2024
-- Raise MSRV to Rust 1.95 and edition 2024
-- Select a working thread parker on threaded wasi targets, on stable
-- Use pointer types for Windows handles
-- Update minimum libc for AIX.
-- [AIX] Revert changes to define timespec_tv_nsec_t as 32-bit.
-- Adjust confusing documentation of SpinWait::spin
-- Merge pull request #506 from amy-kwan/amy-kwan/update-timespec-aix
-- Use postcard instead of bincode in tests
-- [AIX] Define timespec_tv_nsec_t as 32-bit.
-- use AtomicPtr (with polyfill for operations missing on old Rust)
-
-## `lock_api` - [0.5.0](https://github.com/Amanieu/parking_lot/compare/lock_api-v0.4.14...lock_api-v0.5.0) - 2026-10-21
-
-### Other
-- Add per-acquisition guard state to raw locks
-- Allow raw condvars with spurious wakeups
-- Clarify unsafe lock and provider contracts
-- Define raw lock unwind contracts and abort on failed re-locking
-- Refresh synchronization API documentation
-- Modernize public APIs for Rust 1.95
-- Add dedicated recursive reader-writer lock
-- Correct documentation and feature metadata
-- Fix mapped rwlock read guard method name
-- Require accurate lock state queries
-- Recheck condvar predicates after timeouts
-- Handle oversized timeouts consistently
-- Document raw lock synchronization requirements
-- Adapt the codebase to Rust 2024
-- Raise MSRV to Rust 1.95 and edition 2024
-- Derive lock guard auto traits from fields
-- Merge pull request #523 from bushrat011899/lock_api_condvar
-- Move `Condvar` into `lock_api`
-- Add `lock_api::{Lock}::into_inner_with_raw`
-
+- Signficantly improved `Mutex` and `RwLock` performance under contention by
+  deferring waking up parked threads until after the lock is released. (#545)
 - Added per-acquisition state to `lock_api` raw locks. `RawMutex::Guard`
   replaces `GuardMarker`; rwlocks have separate `SharedGuard`, `ExclusiveGuard`,
   and `UpgradableGuard` types. Unlock operations consume this state, while
   upgrade and downgrade operations return replacement state. Bump and raw
   condition-variable waits borrow and update the state. Consuming operations
   must release their acquisition on unwind; borrowing operations must restore
-  ownership and valid state, or abort if restoration fails.
-- Raised the MSRV to Rust 1.95 and upgraded all crates to edition 2024.
-- Removed the `hardware-lock-elision` feature.
+  ownership and valid state, or abort if restoration fails. (#544)
+- Raised the MSRV to Rust 1.95 and upgraded all crates to edition 2024. (#533)
+- Removed the `hardware-lock-elision` feature. (#533)
 - Removed automatic eventual fairness. Fair unlocking remains available through
-  the explicit fair-unlock APIs.
-- Removed the no-op `lock_api/nightly` feature.
+  the explicit fair-unlock APIs. This removes `UnparkResult::be_fair`. (#533)
+- Removed the no-op `lock_api/nightly` feature. (#533)
 - Removed the legacy `lock_api` `const_new` methods and the redundant
   `parking_lot` `const_*` constructor functions; the corresponding `new`
-  methods can be called in constant contexts.
+  methods can be called in constant contexts. (#533)
 - Replaced the recursive read methods on `RwLock` with a dedicated reader-biased
   `RecursiveRwLock` type. The `RawRwLockRecursive` and `RawRwLockRecursiveTimed`
-  extension traits have been removed from `lock_api`.
-- Added `Once::new_completed` for constructing a `Once` in the completed state.
+  extension traits have been removed from `lock_api`. (#533)
+- Added `Once::new_completed` for constructing a `Once` in the completed state. (#520)
 - Added `Once::{is_completed, wait, wait_force}` and the corresponding
-  `OnceState` query methods.
+  `OnceState` query methods. (#533)
 - Made additional lock, timeout, parking, and spin-wait accessors usable in
-  constant contexts.
-- Added `into_inner_with_raw` to `lock_api`'s `Mutex`, `RwLock`, and `ReentrantMutex`.
+  constant contexts. (#533)
+- Added `into_inner_with_raw` to `lock_api`'s `Mutex`, `RwLock`, and `ReentrantMutex`. (#524)
 - Added `RawCondvar`, `RawCondvarTimed`, and the generic `Condvar` wrapper to
   `lock_api`, and implemented `parking_lot::Condvar` using them. Custom raw
   condition variables may allow spurious wakeups; their notification methods
   must then return `false` or `0`. `parking_lot::Condvar` still guarantees no
-  spurious wakeups and exact notification counts.
-- Corrected the `Send` and `Sync` bounds of lock guards in `lock_api`.
-- Made `RawMutex::is_locked` and `RawRwLock::{is_locked, is_locked_exclusive}` required methods.
-- Renamed `MappedRwLockReadGuard::try_map_or_else` to `try_map_or_err`.
+  spurious wakeups and exact notification counts. (#523) (#533)
+- Corrected the `Send` and `Sync` bounds of lock guards in `lock_api`. (#533)
+- Made `RawMutex::is_locked` and `RawRwLock::{is_locked, is_locked_exclusive}` required methods. (#533)
+- Renamed `MappedRwLockReadGuard::try_map_or_else` to `try_map_or_err`. (#533)
 - Clarified the safety requirements of raw lock implementations, including
   acquire/release synchronization, moving or dropping a locked raw lock,
   preserving the original lock mode on a failed upgrade, and stable thread IDs.
   Acquisitions may unwind without leaving a new acquisition held; consuming
   guard operations release their acquisition on unwind, while bump and wait
-  operations must restore ownership or abort.
+  operations must restore ownership or abort. (#533) (#544)
 - Clarified the aliasing requirements of unsafe raw-access, force-unlock, and
-  guard-construction APIs in `lock_api`.
+  guard-construction APIs in `lock_api`. (#533)
 - Guard `unlocked` and `unlocked_fair` operations now abort if re-locking panics.
-  Default raw-lock bump implementations also abort if re-locking panics.
+  Default raw-lock bump implementations also abort if re-locking panics. (#533)
 - Guard `with_upgraded` operations abort if raw upgrading or downgrading panics,
-  preserving continuous lock ownership.
+  preserving continuous lock ownership. (#544)
 - Parking-lot operations in `parking_lot_core` are now guaranteed to never
-  unwind.
+  unwind. (#533)
 - Documented that parking-lot-based synchronization primitives must not be used
-  internally by global allocators.
-- Fixed `unlock_upgradable_fair` not forcing a fair handoff.
-- Fixed conditional `Condvar` waits reporting a timeout without rechecking the predicate.
-- Fixed the generic thread parker continuously busy-spinning while parked.
+  internally by global allocators. (#533)
+- Fixed `unlock_upgradable_fair` not forcing a fair handoff. (#533)
+- Fixed conditional `Condvar` waits reporting a timeout without rechecking the predicate. (#533)
+- Fixed the generic thread parker continuously busy-spinning while parked. (#533)
 - Fixed parking on WASI by using the pthread backend when the nightly atomic
-  intrinsics are unavailable, including on stable threaded WASI targets.
-- Fixed timed waits on ESP-IDF using the wrong clock.
-- Made timed waits on Apple platforms independent of wall-clock changes.
+  intrinsics are unavailable, including on stable threaded WASI targets. (#538)
+- Fixed timed waits on ESP-IDF using the wrong clock. (#533)
+- Made timed waits on Apple platforms independent of wall-clock changes. (#533)
 - Fixed the futex timeout ABI on 32-bit Linux targets, including time64-only
-  architectures, with fallback to time32 when the kernel lacks time64 support.
+  architectures, with fallback to time32 when the kernel lacks time64 support. (#533)
 - Corrected `RwLock` deadlock tracking to avoid false positives and missed
   cycles, and prevented dependency feature unification from enabling tracking
-  when only `parking_lot_core/deadlock_detection` is enabled.
+  when only `parking_lot_core/deadlock_detection` is enabled. (#533)
 - Added `Once` deadlock tracking and made overlapping wait cycles report as a
-  single component.
+  single component. (#533)
+- Fixed compilation on L4Re. (#549)
 
 ## `parking_lot` - [0.12.5](https://github.com/Amanieu/parking_lot/compare/parking_lot-v0.12.4...parking_lot-v0.12.5) - 2025-09-30
 
@@ -261,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## parking_lot 0.12.2, parking_lot_core 0.9.10, lock_api 0.4.12 (2024-04-15)
 
 - Fixed panic when calling `with_upgraded` twice on a `ArcRwLockUpgradableReadGuard` (#431)
-- Fixed `RwLockUpgradeableReadGuard::with_upgraded` 
+- Fixed `RwLockUpgradeableReadGuard::with_upgraded`
 - Added lock_api::{Mutex, ReentrantMutex, RwLock}::from_raw methods (#429)
 - Added Apple visionOS support (#433)
 
