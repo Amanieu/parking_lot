@@ -73,9 +73,6 @@ lock.
 
 There are a few restrictions when using this library on stable Rust:
 
-- WASI targets use the pthread backend on stable, including
-  `wasm32-wasip1-threads`. The nightly atomic backend remains available with
-  the `nightly` feature when the target enables atomics.
 - The `wasm32-unknown-unknown` target is only fully supported on nightly with
   `-C target-feature=+atomics` in `RUSTFLAGS` and `-Zbuild-std=panic_abort,std`
   passed to cargo. parking_lot will work mostly fine on stable, the only
