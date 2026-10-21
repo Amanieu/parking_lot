@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## `parking_lot_core` - [0.10.0](https://github.com/Amanieu/parking_lot/compare/parking_lot_core-v0.9.12...parking_lot_core-v0.10.0) - 2026-10-21
+
+### Fixed
+- pass integer pointers to futex syscalls
+
+### Other
+- release
+- Merge pull request #538 from napi-rs/wasi-threads-parker
+- Don't use pthread_condattr_setclock on L4RE
+- Share the libc dependency between Unix and WASI
+- Reuse the pthread backend for WASI on stable
+- fix SpinWait spin counts starting at 2 instead of 1
+- Follow the updated thread parker contract on threaded wasi
+- Merge upstream master into wasi-threads-parker
+- Mark dynamically loaded ntdll calls unsafe
+- Expose Redox futex timeout provenance
+- Validate thread parker results in release builds
+- Construct unpark handles before releasing parkers
+- Use relative timed waits on Apple platforms
+- Clarify aborted requeue results
+- Prevent unwinding through parking-lot operations
+- Document global allocator restriction
+- Fix deadlock detection ownership and reporting
+- Fix futex timeout ABIs and fall back on older kernels
+- Remove eventual fairness
+- Modernize synchronization internals for Rust 1.95
+- Correct documentation and feature metadata
+- Fix WordLock queue unlock retries
+- Use realtime deadlines on ESP-IDF
+- Yield in generic thread parker
+- Handle oversized timeouts consistently
+- Adapt the codebase to Rust 2024
+- Raise MSRV to Rust 1.95 and edition 2024
+- Select a working thread parker on threaded wasi targets, on stable
+- Use pointer types for Windows handles
+- Update minimum libc for AIX.
+- [AIX] Revert changes to define timespec_tv_nsec_t as 32-bit.
+- Adjust confusing documentation of SpinWait::spin
+- Merge pull request #506 from amy-kwan/amy-kwan/update-timespec-aix
+- Use postcard instead of bincode in tests
+- [AIX] Define timespec_tv_nsec_t as 32-bit.
+- use AtomicPtr (with polyfill for operations missing on old Rust)
+
 ## 0.13.0 (`parking_lot`), 0.10.0 (`parking_lot_core`), 0.5.0 (`lock_api`) - 2026-10-21
 
 - Signficantly improved `Mutex` and `RwLock` performance under contention by
