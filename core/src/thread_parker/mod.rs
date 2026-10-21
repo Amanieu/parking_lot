@@ -104,6 +104,13 @@ cfg_select! {
         #[path = "wasm_atomic.rs"]
         mod imp;
     }
+    target_os = "wasi" => {
+        // WASI provides pthreads with or without the atomics extension. This
+        // also works on stable, where target_feature = "atomics" is not set.
+        // Keep the intrinsic backend above preferred when it is available.
+        #[path = "unix.rs"]
+        mod imp;
+    }
     target_family = "wasm" => {
         #[path = "wasm.rs"]
         mod imp;
