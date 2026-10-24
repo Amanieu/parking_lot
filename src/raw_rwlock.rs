@@ -35,8 +35,14 @@ const UPGRADABLE_BIT: usize = 0b0100;
 // If the reader count is zero: a writer is currently holding an exclusive lock.
 // Otherwise: a writer is waiting for the remaining readers to exit the lock.
 const WRITER_BIT: usize = 0b1000;
+// A writer is parked waiting for an upgradable lock to be released. New shared
+// locks must block while this is set so that they don't barge ahead of the
+// waiting writer (see issue #543). Unlike PARKED_BIT this specifically tracks
+// writers: an upgradable waiter parking must not block new readers (see issue
+// #101). This bit is disjoint from the reader count below.
+const WRITER_WAITING_BIT: usize = 1 << (usize::BITS - 1);
 // Mask of bits used to count readers.
-const READERS_MASK: usize = !0b1111;
+const READERS_MASK: usize = !0b1111 & !WRITER_WAITING_BIT;
 // Base unit for counting readers.
 const ONE_READER: usize = 0b10000;
 
@@ -436,7 +442,9 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
 
         // Recursive readers may skip ahead of a pending writer while another
         // reader still holds the lock.
-        if state & WRITER_BIT != 0 && (!RECURSIVE || state & READERS_MASK == 0) {
+        if state & (WRITER_BIT | WRITER_WAITING_BIT) != 0
+            && (!RECURSIVE || state & READERS_MASK == 0)
+        {
             return None;
         }
 
@@ -451,7 +459,9 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
     fn try_lock_shared_slow(&self) -> Option<crate::GuardMarker> {
         self.state
             .try_update(Ordering::Acquire, Ordering::Relaxed, |state| {
-                if state & WRITER_BIT != 0 && (!RECURSIVE || state & READERS_MASK == 0) {
+                if state & (WRITER_BIT | WRITER_WAITING_BIT) != 0
+                    && (!RECURSIVE || state & READERS_MASK == 0)
+                {
                     None
                 } else {
                     Some(
@@ -506,6 +516,17 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
         let try_lock = |state: &mut usize| {
             loop {
                 if *state & (WRITER_BIT | UPGRADABLE_BIT) != 0 {
+                    // If we are blocked by an upgradable lock, mark that a
+                    // writer is waiting so that new readers block instead of
+                    // barging ahead of us (see issue #543). A pending WRITER_BIT
+                    // already blocks readers by itself. The upgradable bit is
+                    // re-checked to avoid setting the marker based on a stale
+                    // observation.
+                    if *state & UPGRADABLE_BIT != 0
+                        && self.state.load(Ordering::Relaxed) & UPGRADABLE_BIT != 0
+                    {
+                        self.state.fetch_or(WRITER_WAITING_BIT, Ordering::Relaxed);
+                    }
                     return false;
                 }
 
@@ -529,6 +550,11 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
         if timed_out {
             return None;
         }
+
+        // We now hold WRITER_BIT (grabbed directly or via handoff), so no
+        // writer is waiting on an upgradable lock anymore. Clear the marker.
+        // New readers are blocked by WRITER_BIT itself from here on.
+        self.state.fetch_and(!WRITER_WAITING_BIT, Ordering::Relaxed);
 
         // WRITER_BIT prevents new writers and upgradable readers from
         // acquiring the lock, so it represents ownership of the primary key.
@@ -591,7 +617,9 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
         let try_lock = |state: &mut usize| {
             let mut spinwait_shared = SpinWait::new();
             loop {
-                if *state & WRITER_BIT != 0 && (!RECURSIVE || *state & READERS_MASK == 0) {
+                if *state & (WRITER_BIT | WRITER_WAITING_BIT) != 0
+                    && (!RECURSIVE || *state & READERS_MASK == 0)
+                {
                     return false;
                 }
 
@@ -618,7 +646,8 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
             }
         };
         self.lock_common(timeout, TOKEN_SHARED, try_lock, |state| {
-            state & WRITER_BIT != 0 && (!RECURSIVE || state & READERS_MASK == 0)
+            state & (WRITER_BIT | WRITER_WAITING_BIT) != 0
+                && (!RECURSIVE || state & READERS_MASK == 0)
         })
         .then_some(crate::GuardMarker::new())
     }
@@ -846,6 +875,7 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
         // otherwise they may end up parked indefinitely since unlock_shared
         // does not call wake_parked_threads.
         let new_state = Cell::new(new_state);
+        let unparked_writer = Cell::new(false);
         let addr = core::ptr::from_ref(self).addr();
         let filter = |ParkToken(token)| {
             let s = new_state.get();
@@ -864,6 +894,9 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
                 // a writer/upgradable reader.
                 FilterOp::Skip
             } else {
+                if token & (UPGRADABLE_BIT | WRITER_BIT) != 0 {
+                    unparked_writer.set(true);
+                }
                 new_state.set(s + token);
                 FilterOp::Unpark
             }
@@ -874,6 +907,12 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
         // * `filter` does not panic or call into any function of `parking_lot`.
         // * `callback` safety responsibility is on caller
         unsafe { parking_lot_core::unpark_filter(addr, filter, callback) };
+        // If no writer or upgrader was woken, no writer can still be waiting
+        // on an upgradable lock: clear the marker (see issue #543). Otherwise
+        // the woken writer clears it once it acquires WRITER_BIT.
+        if !unparked_writer.get() {
+            self.state.fetch_and(!WRITER_WAITING_BIT, Ordering::Relaxed);
+        }
     }
 
     // Common code for waiting for readers to exit the lock after acquiring
@@ -1019,9 +1058,17 @@ impl<const RECURSIVE: bool> RawRwLock<RECURSIVE> {
             };
             let before_sleep = || {};
             let timed_out = |_, was_last_thread| {
-                // Clear the parked bit if we were the last parked thread
+                // Clear the parked bit if we were the last parked thread. An
+                // exclusive waiter also clears the writer-waiting marker: if
+                // it was the last queued thread then no writer can still be
+                // waiting on an upgradable lock (see issue #543).
                 if was_last_thread {
-                    self.state.fetch_and(!PARKED_BIT, Ordering::Relaxed);
+                    let mask = if token == TOKEN_EXCLUSIVE {
+                        !(PARKED_BIT | WRITER_WAITING_BIT)
+                    } else {
+                        !PARKED_BIT
+                    };
+                    self.state.fetch_and(mask, Ordering::Relaxed);
                 }
             };
 
